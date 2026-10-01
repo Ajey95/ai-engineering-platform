@@ -1,3 +1,4 @@
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 import platform_app.api as api_module
 from platform_app.db import Base
-from platform_app.models import Run
+from platform_app.models import Run, ToolAction
 from platform_app.service import ServiceError
 
 
@@ -95,3 +96,37 @@ def test_run_media_is_tenant_scoped_and_stays_within_published_effect(tmp_path, 
                 run_id, "baseline", f"{'b' * 64}/master.m3u8", (tenant_id, "actor"), db
             )
         assert wrong_effect.value.status_code == 404
+
+
+def test_run_screenshot_requires_receipt_digest_and_tenant(tmp_path, monkeypatch):
+    root = tmp_path / "artifacts"
+    run_id = "22222222-2222-4222-8222-222222222222"
+    screenshot = root / run_id / "baseline" / "final.png"
+    screenshot.parent.mkdir(parents=True)
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+    digest = hashlib.sha256(screenshot.read_bytes()).hexdigest()
+    monkeypatch.setattr(api_module, "settings", lambda: SimpleNamespace(artifact_dir=str(root)))
+    engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Run(
+            id=run_id, tenant_id="tenant-a", task_id="task", project_id="project",
+            created_by="actor", idempotency_key="key", request_hash="r" * 64,
+            base_commit="b" * 40, model_entry_id="model", config_snapshot={},
+        ))
+        db.add(ToolAction(
+            tenant_id="tenant-a", run_id=run_id, step_id="browser",
+            logical_action="fixture.browser", effect_key="e" * 64,
+            arguments_hash="a" * 64, policy_result="allowed", status="COMPLETED",
+            receipt={"final_screenshot": "final.png", "screenshot_sha256": digest},
+        ))
+        db.commit()
+        response = api_module.run_screenshot(run_id, "baseline", ("tenant-a", "actor"), db)
+        assert response.path == screenshot
+        with pytest.raises(ServiceError) as foreign:
+            api_module.run_screenshot(run_id, "baseline", ("tenant-b", "actor"), db)
+        assert foreign.value.status == 404
+        screenshot.write_bytes(b"tampered")
+        with pytest.raises(HTTPException) as changed:
+            api_module.run_screenshot(run_id, "baseline", ("tenant-a", "actor"), db)
+        assert changed.value.status_code == 404

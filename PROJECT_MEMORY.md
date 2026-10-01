@@ -192,3 +192,16 @@ leaving the effect reservation unresolved rather than reporting a false
 actual cost. Official provider documentation was checked for those usage
 semantics. Python tests 53 passed, 1 Windows symlink skip; ruff clean. No
 live provider call or account qualification occurred.
+
+2026-10-02 admitted screenshot follow-up: browser runner now includes final
+PNG SHA-256 in its receipt; replay checks the digest. A tenant-scoped screenshot
+route verifies file content against that receipt, and Runs shows before/after
+images alongside HLS. The development sandbox image was rebuilt (manifest
+digest `e6ff20cf090428c2654334a0407241c3a8184a8df985bb98785b78a9ce2adbe6`).
+A fresh controlled response run in
+`artifacts/worker-verification/3bb018890c92` at pinned commit `6d28955`
+reached REVIEW_READY with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate,
+both media READY and two screenshot hashes. It still has
+`autonomous_repair=false`. Python tests 54 passed, 1 Windows symlink skip;
+ruff and web build passed. Docker Desktop remains unresolved; WSL Engine ran
+the verification.

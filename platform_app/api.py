@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import re
 from contextlib import asynccontextmanager
@@ -215,8 +216,9 @@ def run_media(
     run = require_run(db, identity[0], run_id)
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
+    artifact_root = Path(settings().artifact_dir).resolve()
     root = (
-        Path(settings().artifact_dir).resolve()
+        artifact_root
         / "private-media" / run.tenant_id / f"{run.id}_{label}" / "media"
     )
     pointer_path = root / "ready.json"
@@ -229,9 +231,16 @@ def run_media(
         raise HTTPException(status_code=404) from None
     if not isinstance(effect_key, str) or re.fullmatch(r"[0-9a-f]{64}", effect_key) is None:
         raise HTTPException(status_code=404)
+    effect_dir = root / effect_key
+    if (
+        effect_dir.is_symlink()
+        or not root.resolve().is_relative_to(artifact_root)
+        or not effect_dir.resolve().is_relative_to(artifact_root)
+    ):
+        raise HTTPException(status_code=404)
     selected = (root / part).resolve()
     if (
-        not selected.is_relative_to((root / effect_key).resolve())
+        not selected.is_relative_to(effect_dir.resolve())
         or selected.suffix not in {".m3u8", ".mp4", ".m4s"}
         or not selected.is_file()
     ):
@@ -242,6 +251,43 @@ def run_media(
         ".m4s": "video/iso.segment",
     }[selected.suffix]
     return FileResponse(selected, media_type=media_type)
+
+
+@app.get("/v1/runs/{run_id}/screenshot/{label}")
+def run_screenshot(
+    run_id: str,
+    label: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = require_run(db, identity[0], run_id)
+    if label not in {"baseline", "candidate"}:
+        raise HTTPException(status_code=404)
+    step = "browser" if label == "baseline" else "candidate_browser"
+    action = db.scalar(select(ToolAction).where(
+        ToolAction.run_id == run.id,
+        ToolAction.tenant_id == identity[0],
+        ToolAction.step_id == step,
+        ToolAction.status == "COMPLETED",
+    ))
+    receipt = action.receipt if action else None
+    if not receipt or receipt.get("final_screenshot") != "final.png":
+        raise HTTPException(status_code=404)
+    digest = receipt.get("screenshot_sha256")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise HTTPException(status_code=404)
+    relative = Path(run.id) / (
+        "baseline" if label == "baseline" else "candidate/evidence"
+    ) / "final.png"
+    artifact_root = Path(settings().artifact_dir).resolve()
+    selected = (artifact_root / relative).resolve()
+    if (
+        not selected.is_relative_to(artifact_root)
+        or not selected.is_file()
+        or hashlib.sha256(selected.read_bytes()).hexdigest() != digest
+    ):
+        raise HTTPException(status_code=404)
+    return FileResponse(selected, media_type="image/png")
 
 
 @app.post("/v1/projects", response_model=ProjectRead, status_code=201)
@@ -535,6 +581,14 @@ def review_packet(
                 media_urls[label] = (
                     f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
                 )
+    screenshot_urls = {
+        label: f"/v1/runs/{run.id}/screenshot/{label}"
+        for label, receipt in (
+            ("baseline", baseline_browser), ("candidate", candidate_browser)
+        )
+        if receipt and receipt.get("final_screenshot") == "final.png"
+        and isinstance(receipt.get("screenshot_sha256"), str)
+    }
     spend_entries = db.scalars(
         select(BudgetEntry).where(
             BudgetEntry.run_id == run.id,
@@ -583,7 +637,8 @@ def review_packet(
         "patched_tests": [candidate_named] if candidate_named is not None else [],
         "candidate_browser": candidate_browser,
         "candidate_oracle": candidate_oracle,
-        "browser_evidence_refs": [],
+        "browser_evidence_refs": list(screenshot_urls.values()),
+        "screenshot_urls": screenshot_urls,
         "verification_status": run.verdict,
         "review_decision": (review_event.payload or {}).get("decision") if review_event else None,
         "review_reason": (review_event.payload or {}).get("reason") if review_event else None,

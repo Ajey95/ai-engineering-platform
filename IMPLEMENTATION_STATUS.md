@@ -39,6 +39,9 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
   the admitted worker publishes baseline and candidate media separately and
   the tenant-scoped development API serves the published effect.
+- Browser receipts include SHA-256 of final PNG screenshots. The tenant-scoped
+  API checks the digest on every request and the Runs panel displays before
+  and after screenshots.
 - `apps/web`: React screens reading real API data; no fabricated run success.
 - The Runs review panel displays persisted baseline named/browser/oracle receipt
   status, command, exit, duration and tree hash where available. Model choices
@@ -50,7 +53,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 51 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 54 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -77,6 +80,10 @@ PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate, two media receipts READY,
 verdict PASSED, `REVIEW_READY`, and `autonomous_repair=false`. Both used
 disposable local databases. The controlled response tests the native adapter
 protocol and budgeted patch path; it is not a live provider result.
+After the screenshot digest change, controlled run
+`86a57044-b983-493a-ab45-b6f54e514931` at commit `6d28955` reproduced
+those baseline/candidate statuses with two screenshot hashes and two HLS
+manifests. It remains controlled response evidence.
 Production startup deliberately refuses to proceed.
 
 ## Requirement traceability
@@ -115,14 +122,14 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
-| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; recording disabled when masks are requested, deletion lifecycle missing. |
+| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified in admitted-run receipts and tenant-scoped local route, recording disabled when masks are requested, deletion lifecycle missing. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs and a verified fixture diff download; diagnosis evidence, alternatives and full packet export remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is audited and separate from publication; bound draft PR approval and reconciliation absent. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; object store absent. |
-| FR-MED-03 | Partial | Hls.js player loaded and played manually evaluated local before/after HLS in Chromium; admitted-run players built but browser playback and hosted authorization unverified. |
+| FR-MED-03 | Partial | Hls.js player loaded and played manually evaluated local before/after HLS in Chromium; admitted-run players and screenshot view built but browser playback and hosted authorization unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
 | FR-DAT-01 | Partial | Initial Alembic migration applied to local PostgreSQL; concurrent duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |

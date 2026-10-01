@@ -366,5 +366,14 @@ function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run 
       </Suspense> :
       <p className="muted">{baselineChecks.length || candidateChecks.length ? 'No playable recording is published for this run.' :
         'No test result, screenshot or recording is available yet.'}</p>}
+    {packet?.screenshot_urls && Object.keys(packet.screenshot_urls).length > 0 &&
+      <div className="screenshot-grid">
+        {(['baseline', 'candidate'] as const).map(label => packet.screenshot_urls?.[label] &&
+          <div key={label}><h4>{label === 'baseline' ? 'Before patch screenshot' : 'After patch screenshot'}</h4>
+            <a href={packet.screenshot_urls[label]} target="_blank" rel="noreferrer">
+              <img src={packet.screenshot_urls[label]} alt={`${label} browser result`} loading="lazy" />
+            </a>
+          </div>)}
+      </div>}
   </>
 }

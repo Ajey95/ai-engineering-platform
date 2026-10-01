@@ -79,6 +79,11 @@ def _verified_receipt(step: str, target: Path, receipt: dict) -> dict:
                     != receipt.get("output_sha256")
                 ):
                     raise ValueError("Receipt output hash differs")
+                if key == "final_screenshot" and (
+                    hashlib.sha256(artifact.read_bytes()).hexdigest()
+                    != receipt.get("screenshot_sha256")
+                ):
+                    raise ValueError("Screenshot digest differs")
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise ServiceError(
             "EFFECT_OUTCOME_UNKNOWN", "Completed effect evidence is unavailable", 409

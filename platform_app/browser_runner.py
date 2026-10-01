@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import secrets
@@ -92,6 +93,7 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
         "recording": None,
         "recording_disabled_reason": None,
         "final_screenshot": None,
+        "screenshot_sha256": None,
     }
     stdout_file = (artifacts / "fixture.log").open("w", encoding="utf-8")
     command = manifest["start_command"]
@@ -196,6 +198,7 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
                 screenshot = artifacts / "final.png"
                 await page.screenshot(path=str(screenshot), full_page=True)
                 result["final_screenshot"] = screenshot.name
+                result["screenshot_sha256"] = hashlib.sha256(screenshot.read_bytes()).hexdigest()
             finally:
                 await context.close()
                 if video is not None:

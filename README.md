@@ -138,6 +138,9 @@ For a run in the API's configured artifact directory, the Changes tab loads a
 tenant-scoped unified diff and offers a patch download. The server reconstructs
 the pinned fixture base and rejects a candidate whose tree or patch hash no
 longer matches its receipt.
+The Evidence tab also shows before/after PNG screenshots from admitted browser
+runs. Their SHA-256 digests are checked against persisted browser receipts
+each time the local tenant-scoped route serves them.
 For a `REVIEW_READY` fixture run, the reviewer can accept or reject the packet
 in the Runs or Review screen. Rejection requires a reason. Both decisions are
 audited, close the run, and leave the test verdict intact. Accepting a packet
