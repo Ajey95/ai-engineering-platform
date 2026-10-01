@@ -30,7 +30,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory.
 - `apps/web`: React screens reading real API data; no fabricated run success.
-- `tests/`: 32 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 35 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -48,8 +48,8 @@ deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener, but
 the project development container runs on a separate WSL Docker Engine.
-The admitted worker verification produced run `bef4402b-5a0d-46c6-bb57-5727d607d82b`
-at pinned commit `fce5882`: outbox delivered, three receipt statuses
+The admitted worker verification produced run `0fb81aac-38b5-44dc-89b6-8623c9a43a71`
+at pinned commit `7b902c1`: outbox delivered, three receipt statuses
 PASS/FAIL/FAIL, packet reproduction REPRODUCED, run verdict INCONCLUSIVE,
 and `autonomous_repair=false`. The oracle SHA-256 is recorded in its receipt.
 This was a disposable local database with a database-only model fixture.
@@ -75,7 +75,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-01 | Partial | Development outbox worker executes a baseline under a lease; LangGraph, autonomous repair and PostgreSQL checkpointer absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool call cap and bounded container execution; model, patch and active-time budgets remain unwired. |
 | FR-HAR-03 | Partial | Paused state releases lease; resume and snapshot reconciliation absent. |
-| FR-HAR-04 | Partial | Development worker persists effect intent before Docker execution and receipts after; uncertain-effect reconciliation absent. |
+| FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
 | FR-CTX-01 | Missing | ContextBundle selection and evidence citation absent. |
 | FR-CTX-02 | Missing | Scoped code navigation and graph traversal absent. |

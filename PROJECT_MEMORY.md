@@ -100,10 +100,19 @@ persists intent before each action and receipts afterward. The run packet now
 reads these receipts. Only the reviewed fixture Git tree, manifest blob and
 oracle blob hashes are accepted at that commit, so an arbitrary historic
 commit cannot change the executable fixture content. The live worker check in
-`artifacts/worker-verification/3f049ba40071` had outbox delivered, three
+`artifacts/worker-verification/0b688adf8918` had outbox delivered, three
 receipts PASS/FAIL/FAIL, baseline REPRODUCED, run INCONCLUSIVE and
 `autonomous_repair=false`; the model row was a disposable database fixture.
 The rebuilt image included an oracle SHA-256 in the receipt. Local tests are
-32 passed, 1 Windows symlink skip; ruff clean. Docker Desktop is still broken,
+35 passed, 1 Windows symlink skip; ruff clean. Docker Desktop is still broken,
 but the independent Ubuntu WSL Docker Engine runs this path. Next: actual
 budgeted model/patch loop, crash reconciliation and hosted boundaries.
+
+2026-10-02 dispatch recovery follow-up: outbox processing and fenced claim now
+commit together. Expired processing events with only completed actions are
+requeued for replay; an `INTENDED` action with unknown outcome closes the run
+inconclusively and leaves the effect unreplayed. Completed receipts require
+matching persisted result files and output hashes on replay. Duplicate
+dispatches for closed runs are acknowledged. Fault-case tests cover unknown
+effects, missing artifacts and terminal duplicates; the real WSL container
+verification passed after the refactor. Hosted queue recovery remains untested.

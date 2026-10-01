@@ -122,6 +122,9 @@ the run ID and artifact directory. Its review packet comes from persisted tool
 receipts and reports `REPRODUCED` for the baseline and `INCONCLUSIVE` for the
 run. The database-only model entry is a fixture; no provider call or autonomous
 patch occurs. This development worker accepts only `form-submit-001`.
+On a later invocation, its local outbox recovery requeues expired dispatches
+whose completed effects have intact receipts. An uncertain `INTENDED` effect
+stops as inconclusive and requires reconciliation; it is never rerun blindly.
 
 Run checks:
 

@@ -7,6 +7,7 @@ out a customer repository or treats the baseline as an autonomous repair.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import subprocess
@@ -17,25 +18,27 @@ from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from platform_app.config import settings
-from platform_app.db import SessionLocal
+from platform_app.db import SessionLocal, utcnow
 from platform_app.dev_sandbox import (
     SandboxError,
     _docker_prefix,
     run_browser_fixture,
     run_verifier_fixture,
 )
-from platform_app.models import OutboxEvent, Run, ToolAction
+from platform_app.models import OutboxEvent, Run, RunEvent, ToolAction
 from platform_app.run_ledger import (
     assert_fence,
+    aware,
     begin_tool_action,
     claim_run,
     complete_tool_action,
     heartbeat,
     transition,
 )
-from platform_app.service import ServiceError, append_event
+from platform_app.service import ServiceError, append_event, request_cancel
 from platform_app.verifier import tree_hash
 
 FIXTURE_PATH = "benchmarks/fixtures/form-submit"
@@ -45,6 +48,37 @@ TRUSTED_GIT_OBJECTS = {
     f"{FIXTURE_PATH}/manifest.json": "ee94c5e5edaa8ba68d97efca92ceef6937e23539",
     ORACLE_PATH: "85c0e5c6c29cd7391bc3c0b2a2b4044ef7c36587",
 }
+
+
+def _verified_receipt(step: str, target: Path, receipt: dict) -> dict:
+    """A replay may trust a completed effect only while its artifacts agree."""
+    result_name = {
+        "named": "test-baseline.json",
+        "browser": "result.json",
+        "oracle": "oracle.json",
+    }[step]
+    result_path = target / result_name
+    try:
+        if json.loads(result_path.read_text(encoding="utf-8")) != receipt:
+            raise ValueError("Receipt artifact differs from the ledger")
+        for key in ("output_file", "final_screenshot", "recording"):
+            name = receipt.get(key)
+            if name:
+                if Path(name).name != name:
+                    raise ValueError("Receipt artifact path is not local")
+                artifact = target / name
+                if not artifact.is_file():
+                    raise ValueError("Receipt artifact is missing")
+                if key == "output_file" and (
+                    hashlib.sha256(artifact.read_bytes()).hexdigest()
+                    != receipt.get("output_sha256")
+                ):
+                    raise ValueError("Receipt output hash differs")
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise ServiceError(
+            "EFFECT_OUTCOME_UNKNOWN", "Completed effect evidence is unavailable", 409
+        ) from error
+    return receipt
 
 
 def _pinned_fixture(repository: Path, commit: str, destination: Path) -> tuple[Path, Path, Path]:
@@ -127,6 +161,20 @@ class DevelopmentWorker:
         self._cancelled = threading.Event()
         self._active_container: str | None = None
 
+    def _kill_active_container(self) -> None:
+        name = self._active_container
+        if name is None:
+            return
+        try:
+            subprocess.run(
+                [*_docker_prefix(self.runtime, "Ubuntu-24.04"), "kill", name],
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
     def _heartbeat(self, run_id: str, fence: int) -> None:
         while not self._stop.wait(10):
             try:
@@ -137,20 +185,11 @@ class DevelopmentWorker:
                     db.commit()
                 if cancelled:
                     self._cancelled.set()
-                    if self._active_container:
-                        subprocess.run(
-                            [
-                                *_docker_prefix(self.runtime, "Ubuntu-24.04"),
-                                "kill",
-                                self._active_container,
-                            ],
-                            capture_output=True,
-                            timeout=15,
-                            check=False,
-                        )
+                    self._kill_active_container()
                     return
-            except (ServiceError, OSError):
+            except (ServiceError, OSError, SQLAlchemyError):
                 self._cancelled.set()
+                self._kill_active_container()
                 return
 
     def _transition(self, run_id: str, fence: int, state: str, verdict: str | None = None) -> None:
@@ -192,7 +231,7 @@ class DevelopmentWorker:
                 db, run, self.worker_id, fence, step, f"fixture.{step}", arguments, True
             )
             if action.status == "COMPLETED":
-                return action.receipt
+                return _verified_receipt(step, target, action.receipt)
             db.commit()  # Persist effect intent before starting the container.
             action_id = action.id
 
@@ -228,12 +267,16 @@ class DevelopmentWorker:
             db.commit()
         return receipt
 
-    def execute(self, run_id: str) -> None:
+    def execute(self, run_id: str, fence: int | None = None) -> None:
         with self.session_factory() as db:
-            run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
-            if run.state != "QUEUED":
+            if fence is None:
+                run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
+            else:
+                run = db.get(Run, run_id)
+                assert_fence(run, self.worker_id, fence)
+            if run.state not in {"QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING"}:
                 raise ServiceError(
-                    "RUN_NOT_QUEUED", "Development worker requires a queued run", 409
+                    "RUN_NOT_EXECUTABLE", "Development worker cannot resume this state", 409
                 )
             if (
                 run.config_snapshot.get("reproduction", {}).get("fixture_case_id")
@@ -243,7 +286,9 @@ class DevelopmentWorker:
                     "FIXTURE_UNAVAILABLE", "Only the reviewed fixture is supported", 409
                 )
             commit = run.base_commit
-            transition(db, run, self.worker_id, fence, "PREPARING")
+            initial_state = run.state
+            if initial_state == "QUEUED":
+                transition(db, run, self.worker_id, fence, "PREPARING")
             db.commit()
 
         self._stop.clear()
@@ -262,7 +307,8 @@ class DevelopmentWorker:
                     )
                 target = self.artifact_root / run_id / "baseline"
                 target.mkdir(parents=True, exist_ok=True)
-                self._transition(run_id, fence, "REPRODUCING")
+                if initial_state in {"QUEUED", "PREPARING"}:
+                    self._transition(run_id, fence, "REPRODUCING")
                 named = self._action(run_id, fence, "named", manifest, workspace, target)
                 browser = self._action(run_id, fence, "browser", manifest, workspace, target)
                 oracle_receipt = self._action(
@@ -276,22 +322,29 @@ class DevelopmentWorker:
                 with self.session_factory() as db:
                     run = db.get(Run, run_id)
                     assert_fence(run, self.worker_id, fence)
-                    append_event(
-                        db,
-                        run,
-                        "verification.completed",
-                        {
-                            "scope": "synthetic_baseline_only",
-                            "reproduced": reproduced,
-                            "candidate_status": "NOT_RUN",
-                        },
+                    prior_verification = db.scalar(
+                        select(RunEvent.id)
+                        .where(
+                            RunEvent.run_id == run_id,
+                            RunEvent.event_type == "verification.completed",
+                        )
+                        .limit(1)
                     )
+                    if prior_verification is None:
+                        append_event(
+                            db,
+                            run,
+                            "verification.completed",
+                            {
+                                "scope": "synthetic_baseline_only",
+                                "reproduced": reproduced,
+                                "candidate_status": "NOT_RUN",
+                            },
+                        )
                     db.commit()
-                if reproduced:
+                if reproduced and initial_state != "INVESTIGATING":
                     self._transition(run_id, fence, "INVESTIGATING")
-                    self._transition(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
-                else:
-                    self._transition(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
+                self._transition(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
         except (ServiceError, SandboxError, OSError, ValueError) as error:
             with self.session_factory() as db:
                 run = db.get(Run, run_id)
@@ -300,6 +353,8 @@ class DevelopmentWorker:
                         transition(db, run, self.worker_id, fence, "CANCELLED", "NOT_RUN")
                     elif run.state in {"PREPARING", "REPRODUCING"}:
                         transition(db, run, self.worker_id, fence, "FAILED", "INCONCLUSIVE")
+                    elif run.state == "INVESTIGATING":
+                        transition(db, run, self.worker_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
                     append_event(
                         db,
                         run,
@@ -317,6 +372,7 @@ class DevelopmentWorker:
             watcher.join(timeout=2)
 
     def process_next(self) -> str | None:
+        self.recover_stale()
         with self.session_factory() as db:
             events = db.scalars(
                 select(OutboxEvent)
@@ -328,25 +384,42 @@ class DevelopmentWorker:
                 .with_for_update(skip_locked=True)
                 .limit(100)
             ).all()
-            event = next(
-                (
-                    candidate
-                    for candidate in events
-                    if (run := db.get(Run, candidate.payload.get("run_id"))) is not None
-                    and run.config_snapshot.get("reproduction", {}).get("fixture_case_id")
-                    == "form-submit-001"
-                ),
-                None,
-            )
+            event = None
+            for candidate in events:
+                run = db.get(Run, candidate.payload.get("run_id"))
+                if run is None:
+                    candidate.status = "failed"
+                    continue
+                if run.config_snapshot.get("reproduction", {}).get("fixture_case_id") != (
+                    "form-submit-001"
+                ):
+                    continue
+                if run.state in {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}:
+                    candidate.status = "delivered"
+                    continue
+                if (
+                    run.cancel_requested
+                    or (run.lease_until and aware(run.lease_until) > utcnow())
+                    or run.state not in {"QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING"}
+                ):
+                    continue
+                event = candidate
+                break
             if event is None:
+                db.commit()
                 return None
             run_id = event.payload["run_id"]
+            run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
+            if run.state == "QUEUED":
+                transition(db, run, self.worker_id, fence, "PREPARING")
+            elif run.state not in {"PREPARING", "REPRODUCING", "INVESTIGATING"}:
+                raise ServiceError("RUN_NOT_EXECUTABLE", "Dispatch state is not executable", 409)
             event.status = "processing"
             event.attempts += 1
             event_id = event.id
             db.commit()
         try:
-            self.execute(run_id)
+            self.execute(run_id, fence)
             final_status = "delivered"
         except (ServiceError, SandboxError, OSError, ValueError):
             final_status = "failed"
@@ -355,6 +428,65 @@ class DevelopmentWorker:
             event.status = final_status
             db.commit()
         return run_id
+
+    def recover_stale(self) -> int:
+        """Requeue safe expired dispatches; stop when a side effect is uncertain."""
+        recovered = 0
+        with self.session_factory() as db:
+            events = db.scalars(
+                select(OutboxEvent)
+                .where(
+                    OutboxEvent.topic == "run.dispatch",
+                    OutboxEvent.status == "processing",
+                )
+                .order_by(OutboxEvent.created_at)
+                .with_for_update(skip_locked=True)
+                .limit(100)
+            ).all()
+            for event in events:
+                run = db.get(Run, event.payload.get("run_id"))
+                if run is None:
+                    event.status = "failed"
+                    recovered += 1
+                    continue
+                if run.lease_until and aware(run.lease_until) > utcnow():
+                    continue
+                if run.state in {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}:
+                    event.status = "delivered"
+                    recovered += 1
+                    continue
+                if run.cancel_requested:
+                    request_cancel(db, run, "worker-recovery")
+                    event.status = "delivered"
+                    recovered += 1
+                    continue
+                uncertain = db.scalar(
+                    select(ToolAction.id)
+                    .where(
+                        ToolAction.run_id == run.id,
+                        ToolAction.status == "INTENDED",
+                    )
+                    .limit(1)
+                )
+                if uncertain is not None:
+                    owned, fence = claim_run(db, run.id, self.worker_id, settings().lease_seconds)
+                    stop_state = "FAILED" if owned.state == "PREPARING" else "INCONCLUSIVE"
+                    transition(db, owned, self.worker_id, fence, stop_state, "INCONCLUSIVE")
+                    append_event(
+                        db,
+                        owned,
+                        "worker.error",
+                        {
+                            "code": "EFFECT_OUTCOME_UNKNOWN",
+                            "replay_blocked": True,
+                        },
+                    )
+                    event.status = "failed"
+                else:
+                    event.status = "pending"
+                recovered += 1
+            db.commit()
+        return recovered
 
 
 def main() -> int:
