@@ -506,6 +506,12 @@ def list_models(
             "provider": m.provider,
             "model_id": m.model_id,
             "state": m.state,
+            "qualified": bool(
+                m.state == "enabled"
+                and m.validated_at
+                and (m.capabilities or {}).get("live_qualified")
+            ),
+            "fixture_only": bool((m.capabilities or {}).get("database_fixture_only")),
             "capabilities": m.capabilities,
             "context_limit": m.context_limit,
             "output_limit": m.output_limit,

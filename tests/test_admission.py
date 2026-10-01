@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from platform_app.api import list_models
 from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
@@ -121,6 +122,13 @@ def test_fixture_model_cannot_admit_unrelated_project(db):
     with pytest.raises(ServiceError) as error:
         admit_run(db, "tenant-a", "alice", "task-a", "unrelated-key", run_body())
     assert error.value.code == "MODEL_UNAVAILABLE"
+
+
+def test_fixture_model_is_not_reported_as_qualified(db):
+    entries = list_models(identity=("tenant-a", "alice"), db=db)
+    assert entries[0]["state"] == "enabled"
+    assert entries[0]["fixture_only"] is True
+    assert entries[0]["qualified"] is False
 
 
 def test_queued_cancellation_does_not_become_success(db):

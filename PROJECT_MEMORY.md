@@ -127,5 +127,13 @@ explicitly scoped development fixture model and project. No live account is
 configured or qualified. `scripts.verify_postgres_admission` still observed
 one run/reservation/outbox/event under duplicate concurrent admission. The
 latest worker receipt is `artifacts/worker-verification/217505165bb9` at
-commit `16ba81e`; PASS/FAIL/FAIL baseline and INCONCLUSIVE run. Tests: 42 passed,
+commit `16ba81e`; PASS/FAIL/FAIL baseline and INCONCLUSIVE run. Tests: 43 passed,
 1 Windows symlink skip; ruff clean.
+
+2026-10-02 review UI follow-up: the Runs evidence panel now renders stored
+baseline receipt status, exact command, exit code, duration and tree hash
+instead of treating a run without media as lacking test evidence. The model
+selector uses an API `qualified` flag, and a fixture-only enabled DB row is
+shown as fixture-only, not as a qualified provider. The Evaluations notice
+uses the packet's actual synthetic container scope. Vite/TypeScript build
+passed with bundled Node 24; local tests 43 passed, 1 skipped.

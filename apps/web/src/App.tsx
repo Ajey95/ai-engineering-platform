@@ -4,7 +4,7 @@ import {
   ClipboardList, Code2, FolderGit2, Gauge, Layers3, Menu, Play, Plus,
   RefreshCw, Settings2, ShieldCheck, Square, XCircle,
 } from 'lucide-react'
-import { api, jsonBody, type ModelEntry, type Project, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
+import { api, jsonBody, type CheckReceipt, type ModelEntry, type Project, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
 const MediaPlayer = lazy(() => import('./MediaPlayer'))
 
 type Page = 'projects' | 'runs' | 'review' | 'memory' | 'evaluations' | 'usage' | 'settings'
@@ -33,8 +33,8 @@ const date = (value: string) => new Date(value).toLocaleString()
 
 function Status({ value }: { value: string }) {
   const style = ['FAILED', 'CANCELLED'].includes(value) ? 'bad'
-    : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET'].includes(value) ? 'warn'
-      : ['COMPLETED', 'PASSED', 'REVIEW_READY'].includes(value) ? 'good' : 'neutral'
+    : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET', 'FIXTURE ONLY'].includes(value) ? 'warn'
+      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED'].includes(value) ? 'good' : 'neutral'
   return <span className={`status ${style}`}>{value.replaceAll('_', ' ')}</span>
 }
 
@@ -110,7 +110,7 @@ export default function App() {
   const task = tasks.find(item => item.id === run?.task_id)
   const scopedRuns = selectedProject ? runs.filter(item => item.project_id === selectedProject) : runs
   const scopedTasks = selectedProject ? tasks.filter(item => item.project_id === selectedProject) : tasks
-  const qualifiedModels = models.filter(item => item.state === 'enabled')
+  const qualifiedModels = models.filter(item => item.qualified)
   const reservedTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.reserved_usd, 0), [usage])
   const actualTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.actual_usd, 0), [usage])
 
@@ -216,10 +216,10 @@ export default function App() {
         </section>}
         {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
-        {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
+        {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
         {page === 'memory' && <section className="page-section"><div className="page-heading"><div><h1>Memory</h1><p>Verified facts at an exact repository revision. Retrieval uses the canonical fallback.</p></div></div><form className="memory-search content-panel" onSubmit={searchMemory}><label>Commit SHA<input value={memoryRevision} onChange={event => setMemoryRevision(event.target.value)} pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label><label>Search text<input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder="File, symbol or incident" /></label><button className="secondary-button" disabled={!selectedProject}>Search memory</button></form><div className="content-panel"><h2>Source-backed facts</h2>{memoryFacts.length ? memoryFacts.map(fact => <div className="memory-fact" key={fact.id}><strong>{fact.subject}</strong><p>{fact.statement}</p><small>{fact.verification_scope || 'Scope not recorded'} · {fact.source_refs.join(', ')}</small></div>) : <p className="muted">No verified facts loaded for this revision.</p>}</div></section>}
         {page === 'evaluations' && <section className="page-section"><div className="page-heading"><div><h1>Evaluations</h1><p>Recorded checks for a controlled local fixture.</p></div></div>{devEvaluation ? <>
-          <div className="notice"><ShieldCheck size={19} /><span>This is a synthetic host fixture with a manually supplied candidate. It does not qualify an autonomous repair or hosted sandbox.</span></div>
+          <div className="notice"><ShieldCheck size={19} /><span>This is a {devEvaluation.qualification_scope.replaceAll('_', ' ')} with a manually supplied candidate. It does not qualify an autonomous repair or hosted sandbox.</span></div>
           <div className="content-panel"><div className="panel-heading"><h2>{devEvaluation.case_id}</h2><Status value={devEvaluation.verdict} /></div><p className="muted">Scope: {devEvaluation.qualification_scope.replaceAll('_', ' ')} · Candidate: {devEvaluation.candidate_origin}</p></div>
           <div className="evaluation-grid">{(['baseline', 'candidate'] as const).map(label => {
             const result = devEvaluation.results[label]
@@ -255,7 +255,7 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
       <div className="content-panel progress-panel"><div className="section-title"><Activity size={18} /><h3>Run progress</h3></div>{events.length ? <ol className="timeline">{events.map(event => <li key={event.event_id}><span className="timeline-node" /><div><strong>{event.event_type.replaceAll('.', ' · ')}</strong><small>{date(event.timestamp)}</small><p>{Object.entries(event.payload).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}</p></div></li>)}</ol> : <p className="muted">No durable events recorded yet.</p>}</div>
     </div>
     <div className="review-right"><div className="tabbar" role="tablist" aria-label="Run details">{(['evidence', 'changes', 'logs', 'environment'] as const).map(item => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'changes' ? 'Changed files' : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
-      <div className="content-panel detail-panel">{tab === 'evidence' && <><div className="section-title"><ShieldCheck size={18} /><h3>Verification</h3></div><div className="verdict-line"><span>Reproduction</span><Status value={packet?.reproduction_status || 'NOT_RUN'} /></div><div className="verdict-line"><span>Code verification</span><Status value={packet?.verification_status || run.verdict} /></div><div className="verdict-line"><span>Media</span><Status value={packet?.media_status || run.media_status} /></div>{packet?.media_manifest_url ? <Suspense fallback={<p className="muted">Loading player…</p>}><MediaPlayer manifestUrl={packet.media_manifest_url} markers={packet.evidence_timeline} /></Suspense> : <p className="muted">No test result, screenshot or recording is displayed until the worker produces an artifact.</p>}</>}
+      <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} />}
         {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}</>}
         {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
@@ -263,4 +263,40 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
       <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>{!['COMPLETED', 'FAILED', 'CANCELLED', 'INCONCLUSIVE'].includes(run.state) && <button className="secondary-button" onClick={cancel}><Square size={14} /> Cancel run</button>}</div>
     </div>
   </div>
+}
+
+function ReceiptRow({ label, receipt }: { label: string; receipt: CheckReceipt }) {
+  return <div className="receipt-row">
+    <div className="verdict-line"><span>{label}</span><Status value={receipt.status} /></div>
+    {receipt.command && <small className="mono">{receipt.command.join(' ')}</small>}
+    {(receipt.exit_code !== undefined || receipt.duration_ms !== undefined) &&
+      <small>Exit: {receipt.exit_code ?? 'none'} · Duration: {receipt.duration_ms ?? 'unknown'} ms</small>}
+    {receipt.tested_tree_sha256 && <small className="mono">Tree SHA-256: {receipt.tested_tree_sha256}</small>}
+  </div>
+}
+
+function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run }) {
+  const checks: { label: string; receipt: CheckReceipt }[] = [
+    ...(packet?.baseline_tests.map((receipt, index) => ({ label: `Named test ${index + 1}`, receipt })) ?? []),
+    ...(packet?.baseline_browser ? [{ label: 'Browser scenario', receipt: packet.baseline_browser }] : []),
+    ...(packet?.baseline_oracle ? [{ label: 'Independent oracle', receipt: packet.baseline_oracle }] : []),
+  ]
+  return <>
+    <div className="section-title"><ShieldCheck size={18} /><h3>Verification</h3></div>
+    <div className="verdict-line"><span>Reproduction</span><Status value={packet?.reproduction_status || 'NOT_RUN'} /></div>
+    <div className="verdict-line"><span>Code verification</span><Status value={packet?.verification_status || run.verdict} /></div>
+    <div className="verdict-line"><span>Media</span><Status value={packet?.media_status || run.media_status} /></div>
+    {checks.length > 0 && <div className="receipt-list">
+      <h4>Baseline receipts</h4>
+      {checks.map(check => <ReceiptRow key={check.label} {...check} />)}
+      <p className="muted">Scope: {packet?.qualification_scope?.replaceAll('_', ' ') || 'recorded checks only'}.
+        {packet?.autonomous_repair === false ? ' No autonomous repair is verified.' : ''}</p>
+    </div>}
+    {packet?.media_manifest_url ?
+      <Suspense fallback={<p className="muted">Loading player…</p>}>
+        <MediaPlayer manifestUrl={packet.media_manifest_url} markers={packet.evidence_timeline} />
+      </Suspense> :
+      <p className="muted">{checks.length ? 'No recording is available for this run.' :
+        'No test result, screenshot or recording is available yet.'}</p>}
+  </>
 }

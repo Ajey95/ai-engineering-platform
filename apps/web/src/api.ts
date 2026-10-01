@@ -34,6 +34,8 @@ export interface ModelEntry {
   provider: string
   model_id: string
   state: string
+  qualified: boolean
+  fixture_only: boolean
   context_limit: number | null
   output_limit: number | null
 }
@@ -57,14 +59,27 @@ export interface ReviewPacket {
   base_commit: string
   verification_status: string
   reproduction_status: string
+  qualification_scope?: string
+  autonomous_repair?: boolean
   media_status: string
   limitations: string[]
   changed_files: string[]
-  baseline_tests: unknown[]
-  patched_tests: unknown[]
+  baseline_tests: CheckReceipt[]
+  baseline_browser?: CheckReceipt | null
+  baseline_oracle?: CheckReceipt | null
+  patched_tests: CheckReceipt[]
   browser_evidence_refs: string[]
   media_manifest_url?: string | null
   evidence_timeline?: { at_seconds: number; label: string; screenshot_url?: string }[]
+}
+
+export interface CheckReceipt {
+  status: string
+  command?: string[]
+  exit_code?: number | null
+  duration_ms?: number
+  tested_tree_sha256?: string
+  oracle_sha256?: string
 }
 
 export class ApiError extends Error {
