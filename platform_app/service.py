@@ -135,6 +135,16 @@ def admit_run(
             "MODEL_UNAVAILABLE", "Selected model has unverified limits or pricing", 409
         )
     project = require_project(db, tenant_id, task.project_id)
+    capabilities = model.capabilities or {}
+    live_qualified = bool(model.validated_at and capabilities.get("live_qualified"))
+    fixture_only = (
+        settings().environment == "development"
+        and body.reproduction.get("fixture_case_id") == "form-submit-001"
+        and project.environment_manifest.get("case_id") == "form-submit-001"
+        and capabilities.get("database_fixture_only") is True
+    )
+    if not live_qualified and not fixture_only:
+        raise ServiceError("MODEL_UNAVAILABLE", "Selected model is not live qualified", 409)
     if not project.repository_url or not project.test_url or not project.environment_manifest:
         raise ServiceError("ENVIRONMENT_UNAVAILABLE", "Project setup is incomplete", 409)
     policy = {

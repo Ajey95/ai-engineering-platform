@@ -30,7 +30,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory.
 - `apps/web`: React screens reading real API data; no fabricated run success.
-- `tests/`: 35 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 42 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -48,8 +48,8 @@ deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener, but
 the project development container runs on a separate WSL Docker Engine.
-The admitted worker verification produced run `0fb81aac-38b5-44dc-89b6-8623c9a43a71`
-at pinned commit `7b902c1`: outbox delivered, three receipt statuses
+The admitted worker verification produced run `b233632a-984e-4561-b3a7-058b2803f7be`
+at pinned commit `16ba81e`: outbox delivered, three receipt statuses
 PASS/FAIL/FAIL, packet reproduction REPRODUCED, run verdict INCONCLUSIVE,
 and `autonomous_repair=false`. The oracle SHA-256 is recorded in its receipt.
 This was a disposable local database with a database-only model fixture.
@@ -63,7 +63,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | ID | Status | Evidence or remaining requirement |
 |---|---|---|
 | FR-MOD-01 | Partial | Native three-provider HTTP adapters and simulated-response tests; no live conformance. |
-| FR-MOD-02 | Partial | Registry fields exist; qualification, revision probes and full metadata missing. |
+| FR-MOD-02 | Partial | Admission requires a live qualification marker plus validation time or a scoped development fixture flag; live qualification workflow, revision probes and full metadata missing. |
 | FR-MOD-03 | Partial | Non-streaming continuation and usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
 | FR-MOD-05 | Missing | Qualified automatic routing absent. |
@@ -92,7 +92,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; recording disabled when masks are requested, deletion lifecycle missing. |
-| FR-REP-01 | Partial | Run packet includes persisted baseline receipts and labels autonomous repair false; no patch evidence. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline receipts and labels autonomous repair false; bounded patch schema and candidate copier exist but are not wired to the worker. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline receipts are wired to admitted synthetic runs; candidate verification absent. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Missing | Bound action approval and draft PR reconciliation absent. |

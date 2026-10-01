@@ -48,7 +48,9 @@ def main() -> int:
         migration = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             env={**os.environ, "AIP_DATABASE_URL": url},
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if migration.returncode:
             raise RuntimeError(f"Migration failed: {migration.stderr[-1000:]}")
@@ -56,48 +58,78 @@ def main() -> int:
         with Session(engine) as session:
             session.add(Tenant(id="fixture-tenant", name="PostgreSQL fixture"))
             session.flush()
-            session.add(Project(
-                id="fixture-project", tenant_id="fixture-tenant", name="Fixture",
-                repository_url="https://example.test/repo.git",
-                test_url="http://fixture.test",
-                environment_manifest={"named_tests": {"unit": ["pytest", "-q"]}},
-            ))
+            session.add(
+                Project(
+                    id="fixture-project",
+                    tenant_id="fixture-tenant",
+                    name="Fixture",
+                    repository_url="https://example.test/repo.git",
+                    test_url="http://fixture.test",
+                    environment_manifest={
+                        "case_id": "form-submit-001",
+                        "named_tests": {"unit": ["pytest", "-q"]},
+                    },
+                )
+            )
             session.flush()
-            session.add_all([
-                Task(
-                    id="fixture-task", tenant_id="fixture-tenant",
-                    project_id="fixture-project", report="Form returns 500 on submit",
-                    expected_behavior="Created", actual_behavior="500", created_by="fixture",
-                ),
-                ModelEntry(
-                    id="database-fixture-model", provider="openai", model_id="fixture-only",
-                    registry_revision="fixture", state="enabled", context_limit=32000,
-                    output_limit=4000, price_revision="fixture",
-                    price_per_m_input=Decimal("1"), price_per_m_output=Decimal("2"),
-                ),
-            ])
+            session.add_all(
+                [
+                    Task(
+                        id="fixture-task",
+                        tenant_id="fixture-tenant",
+                        project_id="fixture-project",
+                        report="Form returns 500 on submit",
+                        expected_behavior="Created",
+                        actual_behavior="500",
+                        created_by="fixture",
+                    ),
+                    ModelEntry(
+                        id="database-fixture-model",
+                        provider="openai",
+                        model_id="fixture-only",
+                        registry_revision="fixture",
+                        state="enabled",
+                        context_limit=32000,
+                        capabilities={"database_fixture_only": True},
+                        output_limit=4000,
+                        price_revision="fixture",
+                        price_per_m_input=Decimal("1"),
+                        price_per_m_output=Decimal("2"),
+                    ),
+                ]
+            )
             session.commit()
 
         barrier = Barrier(2)
-        body = RunCreate(base_commit="a" * 40, selected_model_entry="database-fixture-model")
+        body = RunCreate(
+            base_commit="a" * 40,
+            selected_model_entry="database-fixture-model",
+            reproduction={"fixture_case_id": "form-submit-001"},
+        )
 
         def admit_once() -> str:
             barrier.wait(timeout=10)
             with Session(engine) as session:
                 try:
                     run = admit_run(
-                        session, "fixture-tenant", "fixture", "fixture-task",
-                        "concurrent-fixture-key", body,
+                        session,
+                        "fixture-tenant",
+                        "fixture",
+                        "fixture-task",
+                        "concurrent-fixture-key",
+                        body,
                     )
                     session.commit()
                     return run.id
                 except IntegrityError:
                     session.rollback()
-                    existing = session.scalar(select(Run).where(
-                        Run.tenant_id == "fixture-tenant",
-                        Run.created_by == "fixture",
-                        Run.idempotency_key == "concurrent-fixture-key",
-                    ))
+                    existing = session.scalar(
+                        select(Run).where(
+                            Run.tenant_id == "fixture-tenant",
+                            Run.created_by == "fixture",
+                            Run.idempotency_key == "concurrent-fixture-key",
+                        )
+                    )
                     if existing is None:
                         raise
                     return existing.id

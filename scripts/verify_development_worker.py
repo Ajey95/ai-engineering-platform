@@ -62,6 +62,7 @@ def main() -> int:
                 model_id="fixture-only",
                 registry_revision="fixture",
                 state="enabled",
+                capabilities={"database_fixture_only": True},
                 context_limit=32000,
                 output_limit=4000,
                 price_revision="fixture",

@@ -107,6 +107,9 @@ python -m scripts.verify_dev_container_security
 
 The admission verification creates and drops a unique test database. Its
 enabled model row is only a database fixture and never invokes a provider.
+General admission requires a model with a live qualification marker and
+validation time. The disposable fixture model is accepted only for the reviewed
+development case and project; this marker does not make the provider qualified.
 
 To exercise the admitted-run worker against the trusted synthetic baseline:
 

@@ -38,7 +38,10 @@ def db():
                     name="Fixture",
                     repository_url="https://example.test/repo.git",
                     test_url="http://fixture.test",
-                    environment_manifest={"named_tests": {"unit": ["pytest", "-q"]}},
+                    environment_manifest={
+                        "case_id": "form-submit-001",
+                        "named_tests": {"unit": ["pytest", "-q"]},
+                    },
                 ),
                 Task(
                     id="task-a",
@@ -55,6 +58,7 @@ def db():
                     model_id="fixture-model",
                     registry_revision="rev-1",
                     state="enabled",
+                    capabilities={"database_fixture_only": True},
                     context_limit=32000,
                     output_limit=4000,
                     price_revision="price-1",
@@ -69,7 +73,11 @@ def db():
 
 
 def run_body():
-    return RunCreate(base_commit="a" * 40, selected_model_entry="qualified-model")
+    return RunCreate(
+        base_commit="a" * 40,
+        selected_model_entry="qualified-model",
+        reproduction={"fixture_case_id": "form-submit-001"},
+    )
 
 
 def test_admission_is_atomic_and_idempotent(db):
@@ -97,6 +105,22 @@ def test_cross_tenant_task_is_opaque(db):
     with pytest.raises(ServiceError) as error:
         admit_run(db, "tenant-b", "bob", "task-a", "another-request-key", run_body())
     assert error.value.status == 404
+
+
+def test_enabled_unqualified_model_cannot_admit_general_run(db):
+    body = RunCreate(base_commit="a" * 40, selected_model_entry="qualified-model")
+    with pytest.raises(ServiceError) as error:
+        admit_run(db, "tenant-a", "alice", "task-a", "unqualified-key", body)
+    assert error.value.code == "MODEL_UNAVAILABLE"
+
+
+def test_fixture_model_cannot_admit_unrelated_project(db):
+    project = db.get(Project, "project-a")
+    project.environment_manifest = {"case_id": "another-case"}
+    db.commit()
+    with pytest.raises(ServiceError) as error:
+        admit_run(db, "tenant-a", "alice", "task-a", "unrelated-key", run_body())
+    assert error.value.code == "MODEL_UNAVAILABLE"
 
 
 def test_queued_cancellation_does_not_become_success(db):

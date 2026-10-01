@@ -116,3 +116,16 @@ matching persisted result files and output hashes on replay. Duplicate
 dispatches for closed runs are acknowledged. Fault-case tests cover unknown
 effects, missing artifacts and terminal duplicates; the real WSL container
 verification passed after the refactor. Hosted queue recovery remains untested.
+
+2026-10-02 patch and qualification boundary: `patch_workspace.py` now parses a
+strict JSON patch, allows only `server.py` in the reviewed fixture, rejects
+traversal/test changes/oversized content, copies the baseline to a separate
+candidate workspace, and computes a stable patch hash. It is not yet connected
+to a model call or the run verifier. Admission now refuses an enabled model
+without a live qualification marker and validation time, except for an
+explicitly scoped development fixture model and project. No live account is
+configured or qualified. `scripts.verify_postgres_admission` still observed
+one run/reservation/outbox/event under duplicate concurrent admission. The
+latest worker receipt is `artifacts/worker-verification/217505165bb9` at
+commit `16ba81e`; PASS/FAIL/FAIL baseline and INCONCLUSIVE run. Tests: 42 passed,
+1 Windows symlink skip; ruff clean.
