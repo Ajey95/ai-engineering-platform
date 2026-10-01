@@ -1,9 +1,18 @@
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from platform_app import dev_sandbox
 from platform_app.browser_runner import safe_url, same_origin
-from platform_app.dev_sandbox import SandboxError, docker_browser_command, prepare_workspace
+from platform_app.dev_sandbox import (
+    SandboxError,
+    docker_browser_command,
+    docker_verifier_command,
+    prepare_workspace,
+    run_browser_fixture,
+)
 
 
 def test_browser_navigation_stays_on_fixture_origin():
@@ -46,3 +55,57 @@ def test_dev_container_has_no_network_or_host_privileges(tmp_path: Path):
     assert "--read-only" in command
     assert "--privileged" not in command
     assert "/var/run/docker.sock" not in " ".join(command)
+    if os.name == "nt":
+        wsl_command = docker_browser_command(
+            "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
+            "aip-dev-test", runtime="wsl",
+        )
+        assert wsl_command[:7] == [
+            "wsl", "-d", "Ubuntu-24.04", "-u", "root", "--", "docker"
+        ]
+        assert "/mnt/" in " ".join(wsl_command)
+
+
+def test_hidden_oracle_is_only_mounted_for_oracle_verification(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    oracle = tmp_path / "hidden.py"
+    oracle.write_text("assert True")
+    named = docker_verifier_command(
+        "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
+        "aip-dev-named", "named",
+    )
+    hidden = docker_verifier_command(
+        "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
+        "aip-dev-oracle", "oracle", oracle=oracle,
+    )
+    assert "/opt/oracle.py" not in " ".join(named)
+    assert "/opt/oracle.py" in " ".join(hidden)
+    with pytest.raises(ValueError):
+        docker_verifier_command(
+            "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
+            "aip-dev-invalid", "named", oracle=oracle,
+        )
+
+
+def test_failed_container_cannot_reuse_previous_evidence(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "result.json").write_text('{"status":"FAILED"}')
+    monkeypatch.setattr(
+        dev_sandbox.subprocess, "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "startup failed"),
+    )
+    with pytest.raises(SandboxError, match="did not produce evidence"):
+        run_browser_fixture(
+            "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
+            "aip-dev-stale-test",
+        )

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
-from platform_app.db import Base, new_id, utcnow
+from platform_app.model_base import Base, new_id, utcnow
 
 JsonType = JSON().with_variant(JSONB, "postgresql")
 

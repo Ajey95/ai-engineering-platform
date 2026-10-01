@@ -1,23 +1,12 @@
 from collections.abc import Generator
-from datetime import UTC, datetime
-from uuid import uuid4
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from platform_app.config import settings
+from platform_app.model_base import Base, new_id, utcnow
 
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def new_id() -> str:
-    return str(uuid4())
-
-
-class Base(DeclarativeBase):
-    pass
+__all__ = ["Base", "new_id", "utcnow", "engine", "SessionLocal", "session_scope"]
 
 
 engine = create_engine(settings().database_url, pool_pre_ping=True)

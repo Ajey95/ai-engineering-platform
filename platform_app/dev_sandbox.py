@@ -21,6 +21,28 @@ class SandboxError(Exception):
 SKIP_DIRS = {".git", ".pytest_cache", "__pycache__", "node_modules", ".venv"}
 
 
+def _docker_prefix(runtime: str, wsl_distro: str) -> list[str]:
+    if runtime == "native":
+        return ["docker"]
+    if runtime == "wsl" and wsl_distro and all(
+        character.isalnum() or character in "-_." for character in wsl_distro
+    ):
+        return ["wsl", "-d", wsl_distro, "-u", "root", "--", "docker"]
+    raise ValueError("Unsupported Docker runtime")
+
+
+def _mount_source(path: Path, runtime: str) -> str:
+    resolved = path.resolve(strict=True)
+    if runtime == "native":
+        return str(resolved)
+    if os.name != "nt":
+        return str(resolved)
+    drive = resolved.drive.rstrip(":").lower()
+    if len(drive) != 1 or not drive.isalpha():
+        raise ValueError("WSL mount source must be on a local drive")
+    return f"/mnt/{drive}/{resolved.relative_to(resolved.anchor).as_posix()}"
+
+
 def prepare_workspace(source: Path, destination: Path) -> None:
     """Copy only ordinary files and directories; reject links and reparse points."""
     source = source.resolve(strict=True)
@@ -47,51 +69,127 @@ def prepare_workspace(source: Path, destination: Path) -> None:
             shutil.copy2(selected, target_dir / name)
 
 
-def docker_browser_command(
-    image: str, workspace: Path, manifest: Path, artifacts: Path, name: str
+def _container_base_command(
+    image: str, workspace: Path, manifest: Path, artifacts: Path, name: str,
+    runtime: str, wsl_distro: str, oracle: Path | None = None,
 ) -> list[str]:
     if not name.startswith("aip-dev-") or not all(c.isalnum() or c in "-_" for c in name):
         raise ValueError("Invalid development sandbox name")
-    for path in (workspace, manifest, artifacts):
+    for path in (workspace, manifest, artifacts, oracle):
+        if path is None:
+            continue
         if not path.resolve(strict=True).exists():
             raise ValueError("Sandbox inputs must exist")
-    return [
-        "docker", "run", "--rm", "--init", "--name", name,
+    command = [
+        *_docker_prefix(runtime, wsl_distro), "run", "--rm", "--init", "--name", name,
         "--network", "none", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--pids-limit", "256",
         "--cpus", "2", "--memory", "4g", "--shm-size", "1g",
         "--tmpfs", "/tmp:rw,nosuid,size=1073741824",
-        "--mount", f"type=bind,src={workspace.resolve()},dst=/workspace",
-        "--mount", f"type=bind,src={manifest.resolve()},dst=/opt/platform/manifest.json,readonly",
-        "--mount", f"type=bind,src={artifacts.resolve()},dst=/artifacts",
-        image, "python", "/opt/platform/browser_runner.py",
+        "--tmpfs", "/home/pwuser:rw,nosuid,size=67108864,uid=10001,gid=10001",
+        "--mount", f"type=bind,src={_mount_source(workspace, runtime)},dst=/workspace,readonly",
+        "--mount", (
+            f"type=bind,src={_mount_source(manifest, runtime)},"
+            "dst=/opt/platform/manifest.json,readonly"
+        ),
+        "--mount", f"type=bind,src={_mount_source(artifacts, runtime)},dst=/artifacts",
+    ]
+    if oracle is not None:
+        command.extend([
+            "--mount", f"type=bind,src={_mount_source(oracle, runtime)},dst=/opt/oracle.py,readonly"
+        ])
+    return [*command, image]
+
+
+def docker_browser_command(
+    image: str, workspace: Path, manifest: Path, artifacts: Path, name: str,
+    runtime: str = "native", wsl_distro: str = "Ubuntu-24.04",
+) -> list[str]:
+    return [
+        *_container_base_command(image, workspace, manifest, artifacts, name, runtime, wsl_distro),
+        "python", "/opt/platform/browser_runner.py",
         "--manifest", "/opt/platform/manifest.json",
         "--workspace", "/workspace", "--artifacts", "/artifacts",
     ]
 
 
-def run_browser_fixture(
+def docker_verifier_command(
     image: str, workspace: Path, manifest: Path, artifacts: Path, name: str,
-    timeout_seconds: int = 180,
+    mode: str, test_name: str = "baseline", oracle: Path | None = None,
+    runtime: str = "native", wsl_distro: str = "Ubuntu-24.04",
+) -> list[str]:
+    if mode not in {"named", "oracle"} or (mode == "oracle") != (oracle is not None):
+        raise ValueError("Oracle mount must match verifier mode")
+    command = [
+        *_container_base_command(
+            image, workspace, manifest, artifacts, name, runtime, wsl_distro, oracle
+        ),
+        "python", "/opt/platform/container_verifier.py",
+        "--mode", mode, "--manifest", "/opt/platform/manifest.json",
+        "--workspace", "/workspace", "--artifacts", "/artifacts",
+    ]
+    if mode == "named":
+        command.extend(["--name", test_name])
+    else:
+        command.extend(["--oracle", "/opt/oracle.py"])
+    return command
+
+
+def _run_container(
+    command: list[str], artifacts: Path, result_name: str, name: str,
+    runtime: str, wsl_distro: str, timeout_seconds: int,
 ) -> dict:
-    artifacts.mkdir(parents=True, exist_ok=True)
-    command = docker_browser_command(image, workspace, manifest, artifacts, name)
+    result_path = artifacts / result_name
+    # A retry must never accept a receipt left by a previous container.
+    result_path.unlink(missing_ok=True)
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
     except subprocess.TimeoutExpired as error:
         # Docker --rm does not remove a container until its process exits.
-        subprocess.run(["docker", "kill", name], capture_output=True, timeout=15)
+        subprocess.run(
+            [*_docker_prefix(runtime, wsl_distro), "kill", name],
+            capture_output=True, timeout=15,
+        )
         raise SandboxError("Fixture exceeded its runtime limit") from error
-    result_path = artifacts / "result.json"
     if not result_path.is_file():
         raise SandboxError(
-            f"Fixture did not produce browser evidence (exit {completed.returncode}): "
+            f"Fixture did not produce evidence (exit {completed.returncode}): "
             f"{completed.stderr[-500:]}"
         )
     result = json.loads(result_path.read_text(encoding="utf-8"))
-    if result["status"] == "PASSED" and completed.returncode != 0:
+    if (result["status"] == "PASSED") != (completed.returncode == 0):
         raise SandboxError("Runner exit status conflicts with its result artifact")
     return result
+
+
+def run_browser_fixture(
+    image: str, workspace: Path, manifest: Path, artifacts: Path, name: str,
+    timeout_seconds: int = 180,
+    runtime: str = "native", wsl_distro: str = "Ubuntu-24.04",
+) -> dict:
+    artifacts.mkdir(parents=True, exist_ok=True)
+    command = docker_browser_command(
+        image, workspace, manifest, artifacts, name, runtime, wsl_distro
+    )
+    return _run_container(
+        command, artifacts, "result.json", name, runtime, wsl_distro, timeout_seconds
+    )
+
+
+def run_verifier_fixture(
+    image: str, workspace: Path, manifest: Path, artifacts: Path, name: str,
+    mode: str, test_name: str = "baseline", oracle: Path | None = None,
+    timeout_seconds: int = 180,
+    runtime: str = "native", wsl_distro: str = "Ubuntu-24.04",
+) -> dict:
+    artifacts.mkdir(parents=True, exist_ok=True)
+    command = docker_verifier_command(
+        image, workspace, manifest, artifacts, name, mode, test_name, oracle, runtime, wsl_distro
+    )
+    result_name = f"test-{test_name}.json" if mode == "named" else "oracle.json"
+    return _run_container(
+        command, artifacts, result_name, name, runtime, wsl_distro, timeout_seconds
+    )
 
 
 def main() -> int:
@@ -101,9 +199,12 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--name", required=True)
+    parser.add_argument("--runtime", choices=["native", "wsl"], default="native")
+    parser.add_argument("--wsl-distro", default="Ubuntu-24.04")
     args = parser.parse_args()
     result = run_browser_fixture(
-        args.image, args.workspace, args.manifest, args.artifacts, args.name
+        args.image, args.workspace, args.manifest, args.artifacts, args.name,
+        runtime=args.runtime, wsl_distro=args.wsl_distro,
     )
     print(json.dumps({"case_id": result["case_id"], "status": result["status"]}))
     return 0 if result["status"] == "PASSED" else 1

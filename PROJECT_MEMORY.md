@@ -50,12 +50,44 @@ directory was made at
 `C:\Users\AJEYA\AppData\Local\Docker\run.stale.20261002013922`, but the
 engine recreated the failure, so Docker Desktop processes were stopped.
 The local API and Vite development server were left running on
-`127.0.0.1:8098` and `127.0.0.1:5173` to show the Evaluations page. A thread
-heartbeat named `continue-ai-platform-implementation` resumes work every two
-hours and should use this file and `IMPLEMENTATION_STATUS.md`.
+`127.0.0.1:8098` and `127.0.0.1:5173` to show the Evaluations page.
 
-Important next step: make the browser/test evidence path run in a working
-development container, then wire a budgeted agent repair loop and independent
-verifier to it. Never call the manually prepared candidate an agent repair.
+2026-10-02 Docker continuation: the user explicitly said not to schedule. The
+thread heartbeat `continue-ai-platform-implementation` was deleted. Docker
+Desktop 4.67.0 still crashes at the `dockerInference` AF_UNIX reparse point;
+renaming the transient run directory and disabling Docker AI did not fix it.
+The official Docker Engine 29.8.2 was installed in the existing Ubuntu-24.04
+WSL distribution with systemd. `docker info` confirms a Linux overlayfs
+server. The development image `aip-dev-sandbox:0.1.0` built from Python slim
+with Playwright Chromium. The adapter maps Windows paths to WSL bind mounts,
+runs as a non-root image user with no network, read-only root/workspace, no
+capabilities, no-new-privileges, CPU/memory/PID limits and a timeout kill.
+The controlled baseline browser run recorded POST 500 and failed; the manual
+candidate recorded POST 201 and passed. The complete evaluator then ran named
+tests, browser actions and hidden oracle in separate containers for both sides.
+Latest packet `artifacts/evaluation-v2/review-packet.json` has scope
+`synthetic_container_fixture`, baseline PASS/FAIL/FAIL, candidate PASS/PASS/PASS,
+and both HLS media READY. The candidate remains `manual`, not an agent repair.
+The hidden oracle is mounted only into its verifier container. Docker Desktop
+itself remains broken; the WSL Engine is the working project runtime.
+The live container security probe passed seven checks: non-root, no daemon
+socket, no host drive mount, read-only workspace, metadata network denied,
+zero effective capabilities and no-new-privileges. `python -m
+scripts.verify_dev_container_security` reproduces it. WSL systemd services
+do not keep the distro alive when no user process is attached; a hidden
+`wsl.exe -d Ubuntu-24.04 -u root -- sleep infinity` process (PID 60188 at this
+milestone) keeps this development Engine and Compose services available. It is
+not a scheduled automation.
+
+PostgreSQL 17.11 ran healthy in Compose. Alembic initial revision
+`6185524d46e8` was generated and applied; `alembic check` found no pending
+schema operations. A disposable PostgreSQL database concurrency test returned
+one run, one budget reservation, one outbox event, and one run event for two
+simultaneous requests with the same key. It created and dropped its own
+database; the enabled model was a database fixture only. No live model call.
+
+Important next step: wire a budgeted agent repair loop, durable worker dispatch
+and independent verifier receipts to real runs. Never call the manually
+prepared candidate an agent repair.
 Do not mark an adapter qualified without live account conformance. Keep
 secrets out of this file and the repository.
