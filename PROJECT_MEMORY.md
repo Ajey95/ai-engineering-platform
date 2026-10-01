@@ -45,7 +45,14 @@ exposes this only on loopback with no dev token. The React Evaluations page
 played both HLS recordings in Chromium: 2 master playlists, 5 media segments,
 2 decoded videos and no page errors. Docker Desktop's stale `dockerInference`
 reparse point could not be renamed with PowerShell; the engine remains
-unverified after restart.
+unverified after restart. A same-directory backup of Docker's transient run
+directory was made at
+`C:\Users\AJEYA\AppData\Local\Docker\run.stale.20261002013922`, but the
+engine recreated the failure, so Docker Desktop processes were stopped.
+The local API and Vite development server were left running on
+`127.0.0.1:8098` and `127.0.0.1:5173` to show the Evaluations page. A thread
+heartbeat named `continue-ai-platform-implementation` resumes work every two
+hours and should use this file and `IMPLEMENTATION_STATUS.md`.
 
 Important next step: make the browser/test evidence path run in a working
 development container, then wire a budgeted agent repair loop and independent

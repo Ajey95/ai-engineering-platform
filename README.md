@@ -67,10 +67,13 @@ Run checks:
 ```powershell
 .venv\Scripts\python.exe -m pytest -q
 .venv\Scripts\ruff.exe check platform_app tests
-.venv\Scripts\python.exe scripts\verify_dev_evaluation_ui.py
 Set-Location apps\web
 npm run build
 ```
+
+With the API, frontend and local evaluation packet available, run
+`.venv\Scripts\python.exe scripts\verify_dev_evaluation_ui.py` from the
+repository root to check browser playback on desktop and mobile.
 
 ## Security boundary
 

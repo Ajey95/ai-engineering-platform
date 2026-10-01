@@ -34,7 +34,8 @@ scenario with POST 201 and passes 2/2 hidden checks. Before and after WebM
 recordings were encoded to local HLS. The development Evaluations view played
 both videos in a real browser: two master playlists, five segment responses,
 decoded video in both players and no page error. These are local fixture proofs,
-not an autonomous repair. No live model call, container or VM execution, hosted
+with no horizontal overflow at a 390-pixel mobile viewport. These are local
+fixture proofs, not an autonomous repair. No live model call, container or VM execution, hosted
 deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener.
