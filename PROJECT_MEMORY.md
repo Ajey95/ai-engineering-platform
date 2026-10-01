@@ -182,3 +182,13 @@ a PR. The Runs and Review screens show the decision controls and outcome.
 Cancellation of a review-ready run now also preserves the verified result.
 Tests 51 passed, 1 Windows symlink skip; frontend build passed; ruff import
 order was fixed after the first check and must be rechecked before commit.
+
+2026-10-02 provider accounting hardening: native adapters now reject missing
+required usage fields instead of converting them to zero. Anthropic input
+totals include cache read and creation categories; Google output totals include
+thinking tokens and any larger total-minus-prompt delta. The model budget
+settlement refuses cached usage until cache pricing is explicitly qualified,
+leaving the effect reservation unresolved rather than reporting a false
+actual cost. Official provider documentation was checked for those usage
+semantics. Python tests 53 passed, 1 Windows symlink skip; ruff clean. No
+live provider call or account qualification occurred.

@@ -26,8 +26,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
   accounts have not been live qualified.
 - `platform_app/tool_broker.py`: completed and schema validated tool calls only.
 - `platform_app/providers.py`: native HTTP request and continuation adapters for
-  OpenAI, Anthropic and Google, tested against controlled API responses; no
-  provider account has been used or qualified.
+  OpenAI, Anthropic and Google, tested against controlled API responses;
+  missing token usage fails closed. Anthropic cached token categories are
+  included in input accounting and Google thinking tokens in output accounting.
+  No provider account has been used or qualified.
 - `platform_app/browser_runner.py`, `verifier.py`: controlled fixture browser
   evidence and exact-tree named test receipts. The Docker development adapter
   ran all six baseline/candidate checks using Docker Engine in Ubuntu WSL;
@@ -86,7 +88,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 |---|---|---|
 | FR-MOD-01 | Partial | Native three-provider HTTP adapters and simulated-response tests; no live conformance. |
 | FR-MOD-02 | Partial | Admission requires a live qualification marker plus validation time or a scoped development fixture flag; live qualification workflow, revision probes and full metadata missing. |
-| FR-MOD-03 | Partial | Non-streaming continuation and usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
+| FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
 | FR-MOD-05 | Missing | Qualified automatic routing absent. |
 | FR-MOD-06 | Missing | Authorized cross-provider failover absent. |
@@ -104,7 +106,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CTX-03 | Missing | Compaction and replay absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Missing | Large-output artifact excerpts and cycle pairing absent. |
-| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path; live account and outage reconciliation unverified. |
+| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path; missing usage and unqualified cache pricing fail closed. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |

@@ -21,6 +21,15 @@ class ProviderError(Exception):
     pass
 
 
+def _count(usage: dict, key: str, required: bool = False) -> int:
+    value = usage.get(key)
+    if value is None and not required:
+        return 0
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ProviderError(f"Provider usage field {key} is missing or invalid")
+    return value
+
+
 @dataclass(frozen=True)
 class ProviderTurn:
     provider: str
@@ -115,17 +124,23 @@ class OpenAIResponses:
             for item in output if item.get("type") == "message"
             for part in item.get("content", []) if part.get("type") == "output_text"
         )
-        usage = raw.get("usage") or {}
+        usage = raw.get("usage")
+        if not isinstance(usage, dict):
+            raise ProviderError("OpenAI usage is missing")
+        details = usage.get("output_tokens_details") or {}
+        input_details = usage.get("input_tokens_details") or {}
+        if not isinstance(details, dict) or not isinstance(input_details, dict):
+            raise ProviderError("OpenAI usage details are malformed")
         prior_input = input_items if isinstance(input_items, list) else [
             {"role": "user", "content": input_items}
         ]
         return ProviderTurn(
             self.provider, raw.get("model", model), text, calls,
             raw.get("status", "unknown"),
-            {"input_tokens": usage.get("input_tokens", 0),
-             "output_tokens": usage.get("output_tokens", 0),
-             "reasoning_tokens": (usage.get("output_tokens_details") or {}).get(
-                 "reasoning_tokens", 0)},
+            {"input_tokens": _count(usage, "input_tokens", required=True),
+             "output_tokens": _count(usage, "output_tokens", required=True),
+             "reasoning_tokens": _count(details, "reasoning_tokens"),
+             "cache_read_tokens": _count(input_details, "cached_tokens")},
             {"request_model": model, "input": prior_input, "output": output},
         )
 
@@ -178,14 +193,19 @@ class AnthropicMessages:
         )
         text = "\n".join(item.get("text", "") for item in content
                          if item.get("type") == "text")
-        usage = raw.get("usage") or {}
+        usage = raw.get("usage")
+        if not isinstance(usage, dict):
+            raise ProviderError("Anthropic usage is missing")
+        plain_input = _count(usage, "input_tokens", required=True)
+        cache_read = _count(usage, "cache_read_input_tokens")
+        cache_creation = _count(usage, "cache_creation_input_tokens")
         return ProviderTurn(
             self.provider, raw.get("model", model), text, calls,
             raw.get("stop_reason", "unknown"),
-            {"input_tokens": usage.get("input_tokens", 0),
-             "output_tokens": usage.get("output_tokens", 0),
-             "cache_read_tokens": usage.get("cache_read_input_tokens", 0),
-             "cache_creation_tokens": usage.get("cache_creation_input_tokens", 0)},
+            {"input_tokens": plain_input + cache_read + cache_creation,
+             "output_tokens": _count(usage, "output_tokens", required=True),
+             "cache_read_tokens": cache_read,
+             "cache_creation_tokens": cache_creation},
             {"request_model": model, "messages": messages, "content": content},
         )
 
@@ -255,15 +275,25 @@ class GeminiGenerateContent:
                     missing_ids.append(call_id)
                 raw_calls.append((call_id, call["name"], json.dumps(call.get("args") or {})))
         calls = _validated_calls(raw_calls, tools)
-        usage = raw.get("usageMetadata") or {}
+        usage = raw.get("usageMetadata")
+        if not isinstance(usage, dict):
+            raise ProviderError("Google usage is missing")
+        prompt_tokens = _count(usage, "promptTokenCount", required=True)
+        candidate_tokens = _count(usage, "candidatesTokenCount", required=True)
+        total_tokens = _count(usage, "totalTokenCount", required=True)
+        thought_tokens = _count(usage, "thoughtsTokenCount")
+        if total_tokens < prompt_tokens or total_tokens < prompt_tokens + candidate_tokens:
+            raise ProviderError("Google usage totals are inconsistent")
         return ProviderTurn(
             self.provider, model,
             "\n".join(part["text"] for part in parts if "text" in part), calls,
             candidate.get("finishReason", "unknown"),
-            {"input_tokens": usage.get("promptTokenCount", 0),
-             "output_tokens": usage.get("candidatesTokenCount", 0),
-             "reasoning_tokens": usage.get("thoughtsTokenCount", 0),
-             "total_tokens": usage.get("totalTokenCount", 0)},
+            {"input_tokens": prompt_tokens,
+             "output_tokens": max(candidate_tokens + thought_tokens,
+                                  total_tokens - prompt_tokens),
+             "reasoning_tokens": thought_tokens,
+             "cache_read_tokens": _count(usage, "cachedContentTokenCount"),
+             "total_tokens": total_tokens},
             {"request_model": model, "contents": contents,
              "model_content": model_content, "missing_ids": missing_ids},
         )

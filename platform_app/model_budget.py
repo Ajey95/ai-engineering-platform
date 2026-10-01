@@ -210,6 +210,10 @@ def settle_model_call(
         or outputs < 0
     ):
         raise ServiceError("USAGE_UNKNOWN", "Provider usage is missing or invalid", 409)
+    if usage.get("cache_read_tokens", 0) or usage.get("cache_creation_tokens", 0):
+        raise ServiceError(
+            "USAGE_PRICING_UNQUALIFIED", "Cached token pricing is not qualified", 409
+        )
     if len(output_sha256) != 64 or any(c not in "0123456789abcdef" for c in output_sha256):
         raise ServiceError("RECEIPT_INVALID", "Model output digest is invalid", 400)
     actual = _cost(inputs, outputs, _price(model))

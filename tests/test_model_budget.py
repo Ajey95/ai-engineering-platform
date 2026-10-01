@@ -128,6 +128,13 @@ def test_unqualified_model_and_uncertain_usage_fail_closed(scope):
             "private/model-1.json",
         )
     assert error.value.code == "USAGE_UNKNOWN"
+    with pytest.raises(ServiceError) as cached:
+        settle_model_call(
+            db, run, "worker-one", fence, action, reservation, model,
+            {"input_tokens": 100, "output_tokens": 10, "cache_creation_tokens": 50},
+            hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+        )
+    assert cached.value.code == "USAGE_PRICING_UNQUALIFIED"
     assert db.scalar(select(ToolAction.status)) == "INTENDED"
 
 

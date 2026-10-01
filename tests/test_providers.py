@@ -1,8 +1,14 @@
 import json
 
 import httpx
+import pytest
 
-from platform_app.providers import AnthropicMessages, GeminiGenerateContent, OpenAIResponses
+from platform_app.providers import (
+    AnthropicMessages,
+    GeminiGenerateContent,
+    OpenAIResponses,
+    ProviderError,
+)
 from platform_app.tool_broker import ToolDefinition
 
 TOOL = ToolDefinition(
@@ -29,7 +35,8 @@ def test_openai_preserves_reasoning_and_call_ids_for_stateless_continuation():
          "output": [{"type": "reasoning", "id": "rs_1", "summary": []},
                     {"type": "function_call", "call_id": "call_1", "name": "inspect",
                      "arguments": '{"path":"server.py"}'}]},
-        {"model": "model-a", "status": "completed", "usage": {},
+        {"model": "model-a", "status": "completed", "usage": {
+            "input_tokens": 15, "output_tokens": 4},
          "output": [{"type": "message", "content": [
              {"type": "output_text", "text": "Found bug"}]}]},
     ], requests)
@@ -52,9 +59,11 @@ def test_anthropic_keeps_thinking_block_before_tool_result():
     tool = {"type": "tool_use", "id": "toolu_1", "name": "inspect",
             "input": {"path": "server.py"}}
     client = client_with_responses([
-        {"model": "claude-test", "stop_reason": "tool_use", "usage": {},
+        {"model": "claude-test", "stop_reason": "tool_use", "usage": {
+            "input_tokens": 10, "output_tokens": 5},
          "content": [thinking, tool]},
-        {"model": "claude-test", "stop_reason": "end_turn", "usage": {},
+        {"model": "claude-test", "stop_reason": "end_turn", "usage": {
+            "input_tokens": 15, "output_tokens": 4},
          "content": [{"type": "text", "text": "Found bug"}]},
     ], requests)
     adapter = AnthropicMessages("test-only", client)
@@ -72,13 +81,34 @@ def test_gemini_keeps_thought_signature_and_function_id():
                           "args": {"path": "server.py"}}, "thoughtSignature": "opaque"}]}
     client = client_with_responses([
         {"candidates": [{"content": model_content, "finishReason": "STOP"}],
-         "usageMetadata": {"promptTokenCount": 10}},
+         "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 4,
+                           "thoughtsTokenCount": 6, "totalTokenCount": 20}},
         {"candidates": [{"content": {"role": "model", "parts": [
-            {"text": "Found bug"}]}, "finishReason": "STOP"}], "usageMetadata": {}},
+            {"text": "Found bug"}]}, "finishReason": "STOP"}], "usageMetadata": {
+                "promptTokenCount": 14, "candidatesTokenCount": 3,
+                "totalTokenCount": 17}},
     ], requests)
     adapter = GeminiGenerateContent("test-only", client)
     first = adapter.generate("gemini-test", "Inspect", "Find bug", {"inspect": TOOL}, 100)
+    assert first.usage["output_tokens"] == 10
     adapter.generate("gemini-test", "Inspect", "Find bug", {"inspect": TOOL}, 100,
                      first, {"call_1": {"status": "ok"}})
     assert requests[1]["contents"][1] == model_content
     assert requests[1]["contents"][2]["parts"][0]["functionResponse"]["id"] == "call_1"
+
+
+def test_provider_missing_usage_is_not_treated_as_a_free_call():
+    missing = client_with_responses([{"model": "model-a", "output": [], "usage": {}}], [])
+    with pytest.raises(ProviderError, match="input_tokens"):
+        OpenAIResponses("test-only", missing).generate("model-a", "i", "p", {}, 10)
+
+
+def test_anthropic_cache_categories_are_included_in_total_input():
+    client = client_with_responses([{
+        "model": "claude-test", "stop_reason": "end_turn", "content": [],
+        "usage": {"input_tokens": 3, "cache_read_input_tokens": 10,
+                  "cache_creation_input_tokens": 5, "output_tokens": 2},
+    }], [])
+    turn = AnthropicMessages("test-only", client).generate("claude-test", "i", "p", {}, 10)
+    assert turn.usage["input_tokens"] == 18
+    assert turn.usage["cache_creation_tokens"] == 5
