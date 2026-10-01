@@ -1,0 +1,74 @@
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
+from platform_app.db import Base
+from platform_app.models import Run, Tenant
+from platform_app.run_ledger import (
+    begin_tool_action,
+    claim_run,
+    complete_tool_action,
+    transition,
+)
+from platform_app.service import ServiceError
+
+
+@pytest.fixture
+def db():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Tenant(id="tenant-a", name="A"))
+        run = Run(
+            id="run-a",
+            tenant_id="tenant-a",
+            task_id="task-a",
+            project_id="project-a",
+            created_by="alice",
+            idempotency_key="key-a",
+            request_hash="hash",
+            base_commit="a" * 40,
+            model_entry_id="model-a",
+            state="QUEUED",
+            config_snapshot={"policy_version": "1.0"},
+        )
+        session.add(run)
+        # This fixture tests lease behavior; SQLite does not enforce these foreign keys.
+        session.commit()
+        yield session
+    engine.dispose()
+
+
+def test_fence_blocks_stale_worker_and_effect_replay(db):
+    run, fence = claim_run(db, "run-a", "worker-one")
+    db.commit()
+    transition(db, run, "worker-one", fence, "PREPARING")
+    db.commit()
+    action = begin_tool_action(
+        db, run, "worker-one", fence, "step-1", "named-test", {"target_name": "unit"}, True
+    )
+    db.commit()
+    with pytest.raises(ServiceError) as unknown:
+        begin_tool_action(
+            db, run, "worker-one", fence, "step-1", "named-test", {"target_name": "unit"}, True
+        )
+    assert unknown.value.code == "EFFECT_OUTCOME_UNKNOWN"
+    complete_tool_action(db, run, "worker-one", fence, action, {"status": "failed", "exit_code": 1})
+    db.commit()
+    repeat = begin_tool_action(
+        db, run, "worker-one", fence, "step-1", "named-test", {"target_name": "unit"}, True
+    )
+    assert repeat.id == action.id
+    with pytest.raises(ServiceError) as stale:
+        transition(db, run, "old-worker", fence, "REPRODUCING")
+    assert stale.value.code == "LEASE_LOST"
+
+
+def test_invalid_state_jump_is_rejected(db):
+    run, fence = claim_run(db, "run-a", "worker-one")
+    with pytest.raises(ServiceError) as error:
+        transition(db, run, "worker-one", fence, "REVIEW_READY", "PASSED")
+    assert error.value.code == "INVALID_TRANSITION"

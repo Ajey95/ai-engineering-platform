@@ -1,0 +1,84 @@
+import json
+
+import httpx
+
+from platform_app.providers import AnthropicMessages, GeminiGenerateContent, OpenAIResponses
+from platform_app.tool_broker import ToolDefinition
+
+TOOL = ToolDefinition(
+    name="inspect", permission="repo.read", effect_class="read",
+    source_version="1.0",
+    input_schema={"type": "object", "properties": {"path": {"type": "string"}},
+                  "required": ["path"], "additionalProperties": False},
+)
+
+
+def client_with_responses(responses, requests):
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json=responses.pop(0))
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_openai_preserves_reasoning_and_call_ids_for_stateless_continuation():
+    requests = []
+    client = client_with_responses([
+        {"model": "model-a", "status": "completed", "usage": {"input_tokens": 10,
+         "output_tokens": 8, "output_tokens_details": {"reasoning_tokens": 3}},
+         "output": [{"type": "reasoning", "id": "rs_1", "summary": []},
+                    {"type": "function_call", "call_id": "call_1", "name": "inspect",
+                     "arguments": '{"path":"server.py"}'}]},
+        {"model": "model-a", "status": "completed", "usage": {},
+         "output": [{"type": "message", "content": [
+             {"type": "output_text", "text": "Found bug"}]}]},
+    ], requests)
+    adapter = OpenAIResponses("test-only", client)
+    first = adapter.generate("model-a", "Inspect", "Find bug", {"inspect": TOOL}, 100)
+    second = adapter.generate(
+        "model-a", "Inspect", "Find bug", {"inspect": TOOL}, 100,
+        first, {"call_1": {"status": "ok"}},
+    )
+    assert first.calls[0].arguments == {"path": "server.py"}
+    assert first.usage["reasoning_tokens"] == 3
+    assert requests[1]["input"][1]["type"] == "reasoning"
+    assert requests[1]["input"][-1]["call_id"] == "call_1"
+    assert second.text == "Found bug"
+
+
+def test_anthropic_keeps_thinking_block_before_tool_result():
+    requests = []
+    thinking = {"type": "thinking", "thinking": "protected", "signature": "sig"}
+    tool = {"type": "tool_use", "id": "toolu_1", "name": "inspect",
+            "input": {"path": "server.py"}}
+    client = client_with_responses([
+        {"model": "claude-test", "stop_reason": "tool_use", "usage": {},
+         "content": [thinking, tool]},
+        {"model": "claude-test", "stop_reason": "end_turn", "usage": {},
+         "content": [{"type": "text", "text": "Found bug"}]},
+    ], requests)
+    adapter = AnthropicMessages("test-only", client)
+    first = adapter.generate("claude-test", "Inspect", "Find bug", {"inspect": TOOL}, 100)
+    adapter.generate("claude-test", "Inspect", "Find bug", {"inspect": TOOL}, 100,
+                     first, {"toolu_1": {"status": "ok"}})
+    assert requests[1]["messages"][1]["content"] == [thinking, tool]
+    assert requests[1]["messages"][2]["content"][0]["tool_use_id"] == "toolu_1"
+
+
+def test_gemini_keeps_thought_signature_and_function_id():
+    requests = []
+    model_content = {"role": "model", "parts": [
+        {"functionCall": {"id": "call_1", "name": "inspect",
+                          "args": {"path": "server.py"}}, "thoughtSignature": "opaque"}]}
+    client = client_with_responses([
+        {"candidates": [{"content": model_content, "finishReason": "STOP"}],
+         "usageMetadata": {"promptTokenCount": 10}},
+        {"candidates": [{"content": {"role": "model", "parts": [
+            {"text": "Found bug"}]}, "finishReason": "STOP"}], "usageMetadata": {}},
+    ], requests)
+    adapter = GeminiGenerateContent("test-only", client)
+    first = adapter.generate("gemini-test", "Inspect", "Find bug", {"inspect": TOOL}, 100)
+    adapter.generate("gemini-test", "Inspect", "Find bug", {"inspect": TOOL}, 100,
+                     first, {"call_1": {"status": "ok"}})
+    assert requests[1]["contents"][1] == model_content
+    assert requests[1]["contents"][2]["parts"][0]["functionResponse"]["id"] == "call_1"

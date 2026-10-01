@@ -1,0 +1,42 @@
+# Development dependencies only. No production sandbox or tenant security boundary.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: aip
+      POSTGRES_PASSWORD: local_only
+      POSTGRES_DB: aip
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aip -d aip"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  memgraph:
+    image: memgraph/memgraph:latest
+    ports:
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: local_only
+      MINIO_ROOT_PASSWORD: local_only_change_before_use
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+volumes:
+  postgres_data:
+  memgraph_data:
+  minio_data:
