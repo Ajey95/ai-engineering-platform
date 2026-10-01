@@ -86,8 +86,24 @@ one run, one budget reservation, one outbox event, and one run event for two
 simultaneous requests with the same key. It created and dropped its own
 database; the enabled model was a database fixture only. No live model call.
 
-Important next step: wire a budgeted agent repair loop, durable worker dispatch
-and independent verifier receipts to real runs. Never call the manually
+At that earlier milestone, the next step was a budgeted agent repair loop,
+durable worker dispatch and independent receipts. Never call the manually
 prepared candidate an agent repair.
 Do not mark an adapter qualified without live account conformance. Keep
 secrets out of this file and the repository.
+
+2026-10-02 admitted worker milestone: added a development-only outbox worker
+for the reviewed `form-submit-001` fixture. It archives the fixture and hidden
+oracle from the run's pinned platform commit, claims a fenced lease, executes
+named/browser/oracle baseline actions in separate WSL Docker containers, and
+persists intent before each action and receipts afterward. The run packet now
+reads these receipts. Only the reviewed fixture Git tree, manifest blob and
+oracle blob hashes are accepted at that commit, so an arbitrary historic
+commit cannot change the executable fixture content. The live worker check in
+`artifacts/worker-verification/3f049ba40071` had outbox delivered, three
+receipts PASS/FAIL/FAIL, baseline REPRODUCED, run INCONCLUSIVE and
+`autonomous_repair=false`; the model row was a disposable database fixture.
+The rebuilt image included an oracle SHA-256 in the receipt. Local tests are
+32 passed, 1 Windows symlink skip; ruff clean. Docker Desktop is still broken,
+but the independent Ubuntu WSL Docker Engine runs this path. Next: actual
+budgeted model/patch loop, crash reconciliation and hosted boundaries.

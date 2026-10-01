@@ -72,3 +72,15 @@ def test_invalid_state_jump_is_rejected(db):
     with pytest.raises(ServiceError) as error:
         transition(db, run, "worker-one", fence, "REVIEW_READY", "PASSED")
     assert error.value.code == "INVALID_TRANSITION"
+
+
+def test_pause_releases_lease_and_cannot_be_claimed(db):
+    run, fence = claim_run(db, "run-a", "worker-one")
+    transition(db, run, "worker-one", fence, "PREPARING")
+    transition(db, run, "worker-one", fence, "PAUSED_INPUT")
+    db.commit()
+    assert run.lease_owner is None
+    assert run.lease_until is None
+    with pytest.raises(ServiceError) as error:
+        claim_run(db, "run-a", "worker-two")
+    assert error.value.code == "RUN_CLOSED"

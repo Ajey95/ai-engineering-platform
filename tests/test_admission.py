@@ -16,6 +16,7 @@ from platform_app.models import (
     Task,
     Tenant,
 )
+from platform_app.run_ledger import claim_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import ServiceError, admit_run, request_cancel
 
@@ -108,3 +109,29 @@ def test_queued_cancellation_does_not_become_success(db):
         "run.admitted",
         "run.closed",
     ]
+
+
+def test_paused_cancellation_closes_without_a_worker(db):
+    run = admit_run(db, "tenant-a", "alice", "task-a", "paused-cancel-key", run_body())
+    run.state = "PAUSED_INPUT"
+    db.commit()
+    request_cancel(db, run, "alice")
+    db.commit()
+    assert run.state == "CANCELLED"
+    assert run.verdict == "NOT_RUN"
+
+
+def test_active_cancellation_waits_for_worker_but_expired_lease_closes(db):
+    run = admit_run(db, "tenant-a", "alice", "task-a", "active-cancel-key", run_body())
+    db.commit()
+    _, fence = claim_run(db, run.id, "worker-one")
+    transition(db, run, "worker-one", fence, "PREPARING")
+    db.commit()
+    request_cancel(db, run, "alice")
+    db.commit()
+    assert run.state == "CANCEL_REQUESTED"
+
+    run.lease_until = None
+    request_cancel(db, run, "alice")
+    db.commit()
+    assert run.state == "CANCELLED"

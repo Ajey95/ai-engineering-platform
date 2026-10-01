@@ -22,6 +22,7 @@ from platform_app.models import (
     RunEvent,
     Task,
     Tenant,
+    ToolAction,
 )
 from platform_app.schemas import (
     ErrorBody,
@@ -136,7 +137,8 @@ def dev_evaluation():
             "browser": side["browser"]["status"],
             "oracle": side["oracle"]["status"],
             "screenshot_url": f"/v1/dev/evaluation/screenshots/{label}"
-            if side["browser"].get("final_screenshot") else None,
+            if side["browser"].get("final_screenshot")
+            else None,
             "media_manifest_url": None,
         }
         if packet["local_media"][label]["status"] == "READY":
@@ -177,8 +179,10 @@ def dev_evaluation_media(label: str, part: str):
         raise HTTPException(status_code=404)
     pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
     effect_key = pointer["effect_key"]
-    if not isinstance(effect_key, str) or len(effect_key) != 64 or any(
-        character not in "0123456789abcdef" for character in effect_key
+    if (
+        not isinstance(effect_key, str)
+        or len(effect_key) != 64
+        or any(character not in "0123456789abcdef" for character in effect_key)
     ):
         raise HTTPException(status_code=404)
     selected = (root / part).resolve()
@@ -437,6 +441,27 @@ def review_packet(
 ):
     run = require_run(db, identity[0], run_id)
     task = require_task(db, identity[0], run.task_id)
+    actions = db.scalars(
+        select(ToolAction)
+        .where(ToolAction.run_id == run.id, ToolAction.tenant_id == identity[0])
+        .order_by(ToolAction.created_at)
+    ).all()
+    receipts = {
+        action.step_id: action.receipt
+        for action in actions
+        if action.status == "COMPLETED" and action.receipt is not None
+    }
+    baseline_named = receipts.get("named")
+    baseline_browser = receipts.get("browser")
+    baseline_oracle = receipts.get("oracle")
+    reproduced = (
+        baseline_named is not None
+        and baseline_named.get("status") == "PASSED"
+        and baseline_browser is not None
+        and baseline_browser.get("status") == "FAILED"
+        and baseline_oracle is not None
+        and baseline_oracle.get("status") == "FAILED"
+    )
     return {
         "schema_version": "1.0",
         "run_id": run.id,
@@ -444,17 +469,25 @@ def review_packet(
         "report": task.report,
         "expected_behavior": task.expected_behavior,
         "actual_behavior": task.actual_behavior,
-        "reproduction_status": "NOT_RUN",
+        "reproduction_status": "REPRODUCED"
+        if reproduced
+        else ("INCONCLUSIVE" if receipts else "NOT_RUN"),
+        "qualification_scope": "synthetic_baseline_only" if receipts else "none",
+        "autonomous_repair": False,
         "diagnosis_evidence_refs": [],
         "patch_hash": None,
         "changed_files": [],
-        "baseline_tests": [],
+        "baseline_tests": [baseline_named] if baseline_named is not None else [],
+        "baseline_browser": baseline_browser,
+        "baseline_oracle": baseline_oracle,
         "new_tests": [],
         "patched_tests": [],
         "browser_evidence_refs": [],
         "verification_status": run.verdict,
         "limitations": (
-            ["Execution has not produced verified evidence"] if run.verdict == "NOT_RUN" else []
+            ["No candidate patch or patched verification has executed"]
+            if receipts
+            else ["Execution has not produced verified evidence"]
         ),
         "media_status": run.media_status,
         "config_snapshot": run.config_snapshot,

@@ -101,7 +101,10 @@ def run_named_test(
 
 
 def run_hidden_oracle(
-    manifest: dict, workspace: Path, oracle: Path, artifacts: Path,
+    manifest: dict,
+    workspace: Path,
+    oracle: Path,
+    artifacts: Path,
     timeout_seconds: int = 120,
 ) -> dict:
     """Run a trusted oracle outside the candidate tree for synthetic fixtures."""
@@ -114,8 +117,13 @@ def run_hidden_oracle(
     started = datetime.now(UTC).isoformat()
     try:
         completed = subprocess.run(
-            command, cwd=workspace, env={**os.environ, "PYTHONPATH": str(workspace.resolve())},
-            capture_output=True, text=True, errors="replace", timeout=timeout_seconds,
+            command,
+            cwd=workspace,
+            env={**os.environ, "PYTHONPATH": str(workspace.resolve())},
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout_seconds,
         )
         exit_code = completed.returncode
         status = "PASSED" if exit_code == 0 else "FAILED"
@@ -134,6 +142,7 @@ def run_hidden_oracle(
         "schema_version": "1.0",
         "case_id": manifest["case_id"],
         "oracle_revision": manifest["oracle_revision"],
+        "oracle_sha256": hashlib.sha256(oracle.read_bytes()).hexdigest(),
         "command": command,
         "tested_tree_sha256": tested_tree_hash,
         "post_test_tree_sha256": after_hash,

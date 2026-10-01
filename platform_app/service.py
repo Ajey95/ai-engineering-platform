@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -195,9 +196,15 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
     if run.state in TERMINAL_STATES:
         return
     run.cancel_requested = True
-    if run.state == "QUEUED":
+    lease_until = run.lease_until
+    if lease_until is not None and lease_until.tzinfo is None:
+        lease_until = lease_until.replace(tzinfo=UTC)
+    active_lease = bool(run.lease_owner and lease_until and lease_until > datetime.now(UTC))
+    if run.state == "QUEUED" or run.state.startswith("PAUSED") or not active_lease:
         run.state = "CANCELLED"
         run.verdict = "NOT_RUN"
+        run.lease_owner = None
+        run.lease_until = None
         append_event(db, run, "run.closed", {"state": "CANCELLED", "verdict": "NOT_RUN"})
     else:
         run.state = "CANCEL_REQUESTED"

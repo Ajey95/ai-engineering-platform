@@ -108,6 +108,21 @@ python -m scripts.verify_dev_container_security
 The admission verification creates and drops a unique test database. Its
 enabled model row is only a database fixture and never invokes a provider.
 
+To exercise the admitted-run worker against the trusted synthetic baseline:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.verify_development_worker
+```
+
+This creates a disposable SQLite run database under `artifacts/worker-verification`,
+consumes its `run.dispatch` outbox row, claims a fenced lease, extracts the
+fixture and hidden oracle from the pinned Git commit, and executes named,
+browser and oracle checks in separate WSL Docker containers. The script prints
+the run ID and artifact directory. Its review packet comes from persisted tool
+receipts and reports `REPRODUCED` for the baseline and `INCONCLUSIVE` for the
+run. The database-only model entry is a fixture; no provider call or autonomous
+patch occurs. This development worker accepts only `form-submit-001`.
+
 Run checks:
 
 ```powershell

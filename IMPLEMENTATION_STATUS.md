@@ -14,6 +14,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
   database concurrency test observed one run, reservation, outbox and event
   for two simultaneous duplicate requests.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
+- `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
+  claims a lease, archives the fixture and hidden oracle at the run's pinned
+  commit, executes three isolated baseline checks, and stores effect intents
+  before container execution and receipts afterward. It does not repair code.
 - `platform_app/tool_broker.py`: completed and schema validated tool calls only.
 - `platform_app/providers.py`: native HTTP request and continuation adapters for
   OpenAI, Anthropic and Google, tested against controlled API responses; no
@@ -26,7 +30,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory.
 - `apps/web`: React screens reading real API data; no fabricated run success.
-- `tests/`: 26 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 32 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -44,6 +48,11 @@ deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener, but
 the project development container runs on a separate WSL Docker Engine.
+The admitted worker verification produced run `bef4402b-5a0d-46c6-bb57-5727d607d82b`
+at pinned commit `fce5882`: outbox delivered, three receipt statuses
+PASS/FAIL/FAIL, packet reproduction REPRODUCED, run verdict INCONCLUSIVE,
+and `autonomous_repair=false`. The oracle SHA-256 is recorded in its receipt.
+This was a disposable local database with a database-only model fixture.
 Production startup deliberately refuses to proceed.
 
 ## Requirement traceability
@@ -63,11 +72,11 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
 | FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |
-| FR-HAR-01 | Missing | LangGraph runner, PostgreSQL checkpointer and bounded CrewAI task absent. |
-| FR-HAR-02 | Partial | Policy defaults and state map exist; active harness enforcement absent. |
-| FR-HAR-03 | Missing | Durable pause/resume and sandbox release absent. |
-| FR-HAR-04 | Partial | Fenced leases and effect ledger tested; external reconciliation absent. |
-| FR-HAR-05 | Partial | Queued cancellation tested; in-flight process termination absent. |
+| FR-HAR-01 | Partial | Development outbox worker executes a baseline under a lease; LangGraph, autonomous repair and PostgreSQL checkpointer absent. |
+| FR-HAR-02 | Partial | Development worker enforces tool call cap and bounded container execution; model, patch and active-time budgets remain unwired. |
+| FR-HAR-03 | Partial | Paused state releases lease; resume and snapshot reconciliation absent. |
+| FR-HAR-04 | Partial | Development worker persists effect intent before Docker execution and receipts after; uncertain-effect reconciliation absent. |
+| FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
 | FR-CTX-01 | Missing | ContextBundle selection and evidence citation absent. |
 | FR-CTX-02 | Missing | Scoped code navigation and graph traversal absent. |
 | FR-CTX-03 | Missing | Compaction and replay absent. |
@@ -83,8 +92,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; recording disabled when masks are requested, deletion lifecycle missing. |
-| FR-REP-01 | Partial | Honest packet schema skeleton; no repair evidence. |
-| FR-REP-02 | Partial | Exact command, exit, duration, tree hash and fixture revision receipts for named fixture tests; not wired to runs. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline receipts and labels autonomous repair false; no patch evidence. |
+| FR-REP-02 | Partial | Named/browser/oracle baseline receipts are wired to admitted synthetic runs; candidate verification absent. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Missing | Bound action approval and draft PR reconciliation absent. |
 | FR-MED-01 | Partial | Real browser WebM recordings encoded to local FFmpeg HLS; queue/private object storage absent. |
@@ -132,8 +141,9 @@ release qualification.
 
 ## What breaks first
 
-1. A run cannot execute autonomously: provider adapters are not live qualified,
-   and no agent worker is wired to the tested synthetic container path. The UI
+1. A run can reproduce the trusted synthetic baseline through a development
+   worker, but cannot repair autonomously: provider adapters are not live
+   qualified and no agent patch loop exists. The UI
    correctly disables run admission without an enabled qualified model.
 2. Hosted security is incomplete: OIDC memberships, project roles, per-run VM
    isolation and artifact edge authority are absent. Non-development startup
@@ -147,9 +157,9 @@ release qualification.
 
 ## Next implementation sequence
 
-1. Wire the tested synthetic container evidence path to a bounded run worker,
-   with durable lease and tool receipts. Keep the hidden oracle inaccessible
-   to the repair agent.
+1. Build the bounded agent patch loop on the worker's pinned fixture path,
+   with model budget reconciliation and checkpoint recovery. Keep the hidden
+   oracle inaccessible to the repair agent.
 2. Qualify one native provider adapter with a live account and run a bounded
    LangGraph workflow on the fixture. Expand to three qualified
    adapters only after each passes live conformance.

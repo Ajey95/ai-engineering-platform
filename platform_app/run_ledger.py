@@ -21,8 +21,8 @@ def aware(value: datetime) -> datetime:
 ALLOWED_TRANSITIONS = {
     "QUEUED": {"PREPARING", "CANCELLED"},
     "PREPARING": {"REPRODUCING", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
-    "REPRODUCING": {"INVESTIGATING", "INCONCLUSIVE", "FAILED", "CANCEL_REQUESTED"},
-    "INVESTIGATING": {"PATCHING", "INCONCLUSIVE", "FAILED", "CANCEL_REQUESTED"},
+    "REPRODUCING": {"INVESTIGATING", "INCONCLUSIVE", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
+    "INVESTIGATING": {"PATCHING", "INCONCLUSIVE", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
     "PATCHING": {"VERIFYING", "FAILED", "PAUSED_BUDGET", "CANCEL_REQUESTED"},
     "VERIFYING": {"PATCHING", "REVIEW_READY", "FAILED", "CANCEL_REQUESTED"},
     "REVIEW_READY": {"PATCHING", "COMPLETED", "CANCEL_REQUESTED"},
@@ -37,7 +37,7 @@ def claim_run(db: Session, run_id: str, worker_id: str, lease_seconds: int = 60)
     if run is None:
         raise ServiceError("NOT_FOUND", "Run not found", 404)
     now = utcnow()
-    if run.cancel_requested or run.state in TERMINAL_STATES:
+    if run.cancel_requested or run.state in TERMINAL_STATES or run.state.startswith("PAUSED"):
         raise ServiceError("RUN_CLOSED", "Run is not executable", 409)
     if run.lease_until and aware(run.lease_until) > now and run.lease_owner != worker_id:
         raise ServiceError("LEASE_HELD", "Run has an active worker", 409)
@@ -81,6 +81,7 @@ def transition(
     append_event(db, run, "run.state_changed", {"state": next_state, "verdict": run.verdict})
     if next_state in TERMINAL_STATES:
         append_event(db, run, "run.closed", {"state": next_state, "verdict": run.verdict})
+    if next_state in TERMINAL_STATES or next_state.startswith("PAUSED"):
         run.lease_owner = None
         run.lease_until = None
 
