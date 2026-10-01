@@ -124,7 +124,16 @@ browser and oracle checks in separate WSL Docker containers. The script prints
 the run ID and artifact directory. Its review packet comes from persisted tool
 receipts and reports `REPRODUCED` for the baseline and `INCONCLUSIVE` for the
 run. The database-only model entry is a fixture; no provider call or autonomous
-patch occurs. This development worker accepts only `form-submit-001`.
+patch occurs. This development worker accepts only `form-submit-001` and
+publishes a local HLS recording of the browser baseline.
+
+To exercise the budgeted patch and candidate verification protocol, run
+`.venv\Scripts\python.exe -m scripts.verify_development_worker --controlled-provider`.
+This supplies a predetermined HTTP response to the native OpenAI adapter in a
+disposable database. It verifies a model-call reservation/usage receipt, a
+bounded patch, separate candidate named/browser/hidden-oracle containers, and
+before/after HLS publication. It does not qualify an OpenAI account or prove
+autonomous repair. The script prints a review packet and run ID.
 On a later invocation, its local outbox recovery requeues expired dispatches
 whose completed effects have intact receipts. An uncertain `INTENDED` effect
 stops as inconclusive and requires reconciliation; it is never rerun blindly.

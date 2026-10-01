@@ -137,3 +137,27 @@ selector uses an API `qualified` flag, and a fixture-only enabled DB row is
 shown as fixture-only, not as a qualified provider. The Evaluations notice
 uses the packet's actual synthetic container scope. Vite/TypeScript build
 passed with bundled Node 24; local tests 43 passed, 1 skipped.
+
+2026-10-02 budgeted fixture patch and admitted media milestone: added
+`platform_app/model_budget.py` to reserve a qualified model call before HTTP,
+enforce pinned registry/pricing and run limits, then settle provider-reported
+usage. `agent_patch.py` persists the native response and digest before parsing
+a strict one-file patch. The development worker now applies that patch to a
+separate candidate and executes named, browser and hidden-oracle checks in
+separate WSL Docker containers. Baseline and candidate browser WebM files are
+encoded to immutable local HLS, with media status independent of the code
+verdict. The API serves only tenant-owned published media and the Runs UI shows
+before/after players and candidate receipts. A default disposable run at
+`artifacts/worker-verification/6a7a8dd77a1b` was INCONCLUSIVE after
+PASS/FAIL/FAIL baseline with media READY. A controlled provider response run
+at `artifacts/worker-verification/21ad0f115e0e` reached REVIEW_READY after
+PASS/FAIL/FAIL baseline and PASS/PASS/PASS candidate, both media READY; its
+packet explicitly reports `autonomous_repair=false`. Both pinned commit
+`5382f81`. The controlled HTTP response is predetermined test data, not a live
+OpenAI call, model qualification, or independent diagnosis. Python tests: 48
+passed, 1 Windows symlink skip; ruff clean; Vite/TypeScript build passed.
+Docker Desktop remains broken at `dockerInference`; the separate Ubuntu WSL
+Docker Engine is the functioning development runtime. No automation was
+scheduled. Next priorities: repair Docker Desktop if feasible, hosted identity
+and tenant roles, isolated customer execution, live provider qualification,
+durable workflow/queue, private media distribution, and benchmark/release gates.

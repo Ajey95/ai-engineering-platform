@@ -17,7 +17,13 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
   claims a lease, archives the fixture and hidden oracle at the run's pinned
   commit, executes three isolated baseline checks, and stores effect intents
-  before container execution and receipts afterward. It does not repair code.
+  before container execution and receipts afterward. For a qualified model it
+  can request a bounded patch and verify the candidate in separate containers.
+  The complete path has only run with a controlled provider response.
+- `platform_app/model_budget.py`, `agent_patch.py`: reserve model call liability
+  before native provider HTTP, settle reported usage, persist raw response and
+  patch digest, and enforce a single-file fixture patch schema. The provider
+  accounts have not been live qualified.
 - `platform_app/tool_broker.py`: completed and schema validated tool calls only.
 - `platform_app/providers.py`: native HTTP request and continuation adapters for
   OpenAI, Anthropic and Google, tested against controlled API responses; no
@@ -28,12 +34,14 @@ The paid pilot release gate in PRD §27.2 has not been run.
   the hidden oracle was mounted only for its verifier container.
 - `platform_app/token_budget.py`: call envelope and conservative liability planning.
 - `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
-- `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory.
+- `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
+  the admitted worker publishes baseline and candidate media separately and
+  the tenant-scoped development API serves the published effect.
 - `apps/web`: React screens reading real API data; no fabricated run success.
 - The Runs review panel displays persisted baseline named/browser/oracle receipt
   status, command, exit, duration and tree hash where available. Model choices
   use the API qualification flag rather than `state=enabled` alone.
-- `tests/`: 43 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 48 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -44,18 +52,22 @@ hidden oracle fails 1/2. A manually prepared candidate passes the browser
 scenario with POST 201 and passes 2/2 hidden checks. Before and after WebM
 recordings were encoded to local HLS. The development Evaluations view played
 both videos in a real browser: two master playlists, five segment responses,
-decoded video in both players and no page error. These are local fixture proofs,
-with no horizontal overflow at a 390-pixel mobile viewport. These are local
-fixture proofs, not an autonomous repair. No live model call, hosted VM execution,
+decoded video in both players and no page error, with no horizontal overflow
+at a 390-pixel mobile viewport. These are local fixture proofs, not an
+autonomous repair. No live model call, hosted VM execution,
 deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener, but
 the project development container runs on a separate WSL Docker Engine.
-The admitted worker verification produced run `b233632a-984e-4561-b3a7-058b2803f7be`
-at pinned commit `16ba81e`: outbox delivered, three receipt statuses
-PASS/FAIL/FAIL, packet reproduction REPRODUCED, run verdict INCONCLUSIVE,
-and `autonomous_repair=false`. The oracle SHA-256 is recorded in its receipt.
-This was a disposable local database with a database-only model fixture.
+The admitted worker baseline verification produced run
+`b2f8ad2f-4c72-4727-be69-bdef8eeabdf6` at pinned commit `5382f81`:
+outbox delivered, PASS/FAIL/FAIL, media READY, reproduction REPRODUCED,
+verdict INCONCLUSIVE, and `autonomous_repair=false`. A controlled provider
+response verification produced run `d965209b-f7a5-4019-81cd-810f55ca97b5`:
+PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate, two media receipts READY,
+verdict PASSED, `REVIEW_READY`, and `autonomous_repair=false`. Both used
+disposable local databases. The controlled response tests the native adapter
+protocol and budgeted patch path; it is not a live provider result.
 Production startup deliberately refuses to proceed.
 
 ## Requirement traceability
@@ -75,8 +87,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
 | FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |
-| FR-HAR-01 | Partial | Development outbox worker executes a baseline under a lease; LangGraph, autonomous repair and PostgreSQL checkpointer absent. |
-| FR-HAR-02 | Partial | Development worker enforces tool call cap and bounded container execution; model, patch and active-time budgets remain unwired. |
+| FR-HAR-01 | Partial | Development outbox worker executes baseline and controlled-provider candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
+| FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Paused state releases lease; resume and snapshot reconciliation absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
@@ -85,7 +97,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CTX-03 | Missing | Compaction and replay absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Missing | Large-output artifact excerpts and cycle pairing absent. |
-| FR-TOK-03 | Partial | Liability plan and run cap reservation; actual usage reconciliation absent. |
+| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path; live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |
@@ -95,13 +107,13 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; recording disabled when masks are requested, deletion lifecycle missing. |
-| FR-REP-01 | Partial | Run packet includes persisted baseline receipts and labels autonomous repair false; bounded patch schema and candidate copier exist but are not wired to the worker. |
-| FR-REP-02 | Partial | Named/browser/oracle baseline receipts are wired to admitted synthetic runs; candidate verification absent. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, and media URLs for controlled fixture; diagnosis evidence, alternatives and full export remain. |
+| FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Missing | Bound action approval and draft PR reconciliation absent. |
-| FR-MED-01 | Partial | Real browser WebM recordings encoded to local FFmpeg HLS; queue/private object storage absent. |
-| FR-MED-02 | Partial | Staged immutable local publication tested; DB readiness/object store absent. |
-| FR-MED-03 | Partial | Hls.js player loaded and played real local before/after HLS recordings in Chromium; hosted authorization and broader network qualification missing. |
+| FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
+| FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; object store absent. |
+| FR-MED-03 | Partial | Hls.js player loaded and played manually evaluated local before/after HLS in Chromium; admitted-run players built but browser playback and hosted authorization unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
 | FR-DAT-01 | Partial | Initial Alembic migration applied to local PostgreSQL; concurrent duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
@@ -144,17 +156,17 @@ release qualification.
 
 ## What breaks first
 
-1. A run can reproduce the trusted synthetic baseline through a development
-   worker, but cannot repair autonomously: provider adapters are not live
-   qualified and no agent patch loop exists. The UI
-   correctly disables run admission without an enabled qualified model.
+1. A run can reproduce and test a bounded patch on the trusted synthetic
+   fixture through a development worker. The provider path has only a
+   predetermined response proof; no provider adapter is live qualified and
+   no autonomous repair has been demonstrated.
 2. Hosted security is incomplete: OIDC memberships, project roles, per-run VM
    isolation and artifact edge authority are absent. Non-development startup
    fails closed.
 3. Durability is local only: initial PostgreSQL migration and admission race
    passed, while queue/graph recovery and restore have not been exercised.
-4. The media encoder makes real HLS files, but they are not connected to a
-   recording pipeline, authenticated player or CDN.
+4. The worker publishes local HLS recordings and a tenant-scoped route; the
+   independent media queue, hosted authorization and private CDN remain.
 5. No independent correctness benchmark or restore drill exists, so success,
    reliability, latency and cost targets cannot be claimed.
 

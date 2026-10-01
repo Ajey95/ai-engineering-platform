@@ -256,7 +256,7 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
     </div>
     <div className="review-right"><div className="tabbar" role="tablist" aria-label="Run details">{(['evidence', 'changes', 'logs', 'environment'] as const).map(item => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'changes' ? 'Changed files' : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
       <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} />}
-        {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}</>}
+        {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}{packet?.diagnosis_hypothesis && <p className="muted">Model hypothesis: {packet.diagnosis_hypothesis}</p>}</>}
         {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
       </div>
@@ -276,27 +276,47 @@ function ReceiptRow({ label, receipt }: { label: string; receipt: CheckReceipt }
 }
 
 function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run }) {
-  const checks: { label: string; receipt: CheckReceipt }[] = [
+  const baselineChecks: { label: string; receipt: CheckReceipt }[] = [
     ...(packet?.baseline_tests.map((receipt, index) => ({ label: `Named test ${index + 1}`, receipt })) ?? []),
     ...(packet?.baseline_browser ? [{ label: 'Browser scenario', receipt: packet.baseline_browser }] : []),
     ...(packet?.baseline_oracle ? [{ label: 'Independent oracle', receipt: packet.baseline_oracle }] : []),
+  ]
+  const candidateChecks: { label: string; receipt: CheckReceipt }[] = [
+    ...(packet?.patched_tests.map((receipt, index) => ({ label: `Named test ${index + 1}`, receipt })) ?? []),
+    ...(packet?.candidate_browser ? [{ label: 'Browser scenario', receipt: packet.candidate_browser }] : []),
+    ...(packet?.candidate_oracle ? [{ label: 'Independent oracle', receipt: packet.candidate_oracle }] : []),
   ]
   return <>
     <div className="section-title"><ShieldCheck size={18} /><h3>Verification</h3></div>
     <div className="verdict-line"><span>Reproduction</span><Status value={packet?.reproduction_status || 'NOT_RUN'} /></div>
     <div className="verdict-line"><span>Code verification</span><Status value={packet?.verification_status || run.verdict} /></div>
     <div className="verdict-line"><span>Media</span><Status value={packet?.media_status || run.media_status} /></div>
-    {checks.length > 0 && <div className="receipt-list">
+    {baselineChecks.length > 0 && <div className="receipt-list">
       <h4>Baseline receipts</h4>
-      {checks.map(check => <ReceiptRow key={check.label} {...check} />)}
+      {baselineChecks.map(check => <ReceiptRow key={check.label} {...check} />)}
       <p className="muted">Scope: {packet?.qualification_scope?.replaceAll('_', ' ') || 'recorded checks only'}.
         {packet?.autonomous_repair === false ? ' No autonomous repair is verified.' : ''}</p>
     </div>}
-    {packet?.media_manifest_url ?
+    {candidateChecks.length > 0 && <div className="receipt-list">
+      <h4>Candidate receipts</h4>
+      {candidateChecks.map(check => <ReceiptRow key={check.label} {...check} />)}
+      {packet?.patch_hash && <small className="mono">Patch SHA-256: {packet.patch_hash}</small>}
+      {packet?.actual_model_spend_usd && <small>Reported model spend: ${packet.actual_model_spend_usd}</small>}
+    </div>}
+    {packet?.media_manifest_urls && Object.keys(packet.media_manifest_urls).length > 0 ?
+      <div className="receipt-list">
+        <h4>Browser recordings</h4>
+        {(['baseline', 'candidate'] as const).map(label => packet.media_manifest_urls?.[label] &&
+          <div key={label}><p>{label === 'baseline' ? 'Before patch' : 'After patch'}</p>
+            <Suspense fallback={<p className="muted">Loading player…</p>}>
+              <MediaPlayer manifestUrl={packet.media_manifest_urls[label]!} />
+            </Suspense>
+          </div>)}
+      </div> : packet?.media_manifest_url ?
       <Suspense fallback={<p className="muted">Loading player…</p>}>
         <MediaPlayer manifestUrl={packet.media_manifest_url} markers={packet.evidence_timeline} />
       </Suspense> :
-      <p className="muted">{checks.length ? 'No recording is available for this run.' :
+      <p className="muted">{baselineChecks.length || candidateChecks.length ? 'No playable recording is published for this run.' :
         'No test result, screenshot or recording is available yet.'}</p>}
   </>
 }

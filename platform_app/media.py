@@ -102,6 +102,7 @@ def encode_hls(
     target = base / effect_key
     master = target / "master.m3u8"
     if master.is_file():
+        _publish_pointer(base, effect_key)
         return master
     base.mkdir(parents=True, exist_ok=True)
     variants = [
@@ -189,8 +190,16 @@ def encode_hls(
             )
         (stage / "master.m3u8").write_text("\n".join(master_lines) + "\n", encoding="utf-8")
         if target.exists():
+            if not master.is_file():
+                raise MediaError("Existing media target is incomplete")
+            _publish_pointer(base, effect_key)
             return master
         os.replace(stage, target)
+    _publish_pointer(base, effect_key)
+    return master
+
+
+def _publish_pointer(base: Path, effect_key: str) -> None:
     pointer = base / "ready.json"
     pointer_tmp = base / "ready.json.tmp"
     pointer_tmp.write_text(
@@ -198,4 +207,3 @@ def encode_hls(
         encoding="utf-8",
     )
     os.replace(pointer_tmp, pointer)
-    return master

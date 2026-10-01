@@ -20,6 +20,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from platform_app.agent_patch import request_fixture_patch
 from platform_app.config import settings
 from platform_app.db import SessionLocal, utcnow
 from platform_app.dev_sandbox import (
@@ -28,7 +29,10 @@ from platform_app.dev_sandbox import (
     run_browser_fixture,
     run_verifier_fixture,
 )
-from platform_app.models import OutboxEvent, Run, RunEvent, ToolAction
+from platform_app.media import MediaError, encode_hls, sha256_file
+from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, ToolAction
+from platform_app.patch_workspace import PatchError, PatchProposal, materialize_candidate
+from platform_app.providers import ProviderError
 from platform_app.run_ledger import (
     assert_fence,
     aware,
@@ -52,11 +56,12 @@ TRUSTED_GIT_OBJECTS = {
 
 def _verified_receipt(step: str, target: Path, receipt: dict) -> dict:
     """A replay may trust a completed effect only while its artifacts agree."""
+    kind = step.removeprefix("candidate_")
     result_name = {
         "named": "test-baseline.json",
         "browser": "result.json",
         "oracle": "oracle.json",
-    }[step]
+    }[kind]
     result_path = target / result_name
     try:
         if json.loads(result_path.read_text(encoding="utf-8")) != receipt:
@@ -148,6 +153,7 @@ class DevelopmentWorker:
         runtime: str = "wsl",
         image: str = "aip-dev-sandbox:0.1.0",
         session_factory=SessionLocal,
+        patch_provider=None,
     ):
         if settings().environment != "development":
             raise RuntimeError("Synthetic fixture worker is development only")
@@ -157,6 +163,7 @@ class DevelopmentWorker:
         self.runtime = runtime
         self.image = image
         self.session_factory = session_factory
+        self.patch_provider = patch_provider
         self._stop = threading.Event()
         self._cancelled = threading.Event()
         self._active_container: str | None = None
@@ -238,7 +245,8 @@ class DevelopmentWorker:
         name = f"aip-dev-{uuid4().hex[:12]}"
         self._active_container = name
         try:
-            if step == "browser":
+            kind = step.removeprefix("candidate_")
+            if kind == "browser":
                 receipt = run_browser_fixture(
                     self.image,
                     workspace,
@@ -254,7 +262,7 @@ class DevelopmentWorker:
                     manifest,
                     target,
                     name,
-                    mode="oracle" if step == "oracle" else "named",
+                    mode="oracle" if kind == "oracle" else "named",
                     oracle=oracle,
                     runtime=self.runtime,
                 )
@@ -267,6 +275,130 @@ class DevelopmentWorker:
             db.commit()
         return receipt
 
+    def _materialize_patch(
+        self, run_id: str, fence: int, source: Path, proposal: PatchProposal
+    ) -> Path:
+        destination = self.artifact_root / run_id / "candidate" / "workspace"
+        with self.session_factory() as db:
+            run = db.get(Run, run_id)
+            action = begin_tool_action(
+                db,
+                run,
+                self.worker_id,
+                fence,
+                "candidate_patch",
+                "fixture.patch",
+                {"patch_sha256": proposal.patch_sha256, "baseline_tree_sha256": tree_hash(source)},
+                True,
+            )
+            if action.status == "COMPLETED":
+                if not destination.is_dir() or tree_hash(destination) != (action.receipt or {}).get(
+                    "candidate_tree_sha256"
+                ):
+                    raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Candidate tree changed", 409)
+                return destination
+            db.commit()
+            action_id = action.id
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        candidate_hash = materialize_candidate(source, destination, proposal)
+        with self.session_factory() as db:
+            run = db.get(Run, run_id)
+            action = db.get(ToolAction, action_id)
+            complete_tool_action(
+                db,
+                run,
+                self.worker_id,
+                fence,
+                action,
+                {
+                    "status": "COMPLETED",
+                    "patch_sha256": proposal.patch_sha256,
+                    "changed_files": [name for name, _ in proposal.files],
+                    "candidate_tree_sha256": candidate_hash,
+                    "diagnosis_hypothesis": proposal.diagnosis,
+                    "provider_mode": "controlled_test" if self.patch_provider else "native_api",
+                },
+            )
+            db.commit()
+        return destination
+
+    def _encode_media(
+        self, run_id: str, fence: int, label: str, browser_receipt: dict, evidence: Path
+    ) -> None:
+        recording = browser_receipt.get("recording")
+        if not isinstance(recording, str) or Path(recording).name != recording:
+            with self.session_factory() as db:
+                run = db.get(Run, run_id)
+                assert_fence(run, self.worker_id, fence)
+                run.media_status = "FAILED"
+                append_event(db, run, "artifact.failed", {
+                    "label": label, "reason": "recording_missing",
+                })
+                db.commit()
+            return
+        source = evidence / recording
+        if not source.is_file():
+            with self.session_factory() as db:
+                run = db.get(Run, run_id)
+                assert_fence(run, self.worker_id, fence)
+                run.media_status = "FAILED"
+                append_event(db, run, "artifact.failed", {
+                    "label": label, "reason": "recording_missing",
+                })
+                db.commit()
+            return
+        with self.session_factory() as db:
+            run = db.get(Run, run_id)
+            action = begin_tool_action(
+                db, run, self.worker_id, fence, f"media_{label}", "media.encode",
+                {"recording_sha256": sha256_file(source), "profile_revision": "hls-v1"}, True,
+            )
+            if action.status == "COMPLETED":
+                return
+            db.commit()
+            action_id, tenant_id = action.id, run.tenant_id
+        try:
+            master = encode_hls(
+                source, self.artifact_root / "private-media", tenant_id,
+                f"{run_id}_{label}",
+            )
+        except (MediaError, OSError, subprocess.TimeoutExpired) as error:
+            with self.session_factory() as db:
+                run = db.get(Run, run_id)
+                assert_fence(run, self.worker_id, fence)
+                action = db.get(ToolAction, action_id)
+                complete_tool_action(db, run, self.worker_id, fence, action, {
+                    "status": "FAILED", "label": label,
+                    "reason": type(error).__name__,
+                })
+                run.media_status = "FAILED"
+                append_event(db, run, "artifact.failed", {
+                    "label": label, "reason": type(error).__name__,
+                })
+                db.commit()
+            return
+        with self.session_factory() as db:
+            run = db.get(Run, run_id)
+            action = db.get(ToolAction, action_id)
+            complete_tool_action(db, run, self.worker_id, fence, action, {
+                "status": "READY", "label": label,
+                "master": str(master.relative_to(self.artifact_root)),
+            })
+            media_actions = db.scalars(
+                select(ToolAction).where(
+                    ToolAction.run_id == run_id,
+                    ToolAction.logical_action == "media.encode",
+                    ToolAction.id != action_id,
+                    ToolAction.status == "COMPLETED",
+                )
+            ).all()
+            run.media_status = (
+                "FAILED" if any((item.receipt or {}).get("status") == "FAILED"
+                                for item in media_actions) else "READY"
+            )
+            append_event(db, run, "artifact.ready", {"label": label, "kind": "hls"})
+            db.commit()
+
     def execute(self, run_id: str, fence: int | None = None) -> None:
         with self.session_factory() as db:
             if fence is None:
@@ -274,7 +406,14 @@ class DevelopmentWorker:
             else:
                 run = db.get(Run, run_id)
                 assert_fence(run, self.worker_id, fence)
-            if run.state not in {"QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING"}:
+            if run.state not in {
+                "QUEUED",
+                "PREPARING",
+                "REPRODUCING",
+                "INVESTIGATING",
+                "PATCHING",
+                "VERIFYING",
+            }:
                 raise ServiceError(
                     "RUN_NOT_EXECUTABLE", "Development worker cannot resume this state", 409
                 )
@@ -311,6 +450,7 @@ class DevelopmentWorker:
                     self._transition(run_id, fence, "REPRODUCING")
                 named = self._action(run_id, fence, "named", manifest, workspace, target)
                 browser = self._action(run_id, fence, "browser", manifest, workspace, target)
+                self._encode_media(run_id, fence, "baseline", browser, target)
                 oracle_receipt = self._action(
                     run_id, fence, "oracle", manifest, workspace, target, oracle
                 )
@@ -342,10 +482,103 @@ class DevelopmentWorker:
                             },
                         )
                     db.commit()
-                if reproduced and initial_state != "INVESTIGATING":
+                if not reproduced:
+                    stop = (
+                        "FAILED" if initial_state in {"PATCHING", "VERIFYING"} else "INCONCLUSIVE"
+                    )
+                    self._transition(run_id, fence, stop, "INCONCLUSIVE")
+                    return
+                if initial_state in {"QUEUED", "PREPARING", "REPRODUCING"}:
                     self._transition(run_id, fence, "INVESTIGATING")
-                self._transition(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
-        except (ServiceError, SandboxError, OSError, ValueError) as error:
+                with self.session_factory() as db:
+                    run = db.get(Run, run_id)
+                    model = db.get(ModelEntry, run.model_entry_id)
+                    qualified = bool(
+                        model
+                        and model.validated_at
+                        and (model.capabilities or {}).get("live_qualified")
+                    )
+                if not qualified:
+                    stop = (
+                        "FAILED" if initial_state in {"PATCHING", "VERIFYING"} else "INCONCLUSIVE"
+                    )
+                    self._transition(run_id, fence, stop, "INCONCLUSIVE")
+                    return
+                patch = request_fixture_patch(
+                    self.session_factory,
+                    run_id,
+                    self.worker_id,
+                    fence,
+                    {"named": named, "browser": browser, "oracle": oracle_receipt},
+                    (workspace / "server.py").read_text(encoding="utf-8"),
+                    self.artifact_root,
+                    provider=self.patch_provider,
+                )
+                if initial_state in {"QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING"}:
+                    self._transition(run_id, fence, "PATCHING")
+                candidate = self._materialize_patch(run_id, fence, workspace, patch.proposal)
+                if initial_state != "VERIFYING":
+                    self._transition(run_id, fence, "VERIFYING")
+                candidate_target = self.artifact_root / run_id / "candidate" / "evidence"
+                candidate_target.mkdir(parents=True, exist_ok=True)
+                candidate_named = self._action(
+                    run_id, fence, "candidate_named", manifest, candidate, candidate_target
+                )
+                candidate_browser = self._action(
+                    run_id, fence, "candidate_browser", manifest, candidate, candidate_target
+                )
+                self._encode_media(
+                    run_id, fence, "candidate", candidate_browser, candidate_target
+                )
+                candidate_oracle = self._action(
+                    run_id, fence, "candidate_oracle", manifest, candidate,
+                    candidate_target, oracle,
+                )
+                checks = [candidate_named, candidate_browser, candidate_oracle]
+                passed = all(receipt["status"] == "PASSED" for receipt in checks)
+                with self.session_factory() as db:
+                    run = db.get(Run, run_id)
+                    assert_fence(run, self.worker_id, fence)
+                    prior = db.scalars(
+                        select(RunEvent).where(
+                            RunEvent.run_id == run_id,
+                            RunEvent.event_type == "verification.completed",
+                        )
+                    ).all()
+                    if not any(
+                        event.payload.get("scope") == "synthetic_candidate" for event in prior
+                    ):
+                        append_event(
+                            db,
+                            run,
+                            "verification.completed",
+                            {
+                                "scope": "synthetic_candidate",
+                                "patch_sha256": patch.proposal.patch_sha256,
+                                "checks": {
+                                    name: receipt["status"]
+                                    for name, receipt in zip(
+                                        ("named", "browser", "oracle"), checks, strict=True
+                                    )
+                                },
+                                "verdict": "PASSED" if passed else "FAILED",
+                            },
+                        )
+                    db.commit()
+                self._transition(
+                    run_id,
+                    fence,
+                    "REVIEW_READY" if passed else "FAILED",
+                    "PASSED" if passed else "FAILED",
+                )
+        except (
+            ServiceError,
+            SandboxError,
+            PatchError,
+            ProviderError,
+            OSError,
+            ValueError,
+        ) as error:
             with self.session_factory() as db:
                 run = db.get(Run, run_id)
                 if run and run.lease_owner == self.worker_id and run.lease_fence == fence:
@@ -355,6 +588,8 @@ class DevelopmentWorker:
                         transition(db, run, self.worker_id, fence, "FAILED", "INCONCLUSIVE")
                     elif run.state == "INVESTIGATING":
                         transition(db, run, self.worker_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
+                    elif run.state in {"PATCHING", "VERIFYING"}:
+                        transition(db, run, self.worker_id, fence, "FAILED", "INCONCLUSIVE")
                     append_event(
                         db,
                         run,
@@ -400,7 +635,15 @@ class DevelopmentWorker:
                 if (
                     run.cancel_requested
                     or (run.lease_until and aware(run.lease_until) > utcnow())
-                    or run.state not in {"QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING"}
+                    or run.state
+                    not in {
+                        "QUEUED",
+                        "PREPARING",
+                        "REPRODUCING",
+                        "INVESTIGATING",
+                        "PATCHING",
+                        "VERIFYING",
+                    }
                 ):
                     continue
                 event = candidate
@@ -412,7 +655,13 @@ class DevelopmentWorker:
             run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
             if run.state == "QUEUED":
                 transition(db, run, self.worker_id, fence, "PREPARING")
-            elif run.state not in {"PREPARING", "REPRODUCING", "INVESTIGATING"}:
+            elif run.state not in {
+                "PREPARING",
+                "REPRODUCING",
+                "INVESTIGATING",
+                "PATCHING",
+                "VERIFYING",
+            }:
                 raise ServiceError("RUN_NOT_EXECUTABLE", "Dispatch state is not executable", 409)
             event.status = "processing"
             event.attempts += 1
@@ -470,7 +719,11 @@ class DevelopmentWorker:
                 )
                 if uncertain is not None:
                     owned, fence = claim_run(db, run.id, self.worker_id, settings().lease_seconds)
-                    stop_state = "FAILED" if owned.state == "PREPARING" else "INCONCLUSIVE"
+                    stop_state = (
+                        "FAILED"
+                        if owned.state in {"PREPARING", "PATCHING", "VERIFYING"}
+                        else "INCONCLUSIVE"
+                    )
                     transition(db, owned, self.worker_id, fence, stop_state, "INCONCLUSIVE")
                     append_event(
                         db,

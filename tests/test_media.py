@@ -47,6 +47,9 @@ def test_media_publication_is_complete_and_idempotent(tmp_path, monkeypatch):
     assert "high/index.m3u8" not in text
     pointer = json.loads((first.parent.parent / "ready.json").read_text(encoding="utf-8"))
     assert pointer["master"].endswith("master.m3u8")
+    (first.parent.parent / "ready.json").unlink()
+    assert encode_hls(source, root, "tenant-a", "run-a") == first
+    assert (first.parent.parent / "ready.json").is_file()
     assert (first.parent / "low" / "init.mp4").is_file()
     assert list((first.parent / "low").glob("segment_*.m4s"))
 

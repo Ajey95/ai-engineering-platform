@@ -4,8 +4,13 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 import platform_app.api as api_module
+from platform_app.db import Base
+from platform_app.models import Run
+from platform_app.service import ServiceError
 
 
 def test_dev_evaluation_serves_only_current_local_media(tmp_path, monkeypatch):
@@ -49,3 +54,44 @@ def test_dev_evaluation_serves_only_current_local_media(tmp_path, monkeypatch):
         api_module.dev_evaluation_media("candidate", "../ready.json")
     config.dev_token = "configured"
     assert client.get(url).status_code == 404
+
+
+def test_run_media_is_tenant_scoped_and_stays_within_published_effect(tmp_path, monkeypatch):
+    root = tmp_path / "artifacts"
+    run_id = "11111111-1111-4111-8111-111111111111"
+    tenant_id = "tenant-a"
+    effect_key = "a" * 64
+    media = root / "private-media" / tenant_id / f"{run_id}_baseline" / "media"
+    selected = media / effect_key
+    selected.mkdir(parents=True)
+    (selected / "master.m3u8").write_text("#EXTM3U\n")
+    (media / "ready.json").write_text(json.dumps({
+        "effect_key": effect_key, "master": f"{effect_key}/master.m3u8"
+    }))
+    monkeypatch.setattr(api_module, "settings", lambda: SimpleNamespace(artifact_dir=str(root)))
+    engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Run(
+            id=run_id, tenant_id=tenant_id, task_id="task", project_id="project",
+            created_by="actor", idempotency_key="key", request_hash="r" * 64,
+            base_commit="b" * 40, model_entry_id="model", config_snapshot={},
+        ))
+        db.commit()
+        response = api_module.run_media(
+            run_id, "baseline", f"{effect_key}/master.m3u8", (tenant_id, "actor"), db
+        )
+        assert response.path == selected / "master.m3u8"
+        with pytest.raises(ServiceError) as wrong_tenant:
+            api_module.run_media(
+                run_id, "baseline", f"{effect_key}/master.m3u8", ("tenant-b", "actor"), db
+            )
+        assert wrong_tenant.value.status == 404
+        with pytest.raises(HTTPException) as traversal:
+            api_module.run_media(run_id, "baseline", "../ready.json", (tenant_id, "actor"), db)
+        assert traversal.value.status_code == 404
+        with pytest.raises(HTTPException) as wrong_effect:
+            api_module.run_media(
+                run_id, "baseline", f"{'b' * 64}/master.m3u8", (tenant_id, "actor"), db
+            )
+        assert wrong_effect.value.status_code == 404

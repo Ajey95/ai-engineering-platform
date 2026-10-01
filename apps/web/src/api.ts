@@ -68,8 +68,14 @@ export interface ReviewPacket {
   baseline_browser?: CheckReceipt | null
   baseline_oracle?: CheckReceipt | null
   patched_tests: CheckReceipt[]
+  candidate_browser?: CheckReceipt | null
+  candidate_oracle?: CheckReceipt | null
+  patch_hash?: string | null
+  diagnosis_hypothesis?: string | null
+  actual_model_spend_usd?: string
   browser_evidence_refs: string[]
   media_manifest_url?: string | null
+  media_manifest_urls?: { baseline?: string; candidate?: string }
   evidence_timeline?: { at_seconds: number; label: string; screenshot_url?: string }[]
 }
 

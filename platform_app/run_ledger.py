@@ -81,7 +81,11 @@ def transition(
     append_event(db, run, "run.state_changed", {"state": next_state, "verdict": run.verdict})
     if next_state in TERMINAL_STATES:
         append_event(db, run, "run.closed", {"state": next_state, "verdict": run.verdict})
-    if next_state in TERMINAL_STATES or next_state.startswith("PAUSED"):
+    if (
+        next_state in TERMINAL_STATES
+        or next_state.startswith("PAUSED")
+        or next_state == "REVIEW_READY"
+    ):
         run.lease_owner = None
         run.lease_until = None
 

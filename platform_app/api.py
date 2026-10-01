@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -184,6 +185,46 @@ def dev_evaluation_media(label: str, part: str):
         or len(effect_key) != 64
         or any(character not in "0123456789abcdef" for character in effect_key)
     ):
+        raise HTTPException(status_code=404)
+    selected = (root / part).resolve()
+    if (
+        not selected.is_relative_to((root / effect_key).resolve())
+        or selected.suffix not in {".m3u8", ".mp4", ".m4s"}
+        or not selected.is_file()
+    ):
+        raise HTTPException(status_code=404)
+    media_type = {
+        ".m3u8": "application/vnd.apple.mpegurl",
+        ".mp4": "video/mp4",
+        ".m4s": "video/iso.segment",
+    }[selected.suffix]
+    return FileResponse(selected, media_type=media_type)
+
+
+@app.get("/v1/runs/{run_id}/media/{label}/{part:path}")
+def run_media(
+    run_id: str,
+    label: str,
+    part: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = require_run(db, identity[0], run_id)
+    if label not in {"baseline", "candidate"}:
+        raise HTTPException(status_code=404)
+    root = (
+        Path(settings().artifact_dir).resolve()
+        / "private-media" / run.tenant_id / f"{run.id}_{label}" / "media"
+    )
+    pointer_path = root / "ready.json"
+    if not pointer_path.is_file():
+        raise HTTPException(status_code=404)
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        effect_key = pointer["effect_key"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=404) from None
+    if not isinstance(effect_key, str) or re.fullmatch(r"[0-9a-f]{64}", effect_key) is None:
         raise HTTPException(status_code=404)
     selected = (root / part).resolve()
     if (
@@ -454,6 +495,31 @@ def review_packet(
     baseline_named = receipts.get("named")
     baseline_browser = receipts.get("browser")
     baseline_oracle = receipts.get("oracle")
+    candidate_patch = receipts.get("candidate_patch")
+    candidate_named = receipts.get("candidate_named")
+    candidate_browser = receipts.get("candidate_browser")
+    candidate_oracle = receipts.get("candidate_oracle")
+    model_completed = any(
+        action.logical_action == "model.generate" and action.status == "COMPLETED"
+        for action in actions
+    )
+    provider_mode = (candidate_patch or {}).get("provider_mode")
+    media_urls = {}
+    for label in ("baseline", "candidate"):
+        media_receipt = receipts.get(f"media_{label}") or {}
+        master = media_receipt.get("master")
+        if media_receipt.get("status") == "READY" and isinstance(master, str):
+            parts = Path(master).parts
+            if len(parts) >= 2 and re.fullmatch(r"[0-9a-f]{64}", parts[-2]):
+                media_urls[label] = (
+                    f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
+                )
+    spend_entries = db.scalars(
+        select(BudgetEntry).where(
+            BudgetEntry.run_id == run.id,
+            BudgetEntry.category.like("call:%"),
+        )
+    ).all()
     reproduced = (
         baseline_named is not None
         and baseline_named.get("status") == "PASSED"
@@ -472,24 +538,44 @@ def review_packet(
         "reproduction_status": "REPRODUCED"
         if reproduced
         else ("INCONCLUSIVE" if receipts else "NOT_RUN"),
-        "qualification_scope": "synthetic_baseline_only" if receipts else "none",
-        "autonomous_repair": False,
+        "qualification_scope": (
+            "synthetic_container_controlled_provider"
+            if provider_mode == "controlled_test"
+            else "synthetic_container_fixture"
+            if candidate_patch
+            else "synthetic_baseline_only"
+            if receipts
+            else "none"
+        ),
+        "autonomous_repair": bool(
+            candidate_patch and model_completed and provider_mode == "native_api"
+        ),
         "diagnosis_evidence_refs": [],
-        "patch_hash": None,
-        "changed_files": [],
+        "patch_hash": (candidate_patch or {}).get("patch_sha256"),
+        "changed_files": (candidate_patch or {}).get("changed_files", []),
+        "diagnosis_hypothesis": (candidate_patch or {}).get("diagnosis_hypothesis"),
         "baseline_tests": [baseline_named] if baseline_named is not None else [],
         "baseline_browser": baseline_browser,
         "baseline_oracle": baseline_oracle,
         "new_tests": [],
-        "patched_tests": [],
+        "patched_tests": [candidate_named] if candidate_named is not None else [],
+        "candidate_browser": candidate_browser,
+        "candidate_oracle": candidate_oracle,
         "browser_evidence_refs": [],
         "verification_status": run.verdict,
         "limitations": (
-            ["No candidate patch or patched verification has executed"]
+            ["Controlled provider response; this does not qualify a live autonomous repair"]
+            if provider_mode == "controlled_test"
+            else ["Candidate checks are limited to the recorded synthetic fixture"]
+            if candidate_patch
+            else ["No candidate patch or patched verification has executed"]
             if receipts
             else ["Execution has not produced verified evidence"]
         ),
+        "actual_model_spend_usd": str(sum((entry.actual_usd for entry in spend_entries), start=0)),
         "media_status": run.media_status,
+        "media_manifest_urls": media_urls,
+        "media_manifest_url": media_urls.get("candidate") or media_urls.get("baseline"),
         "config_snapshot": run.config_snapshot,
     }
 
