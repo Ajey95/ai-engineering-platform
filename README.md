@@ -134,6 +134,10 @@ disposable database. It verifies a model-call reservation/usage receipt, a
 bounded patch, separate candidate named/browser/hidden-oracle containers, and
 before/after HLS publication. It does not qualify an OpenAI account or prove
 autonomous repair. The script prints a review packet and run ID.
+For a run in the API's configured artifact directory, the Changes tab loads a
+tenant-scoped unified diff and offers a patch download. The server reconstructs
+the pinned fixture base and rejects a candidate whose tree or patch hash no
+longer matches its receipt.
 On a later invocation, its local outbox recovery requeues expired dispatches
 whose completed effects have intact receipts. An uncertain `INTENDED` effect
 stops as inconclusive and requires reconciliation; it is never rerun blindly.

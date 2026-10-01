@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
+from platform_app.review_patch import verified_fixture_diff
 from platform_app.schemas import (
     ErrorBody,
     EventRead,
@@ -552,6 +553,7 @@ def review_packet(
         ),
         "diagnosis_evidence_refs": [],
         "patch_hash": (candidate_patch or {}).get("patch_sha256"),
+        "patch_url": f"/v1/runs/{run.id}/patch" if candidate_patch else None,
         "changed_files": (candidate_patch or {}).get("changed_files", []),
         "diagnosis_hypothesis": (candidate_patch or {}).get("diagnosis_hypothesis"),
         "baseline_tests": [baseline_named] if baseline_named is not None else [],
@@ -578,6 +580,34 @@ def review_packet(
         "media_manifest_url": media_urls.get("candidate") or media_urls.get("baseline"),
         "config_snapshot": run.config_snapshot,
     }
+
+
+@app.get("/v1/runs/{run_id}/patch")
+def download_patch(
+    run_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    if settings().environment != "development":
+        raise HTTPException(status_code=404)
+    run = require_run(db, identity[0], run_id)
+    action = db.scalar(select(ToolAction).where(
+        ToolAction.run_id == run.id,
+        ToolAction.tenant_id == identity[0],
+        ToolAction.step_id == "candidate_patch",
+        ToolAction.status == "COMPLETED",
+    ))
+    if action is None or action.receipt is None:
+        raise ServiceError("PATCH_UNAVAILABLE", "No verified candidate patch exists", 404)
+    diff = verified_fixture_diff(
+        run, action.receipt, Path(settings().artifact_dir).resolve(),
+        Path(__file__).resolve().parents[1],
+    )
+    return PlainTextResponse(
+        diff,
+        media_type="text/x-diff",
+        headers={"Content-Disposition": f'attachment; filename="run-{run.id}.patch"'},
+    )
 
 
 @app.get("/v1/models")

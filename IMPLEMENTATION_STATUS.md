@@ -41,7 +41,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - The Runs review panel displays persisted baseline named/browser/oracle receipt
   status, command, exit, duration and tree hash where available. Model choices
   use the API qualification flag rather than `state=enabled` alone.
-- `tests/`: 48 passing local tests and 1 Windows symlink privilege skip,
+- The fixture patch download reconstructs a unified diff from the trusted
+  pinned base, verifies the stored candidate tree and patch digest, and refuses
+  altered artifacts. The Changes tab previews the diff.
+- `tests/`: 49 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -107,7 +110,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; recording disabled when masks are requested, deletion lifecycle missing. |
-| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, and media URLs for controlled fixture; diagnosis evidence, alternatives and full export remain. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs and a verified fixture diff download; diagnosis evidence, alternatives and full packet export remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Missing | Bound action approval and draft PR reconciliation absent. |
@@ -120,7 +123,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; baseline run receipts now visible, full workspace/admin absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; receipts and verified fixture patch preview are visible, full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | Fail-closed tool schema/permission primitives; complete deterministic policy absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |

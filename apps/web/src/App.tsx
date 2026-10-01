@@ -256,12 +256,32 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
     </div>
     <div className="review-right"><div className="tabbar" role="tablist" aria-label="Run details">{(['evidence', 'changes', 'logs', 'environment'] as const).map(item => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'changes' ? 'Changed files' : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
       <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} />}
-        {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}{packet?.diagnosis_hypothesis && <p className="muted">Model hypothesis: {packet.diagnosis_hypothesis}</p>}</>}
+        {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}{packet?.diagnosis_hypothesis && <p className="muted">Model hypothesis: {packet.diagnosis_hypothesis}</p>}{packet?.patch_url && <PatchViewer url={packet.patch_url} />}</>}
         {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
       </div>
       <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>{!['COMPLETED', 'FAILED', 'CANCELLED', 'INCONCLUSIVE'].includes(run.state) && <button className="secondary-button" onClick={cancel}><Square size={14} /> Cancel run</button>}</div>
     </div>
+  </div>
+}
+
+function PatchViewer({ url }: { url: string }) {
+  const [diff, setDiff] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch(url, { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error(`Patch unavailable (${response.status})`)
+      setDiff(await response.text())
+      setError('')
+    }).catch(reason => {
+      if (!controller.signal.aborted) setError(String(reason))
+    })
+    return () => controller.abort()
+  }, [url])
+  return <div className="patch-viewer">
+    <a href={url} download>Download verified patch</a>
+    {error ? <p role="alert">{error}</p> : diff ? <pre>{diff}</pre> : <p className="muted">Loading patch…</p>}
   </div>
 }
 

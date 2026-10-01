@@ -161,3 +161,15 @@ Docker Engine is the functioning development runtime. No automation was
 scheduled. Next priorities: repair Docker Desktop if feasible, hosted identity
 and tenant roles, isolated customer execution, live provider qualification,
 durable workflow/queue, private media distribution, and benchmark/release gates.
+
+2026-10-02 review patch follow-up: the development API exposes a tenant-scoped
+`/v1/runs/{id}/patch` download. It reconstructs a unified diff from the
+trusted pinned Git fixture and a stored candidate only after rechecking the
+candidate tree hash and patch hash. The Changes tab previews and downloads it.
+Tampering causes `PATCH_CHANGED`; a focused test covers the valid and altered
+candidate. At this follow-up the full suite was 49 passed, 1 Windows symlink
+skip and the web build passed. Docker Desktop read-only inspection still
+showed the `dockerInference` reparse point and backend error 1920; Windows CLI
+could not connect, while the Ubuntu WSL Docker Engine reported 29.8.2 and
+overlayfs. The working project runtime remains WSL. No Desktop data reset,
+purge or other broad deletion was performed.
