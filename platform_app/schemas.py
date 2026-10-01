@@ -60,6 +60,11 @@ class RunRead(StrictModel):
     updated_at: datetime
 
 
+class ReviewDecisionCreate(StrictModel):
+    decision: Literal["accepted", "rejected"]
+    reason: str = Field(default="", max_length=2000)
+
+
 class EventRead(StrictModel):
     schema_version: str = "1.0"
     event_id: str

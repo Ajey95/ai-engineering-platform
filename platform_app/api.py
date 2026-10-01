@@ -32,6 +32,7 @@ from platform_app.schemas import (
     ModelRegister,
     ProjectCreate,
     ProjectRead,
+    ReviewDecisionCreate,
     RunCreate,
     RunRead,
     TaskCreate,
@@ -42,6 +43,7 @@ from platform_app.service import (
     admit_run,
     canonical_hash,
     event_read,
+    record_review_decision,
     request_cancel,
     require_project,
     require_run,
@@ -406,6 +408,21 @@ def cancel_run(
     return run_read(run)
 
 
+@app.post("/v1/runs/{run_id}/review-decision", response_model=RunRead)
+def review_decision(
+    run_id: str,
+    body: ReviewDecisionCreate,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = record_review_decision(
+        db, identity[0], run_id, identity[1], body.decision, body.reason
+    )
+    db.commit()
+    db.refresh(run)
+    return run_read(run)
+
+
 @app.get("/v1/runs/{run_id}/events/history", response_model=list[EventRead])
 def event_history(
     run_id: str,
@@ -504,6 +521,9 @@ def review_packet(
         action.logical_action == "model.generate" and action.status == "COMPLETED"
         for action in actions
     )
+    review_event = db.scalar(select(RunEvent).where(
+        RunEvent.run_id == run.id, RunEvent.event_type == "review.decision"
+    ).order_by(RunEvent.sequence.desc()).limit(1))
     provider_mode = (candidate_patch or {}).get("provider_mode")
     media_urls = {}
     for label in ("baseline", "candidate"):
@@ -565,6 +585,9 @@ def review_packet(
         "candidate_oracle": candidate_oracle,
         "browser_evidence_refs": [],
         "verification_status": run.verdict,
+        "review_decision": (review_event.payload or {}).get("decision") if review_event else None,
+        "review_reason": (review_event.payload or {}).get("reason") if review_event else None,
+        "publication_status": "DISABLED",
         "limitations": (
             ["Controlled provider response; this does not qualify a live autonomous repair"]
             if provider_mode == "controlled_test"

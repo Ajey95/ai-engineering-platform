@@ -216,11 +216,13 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
         lease_until = lease_until.replace(tzinfo=UTC)
     active_lease = bool(run.lease_owner and lease_until and lease_until > datetime.now(UTC))
     if run.state == "QUEUED" or run.state.startswith("PAUSED") or not active_lease:
+        preserve_verdict = run.state == "REVIEW_READY"
         run.state = "CANCELLED"
-        run.verdict = "NOT_RUN"
+        if not preserve_verdict:
+            run.verdict = "NOT_RUN"
         run.lease_owner = None
         run.lease_until = None
-        append_event(db, run, "run.closed", {"state": "CANCELLED", "verdict": "NOT_RUN"})
+        append_event(db, run, "run.closed", {"state": "CANCELLED", "verdict": run.verdict})
     else:
         run.state = "CANCEL_REQUESTED"
         append_event(db, run, "run.state_changed", {"state": "CANCEL_REQUESTED"})
@@ -235,3 +237,40 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
             outcome="allowed",
         )
     )
+
+
+def record_review_decision(
+    db: Session, tenant_id: str, run_id: str, actor: str,
+    decision: str, reason: str = "",
+) -> Run:
+    run = db.scalar(select(Run).where(
+        Run.id == run_id, Run.tenant_id == tenant_id
+    ).with_for_update())
+    if run is None or run.created_by != actor:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
+    if decision not in {"accepted", "rejected"}:
+        raise ServiceError("INVALID_DECISION", "Unknown reviewer decision", 400)
+    reason = reason.strip()
+    if decision == "rejected" and len(reason) < 5:
+        raise ServiceError("REASON_REQUIRED", "Rejection needs a reason", 400)
+    prior = db.scalar(select(RunEvent).where(
+        RunEvent.run_id == run.id, RunEvent.event_type == "review.decision"
+    ).order_by(RunEvent.sequence.desc()).limit(1))
+    if run.state == "COMPLETED" and prior is not None:
+        if prior.payload.get("decision") == decision and prior.payload.get("reason") == reason:
+            return run
+        raise ServiceError("REVIEW_CLOSED", "Review decision has already been recorded", 409)
+    if run.state != "REVIEW_READY" or run.verdict != "PASSED":
+        raise ServiceError("REVIEW_NOT_READY", "Only verified review-ready runs can be closed", 409)
+    append_event(db, run, "review.decision", {
+        "decision": decision, "reason": reason, "actor": actor,
+    })
+    run.state = "COMPLETED"
+    append_event(db, run, "run.state_changed", {"state": "COMPLETED", "verdict": run.verdict})
+    append_event(db, run, "run.closed", {"state": "COMPLETED", "verdict": run.verdict})
+    db.add(AuditEvent(
+        tenant_id=tenant_id, actor=actor, action="review.decide", target_ref=run.id,
+        arguments_hash=canonical_hash({"decision": decision, "reason": reason}),
+        policy_revision=run.config_snapshot.get("policy_version", "1.0"), outcome="allowed",
+    ))
+    return run

@@ -138,6 +138,10 @@ For a run in the API's configured artifact directory, the Changes tab loads a
 tenant-scoped unified diff and offers a patch download. The server reconstructs
 the pinned fixture base and rejects a candidate whose tree or patch hash no
 longer matches its receipt.
+For a `REVIEW_READY` fixture run, the reviewer can accept or reject the packet
+in the Runs or Review screen. Rejection requires a reason. Both decisions are
+audited, close the run, and leave the test verdict intact. Accepting a packet
+does not authorize or create a draft PR.
 On a later invocation, its local outbox recovery requeues expired dispatches
 whose completed effects have intact receipts. An uncertain `INTENDED` effect
 stops as inconclusive and requires reconciliation; it is never rerun blindly.

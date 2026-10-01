@@ -173,3 +173,12 @@ showed the `dockerInference` reparse point and backend error 1920; Windows CLI
 could not connect, while the Ubuntu WSL Docker Engine reported 29.8.2 and
 overlayfs. The working project runtime remains WSL. No Desktop data reset,
 purge or other broad deletion was performed.
+
+2026-10-02 reviewer decision follow-up: added actor-scoped accept/reject for
+`REVIEW_READY` and a durable `review.decision` event plus audit record. The
+decision closes the run idempotently while retaining its independent PASSED
+verification verdict. Rejection requires a reason; accepting never publishes
+a PR. The Runs and Review screens show the decision controls and outcome.
+Cancellation of a review-ready run now also preserves the verified result.
+Tests 51 passed, 1 Windows symlink skip; frontend build passed; ruff import
+order was fixed after the first check and must be rechecked before commit.

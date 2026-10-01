@@ -101,7 +101,7 @@ export default function App() {
         void refresh()
       } catch { /* malformed event is ignored; durable history remains source of truth */ }
     }
-    for (const name of ['run.admitted', 'run.state_changed', 'model.started', 'model.completed', 'tool.authorized', 'tool.completed', 'verification.completed', 'artifact.ready', 'run.closed']) stream.addEventListener(name, receive)
+    for (const name of ['run.admitted', 'run.state_changed', 'model.started', 'model.completed', 'tool.authorized', 'tool.completed', 'verification.completed', 'artifact.ready', 'review.decision', 'run.closed']) stream.addEventListener(name, receive)
     return () => { active = false; stream.close() }
   }, [selectedRun, refresh])
 
@@ -163,6 +163,22 @@ export default function App() {
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Cancellation failed') }
   }
 
+  async function decideReview(decision: 'accepted' | 'rejected', reason: string) {
+    if (!run) return
+    setBusy(true); setError('')
+    try {
+      await api(`/runs/${run.id}/review-decision`, {
+        method: 'POST', body: jsonBody({ decision, reason }),
+      })
+      const [updated, history] = await Promise.all([
+        api<ReviewPacket>(`/runs/${run.id}/review-packet`),
+        api<RunEvent[]>(`/runs/${run.id}/events/history`),
+      ])
+      setPacket(updated); setEvents(history); await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Review decision failed') }
+    finally { setBusy(false) }
+  }
+
   async function searchMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError('')
     if (!selectedProject) return
@@ -212,9 +228,9 @@ export default function App() {
         {page === 'runs' && <section className="page-section">
           <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !qualifiedModels.length} title={!qualifiedModels.length ? 'No qualified model is enabled' : undefined}><Play size={16} /> Start run</button></div>
           {!qualifiedModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
-          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
+          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} decideReview={decideReview} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
-        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
+        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} decideReview={decideReview} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
         {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
         {page === 'memory' && <section className="page-section"><div className="page-heading"><div><h1>Memory</h1><p>Verified facts at an exact repository revision. Retrieval uses the canonical fallback.</p></div></div><form className="memory-search content-panel" onSubmit={searchMemory}><label>Commit SHA<input value={memoryRevision} onChange={event => setMemoryRevision(event.target.value)} pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label><label>Search text<input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder="File, symbol or incident" /></label><button className="secondary-button" disabled={!selectedProject}>Search memory</button></form><div className="content-panel"><h2>Source-backed facts</h2>{memoryFacts.length ? memoryFacts.map(fact => <div className="memory-fact" key={fact.id}><strong>{fact.subject}</strong><p>{fact.statement}</p><small>{fact.verification_scope || 'Scope not recorded'} · {fact.source_refs.join(', ')}</small></div>) : <p className="muted">No verified facts loaded for this revision.</p>}</div></section>}
@@ -243,12 +259,15 @@ export default function App() {
   </div>
 }
 
-function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
+function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, decideReview, busy }: {
   run: Run; task?: Task; packet: ReviewPacket | null; events: RunEvent[]
   tab: 'evidence' | 'changes' | 'logs' | 'environment'
   setTab: (tab: 'evidence' | 'changes' | 'logs' | 'environment') => void
   cancel: () => void
+  decideReview: (decision: 'accepted' | 'rejected', reason: string) => Promise<void>
+  busy: boolean
 }) {
+  const [rejectionReason, setRejectionReason] = useState('')
   return <div className="review-layout">
     <div className="review-left"><div className="review-header"><div><small>Run #{shortId(run.id)} · {date(run.created_at)}</small><h2>{task?.report || 'Loading report'}</h2></div><Status value={run.state} /></div>
       <div className="content-panel bug-report"><div className="section-title"><ClipboardList size={18} /><h3>Bug report</h3></div><p>{task?.report || 'Loading…'}</p><dl><dt>Expected</dt><dd>{task?.expected_behavior || '—'}</dd><dt>Actual</dt><dd>{task?.actual_behavior || '—'}</dd></dl></div>
@@ -260,7 +279,16 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel }: {
         {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
       </div>
-      <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>{!['COMPLETED', 'FAILED', 'CANCELLED', 'INCONCLUSIVE'].includes(run.state) && <button className="secondary-button" onClick={cancel}><Square size={14} /> Cancel run</button>}</div>
+      <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>
+        {packet?.review_decision && <p>Reviewer decision: <strong>{packet.review_decision}</strong>{packet.review_reason ? ` — ${packet.review_reason}` : ''}</p>}
+        {run.state === 'REVIEW_READY' && <div className="review-actions">
+          <p className="muted">Accepting this packet records a review decision. Draft PR publication requires separate approval and is unavailable.</p>
+          <button className="primary-button" disabled={busy} onClick={() => void decideReview('accepted', '')}>Accept packet</button>
+          <label>Reason to reject<textarea value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} maxLength={2000} rows={2} /></label>
+          <button className="secondary-button" disabled={busy || rejectionReason.trim().length < 5} onClick={() => void decideReview('rejected', rejectionReason)}>Reject packet</button>
+        </div>}
+        {!['COMPLETED', 'FAILED', 'CANCELLED', 'INCONCLUSIVE', 'REVIEW_READY'].includes(run.state) && <button className="secondary-button" onClick={cancel}><Square size={14} /> Cancel run</button>}
+      </div>
     </div>
   </div>
 }

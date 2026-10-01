@@ -58,6 +58,9 @@ export interface ReviewPacket {
   actual_behavior: string
   base_commit: string
   verification_status: string
+  review_decision?: 'accepted' | 'rejected' | null
+  review_reason?: string | null
+  publication_status?: string
   reproduction_status: string
   qualification_scope?: string
   autonomous_repair?: boolean
