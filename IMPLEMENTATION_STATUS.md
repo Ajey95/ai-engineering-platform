@@ -70,7 +70,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 60 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 66 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -119,6 +119,15 @@ The disposable PostgreSQL verifier also observed one old dispatch marked
 Production startup requires configured OIDC and PostgreSQL. This has only
 been exercised with local signed tokens and a disposable database, and hosted
 run execution remains deliberately disabled.
+The development worker and fixture model path now require a deterministic
+action policy before each effect. It checks active tenant and matching
+project/task scope, current policy revision, fixture/project binding, reviewed
+action/version/class/target and the run tool-call cap. Denials are persisted in
+the effect ledger and audit log. A controlled Docker run
+`a0701196-992e-490c-8daf-cc0d6d29cfff` at pinned commit `6735b49`
+resumed input and reached `REVIEW_READY` with ten authorized effects,
+PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and media READY. The model
+response was predetermined; this is not live autonomous repair.
 
 ## Requirement traceability
 
@@ -172,7 +181,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
 | FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; receipts, patch preview, reviewer decision and paused-input answer control are visible, full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
-| FR-SEC-01 | Partial | Fail-closed tool schema/permission primitives; complete deterministic policy absent. |
+| FR-SEC-01 | Partial | The development fixture worker and model path now enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. Hosted broker and plugin authority absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Missing | Prompt injection qualification absent. |
 | FR-SEC-04 | Partial | Canonical deletion tombstone/outbox; object/cache/restore propagation absent. |

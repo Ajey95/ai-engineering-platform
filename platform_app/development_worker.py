@@ -17,9 +17,16 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from platform_app.action_policy import (
+    FIXTURE_VERSION,
+    MEDIA_VERSION,
+    PATCH_VERSION,
+    ActionIntent,
+    authorize_run_effect,
+)
 from platform_app.agent_patch import request_fixture_patch
 from platform_app.config import settings
 from platform_app.db import SessionLocal, utcnow
@@ -36,7 +43,6 @@ from platform_app.providers import ProviderError
 from platform_app.run_ledger import (
     assert_fence,
     aware,
-    begin_tool_action,
     claim_run,
     complete_tool_action,
     heartbeat,
@@ -224,23 +230,25 @@ class DevelopmentWorker:
             raise ServiceError("RUN_CANCELLED", "Worker observed cancellation", 409)
         with self.session_factory() as db:
             run = db.get(Run, run_id)
-            count = db.scalar(
-                select(func.count())
-                .select_from(ToolAction)
-                .where(
-                    ToolAction.run_id == run_id,
-                )
-            )
-            if count >= int(run.config_snapshot["max_tool_calls"]):
-                raise ServiceError("TOOL_BUDGET_EXHAUSTED", "Run tool call limit reached", 409)
             arguments = {
                 "fixture_case_id": "form-submit-001",
                 "base_commit": run.base_commit,
                 "workspace_tree_sha256": tree_hash(workspace),
                 "step": step,
             }
-            action = begin_tool_action(
-                db, run, self.worker_id, fence, step, f"fixture.{step}", arguments, True
+            action = authorize_run_effect(
+                db,
+                run,
+                self.worker_id,
+                fence,
+                ActionIntent(
+                    step,
+                    f"fixture.{step}",
+                    "isolated_execution",
+                    "form-submit-001",
+                    FIXTURE_VERSION,
+                    arguments,
+                ),
             )
             if action.status == "COMPLETED":
                 return _verified_receipt(step, target, action.receipt)
@@ -286,15 +294,22 @@ class DevelopmentWorker:
         destination = self.artifact_root / run_id / "candidate" / "workspace"
         with self.session_factory() as db:
             run = db.get(Run, run_id)
-            action = begin_tool_action(
+            action = authorize_run_effect(
                 db,
                 run,
                 self.worker_id,
                 fence,
-                "candidate_patch",
-                "fixture.patch",
-                {"patch_sha256": proposal.patch_sha256, "baseline_tree_sha256": tree_hash(source)},
-                True,
+                ActionIntent(
+                    "candidate_patch",
+                    "fixture.patch",
+                    "workspace_write",
+                    "server.py",
+                    PATCH_VERSION,
+                    {
+                        "patch_sha256": proposal.patch_sha256,
+                        "baseline_tree_sha256": tree_hash(source),
+                    },
+                ),
             )
             if action.status == "COMPLETED":
                 if not destination.is_dir() or tree_hash(destination) != (action.receipt or {}).get(
@@ -336,9 +351,15 @@ class DevelopmentWorker:
                 run = db.get(Run, run_id)
                 assert_fence(run, self.worker_id, fence)
                 run.media_status = "FAILED"
-                append_event(db, run, "artifact.failed", {
-                    "label": label, "reason": "recording_missing",
-                })
+                append_event(
+                    db,
+                    run,
+                    "artifact.failed",
+                    {
+                        "label": label,
+                        "reason": "recording_missing",
+                    },
+                )
                 db.commit()
             return
         source = evidence / recording
@@ -347,16 +368,32 @@ class DevelopmentWorker:
                 run = db.get(Run, run_id)
                 assert_fence(run, self.worker_id, fence)
                 run.media_status = "FAILED"
-                append_event(db, run, "artifact.failed", {
-                    "label": label, "reason": "recording_missing",
-                })
+                append_event(
+                    db,
+                    run,
+                    "artifact.failed",
+                    {
+                        "label": label,
+                        "reason": "recording_missing",
+                    },
+                )
                 db.commit()
             return
         with self.session_factory() as db:
             run = db.get(Run, run_id)
-            action = begin_tool_action(
-                db, run, self.worker_id, fence, f"media_{label}", "media.encode",
-                {"recording_sha256": sha256_file(source), "profile_revision": "hls-v1"}, True,
+            action = authorize_run_effect(
+                db,
+                run,
+                self.worker_id,
+                fence,
+                ActionIntent(
+                    f"media_{label}",
+                    "media.encode",
+                    "private_artifact_write",
+                    run.id,
+                    MEDIA_VERSION,
+                    {"recording_sha256": sha256_file(source), "profile_revision": MEDIA_VERSION},
+                ),
             )
             if action.status == "COMPLETED":
                 return
@@ -364,7 +401,9 @@ class DevelopmentWorker:
             action_id, tenant_id = action.id, run.tenant_id
         try:
             master = encode_hls(
-                source, self.artifact_root / "private-media", tenant_id,
+                source,
+                self.artifact_root / "private-media",
+                tenant_id,
                 f"{run_id}_{label}",
             )
         except (MediaError, OSError, subprocess.TimeoutExpired) as error:
@@ -372,23 +411,45 @@ class DevelopmentWorker:
                 run = db.get(Run, run_id)
                 assert_fence(run, self.worker_id, fence)
                 action = db.get(ToolAction, action_id)
-                complete_tool_action(db, run, self.worker_id, fence, action, {
-                    "status": "FAILED", "label": label,
-                    "reason": type(error).__name__,
-                })
+                complete_tool_action(
+                    db,
+                    run,
+                    self.worker_id,
+                    fence,
+                    action,
+                    {
+                        "status": "FAILED",
+                        "label": label,
+                        "reason": type(error).__name__,
+                    },
+                )
                 run.media_status = "FAILED"
-                append_event(db, run, "artifact.failed", {
-                    "label": label, "reason": type(error).__name__,
-                })
+                append_event(
+                    db,
+                    run,
+                    "artifact.failed",
+                    {
+                        "label": label,
+                        "reason": type(error).__name__,
+                    },
+                )
                 db.commit()
             return
         with self.session_factory() as db:
             run = db.get(Run, run_id)
             action = db.get(ToolAction, action_id)
-            complete_tool_action(db, run, self.worker_id, fence, action, {
-                "status": "READY", "label": label,
-                "master": str(master.relative_to(self.artifact_root)),
-            })
+            complete_tool_action(
+                db,
+                run,
+                self.worker_id,
+                fence,
+                action,
+                {
+                    "status": "READY",
+                    "label": label,
+                    "master": str(master.relative_to(self.artifact_root)),
+                },
+            )
             media_actions = db.scalars(
                 select(ToolAction).where(
                     ToolAction.run_id == run_id,
@@ -398,8 +459,9 @@ class DevelopmentWorker:
                 )
             ).all()
             run.media_status = (
-                "FAILED" if any((item.receipt or {}).get("status") == "FAILED"
-                                for item in media_actions) else "READY"
+                "FAILED"
+                if any((item.receipt or {}).get("status") == "FAILED" for item in media_actions)
+                else "READY"
             )
             append_event(db, run, "artifact.ready", {"label": label, "kind": "hls"})
             db.commit()
@@ -532,12 +594,15 @@ class DevelopmentWorker:
                 candidate_browser = self._action(
                     run_id, fence, "candidate_browser", manifest, candidate, candidate_target
                 )
-                self._encode_media(
-                    run_id, fence, "candidate", candidate_browser, candidate_target
-                )
+                self._encode_media(run_id, fence, "candidate", candidate_browser, candidate_target)
                 candidate_oracle = self._action(
-                    run_id, fence, "candidate_oracle", manifest, candidate,
-                    candidate_target, oracle,
+                    run_id,
+                    fence,
+                    "candidate_oracle",
+                    manifest,
+                    candidate,
+                    candidate_target,
+                    oracle,
                 )
                 checks = [candidate_named, candidate_browser, candidate_oracle]
                 passed = all(receipt["status"] == "PASSED" for receipt in checks)
@@ -635,8 +700,14 @@ class DevelopmentWorker:
                 ):
                     continue
                 if run.state in {
-                    "COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED",
-                    "REVIEW_READY", "PAUSED_INPUT", "PAUSED_APPROVAL", "PAUSED_BUDGET",
+                    "COMPLETED",
+                    "INCONCLUSIVE",
+                    "FAILED",
+                    "CANCELLED",
+                    "REVIEW_READY",
+                    "PAUSED_INPUT",
+                    "PAUSED_APPROVAL",
+                    "PAUSED_BUDGET",
                 }:
                     candidate.status = "delivered"
                     continue

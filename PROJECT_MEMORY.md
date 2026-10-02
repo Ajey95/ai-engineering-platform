@@ -256,3 +256,14 @@ Controlled rerun `a5947e25-9a7e-4941-b6b5-e74e9bbfcfa8` additionally
 asserted that the resume answer and trust label reached the provider request.
 The disposable PostgreSQL verifier separately passed `postgres_resume=true`:
 the old dispatch was delivered and exactly one new dispatch was pending.
+
+2026-10-02 deterministic action policy continuation: the development worker
+and fixture model reservation call a reviewed effect policy before execution.
+It binds tenant/project/task/run, current policy revision, fixture setup,
+action name/class/target/source version and the run tool cap. Denials are
+durable ToolAction/AuditEvent records. Python tests 66 passed, 1 Windows
+symlink privilege skip; scoped Ruff clean. Controlled Docker run
+`a0701196-992e-490c-8daf-cc0d6d29cfff` reached REVIEW_READY with ten
+authorized effects, PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and
+media READY after PAUSED_INPUT resume. The provider response remained
+predetermined; no live model or hosted security qualification occurred.

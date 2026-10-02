@@ -7,8 +7,9 @@ from decimal import ROUND_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from platform_app.action_policy import ActionIntent, authorize_run_effect
 from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
-from platform_app.run_ledger import assert_fence, begin_tool_action, complete_tool_action
+from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.token_budget import (
     BudgetError,
@@ -112,8 +113,19 @@ def reserve_model_call(
     }
     existing = next((action for action in actions if action.step_id == step_id), None)
     if existing is not None:
-        action = begin_tool_action(
-            db, run, worker_id, fence, step_id, "model.generate", arguments, True
+        action = authorize_run_effect(
+            db,
+            run,
+            worker_id,
+            fence,
+            ActionIntent(
+                step_id,
+                "model.generate",
+                "provider_request",
+                model.id,
+                model.registry_revision,
+                arguments,
+            ),
         )
         budget = db.scalar(
             select(BudgetEntry).where(
@@ -147,8 +159,19 @@ def reserve_model_call(
         check_cumulative_budget(policy, used_input, used_output, committed, reserved, plan)
     except BudgetError as error:
         raise ServiceError("BUDGET_EXHAUSTED", str(error), 409) from error
-    action = begin_tool_action(
-        db, run, worker_id, fence, step_id, "model.generate", arguments, True
+    action = authorize_run_effect(
+        db,
+        run,
+        worker_id,
+        fence,
+        ActionIntent(
+            step_id,
+            "model.generate",
+            "provider_request",
+            model.id,
+            model.registry_revision,
+            arguments,
+        ),
     )
     reservation = BudgetEntry(
         tenant_id=run.tenant_id,

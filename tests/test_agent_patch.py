@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from platform_app.agent_patch import request_fixture_patch
 from platform_app.db import Base
-from platform_app.models import BudgetEntry, ModelEntry, Run, Task, Tenant, ToolAction
+from platform_app.models import BudgetEntry, ModelEntry, Project, Run, Task, Tenant, ToolAction
 from platform_app.providers import OpenAIResponses
 from platform_app.run_ledger import claim_run
 
@@ -56,6 +56,17 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db:
         db.add(Tenant(id="tenant-a", name="A"))
+        manifest = {"case_id": "form-submit-001"}
+        db.add(
+            Project(
+                id="project-a",
+                tenant_id="tenant-a",
+                name="Fixture",
+                repository_url="https://example.test/repo",
+                test_url="https://example.test",
+                environment_manifest=manifest,
+            )
+        )
         db.add(
             Task(
                 id="task-a",
@@ -96,6 +107,12 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
                 model_entry_id="model-a",
                 state="QUEUED",
                 config_snapshot={
+                    "policy_version": "1.0",
+                    "reproduction": {"fixture_case_id": "form-submit-001"},
+                    "environment_manifest": manifest,
+                    "repository_url": "https://example.test/repo",
+                    "test_url": "https://example.test",
+                    "max_tool_calls": 20,
                     "max_model_calls": 3,
                     "spend_limit_usd": 5,
                     "model_registry_revision": "rev-a",

@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base
 from platform_app.model_budget import reserve_model_call, settle_model_call
-from platform_app.models import BudgetEntry, ModelEntry, Run, Tenant, ToolAction
+from platform_app.models import BudgetEntry, ModelEntry, Project, Run, Task, Tenant, ToolAction
 from platform_app.run_ledger import claim_run
 from platform_app.service import ServiceError
 
@@ -22,6 +22,28 @@ def scope():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         db.add(Tenant(id="tenant-a", name="A"))
+        manifest = {"case_id": "form-submit-001"}
+        db.add(
+            Project(
+                id="project-a",
+                tenant_id="tenant-a",
+                name="Fixture",
+                repository_url="https://example.test/repo",
+                test_url="https://example.test",
+                environment_manifest=manifest,
+            )
+        )
+        db.add(
+            Task(
+                id="task-a",
+                tenant_id="tenant-a",
+                project_id="project-a",
+                report="Broken form",
+                expected_behavior="Created",
+                actual_behavior="500",
+                created_by="alice",
+            )
+        )
         db.add(
             ModelEntry(
                 id="model-a",
@@ -51,6 +73,12 @@ def scope():
                 model_entry_id="model-a",
                 state="QUEUED",
                 config_snapshot={
+                    "policy_version": "1.0",
+                    "reproduction": {"fixture_case_id": "form-submit-001"},
+                    "environment_manifest": manifest,
+                    "repository_url": "https://example.test/repo",
+                    "test_url": "https://example.test",
+                    "max_tool_calls": 20,
                     "max_model_calls": 1,
                     "spend_limit_usd": 5,
                     "model_registry_revision": "rev-a",
@@ -130,9 +158,16 @@ def test_unqualified_model_and_uncertain_usage_fail_closed(scope):
     assert error.value.code == "USAGE_UNKNOWN"
     with pytest.raises(ServiceError) as cached:
         settle_model_call(
-            db, run, "worker-one", fence, action, reservation, model,
+            db,
+            run,
+            "worker-one",
+            fence,
+            action,
+            reservation,
+            model,
             {"input_tokens": 100, "output_tokens": 10, "cache_creation_tokens": 50},
-            hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+            hashlib.sha256(b"output").hexdigest(),
+            "private/model-1.json",
         )
     assert cached.value.code == "USAGE_PRICING_UNQUALIFIED"
     assert db.scalar(select(ToolAction.status)) == "INTENDED"
