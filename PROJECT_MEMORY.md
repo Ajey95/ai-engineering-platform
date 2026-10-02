@@ -1126,6 +1126,22 @@ approval and reports the PR URL. Local PostgreSQL migrated to
 Ruff and Vite build passed. This is controlled local proof, not a live
 GitHub/provider/AWS qualification; hosted admission remains off by default.
 
+2026-10-03 infrastructure definition increment: `infra/terraform/trusted-network`
+adds two-zone public/private subnets, per-zone NAT and VPC flow logs;
+`control-plane` adds TLS ALB, two API tasks, two agent tasks, one publication
+task, managed Multi-AZ PostgreSQL, a private encrypted EFS access point and
+per-workload Secrets Manager execution roles. The `pilot` root joins these
+to the existing sandbox network/artifact bucket, SQS and CloudFront modules
+and creates DNS aliases. ECS starts at zero tasks and hosted admission stays
+off until database migration and live qualification. AWS provider 6.67.0
+`terraform fmt -check` and `validate` passed for the new modules and root;
+no account plan/apply, AMI build, live IAM/network test or restore drill ran.
+The root still lacks Memgraph, Redis, media transcode workers and production
+alert collection. Terraform initially hit a full C: temp drive; validation
+used the existing provider binary in the workspace. An exact recursive
+cleanup of the temporary download directory was blocked by automatic review,
+so it is left ignored under `.terraform-tmp/`.
+
 2026-10-03 guest AMI definition increment: `infra/sandbox-ami` pins a
 source Ubuntu 24.04 AMI input, Amazon Packer plugin 1.8.1, Node 24.21.0
 archive SHA-256, Python `uv.lock`, Playwright Chromium and uid 10001. The

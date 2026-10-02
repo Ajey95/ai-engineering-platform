@@ -12,6 +12,7 @@ artifacts/
 *.egg-info/
 *.tsbuildinfo
 .terraform/
+.terraform-tmp/
 *.tfstate
 *.tfstate.*
 *.tfvars

@@ -92,6 +92,16 @@ not a live provider, customer repository, AWS or GitHub qualification.
   A read-only, capability-dropped smoke container returned health 200,
   unauthenticated projects 401 and token-authorized empty projects. It has not
   been pushed, deployed, or run against hosted PostgreSQL/OIDC.
+- `infra/terraform/trusted-network`, `control-plane` and `pilot` now define a
+  two-zone trusted VPC with private NAT egress, ECS API/agent/publication
+  services, a TLS origin load balancer, Multi-AZ RDS PostgreSQL, a private
+  EFS access point and DNS bindings to the existing queue/sandbox/edge
+  modules. Per-workload execution roles inject only named Secrets Manager
+  values, the image is pinned by digest, initial desired counts are zero and
+  hosted admission defaults off. AWS provider 6.67.0 `fmt` and `validate`
+  passed for the root and new modules. No account plan/apply, app DB bootstrap,
+  restore or live network/IAM qualification exists; Memgraph, media workers
+  and alert collection remain outside this stack.
 - Scoped GitHub repository connection records accept canonical HTTPS
   owner/repo identity and opaque `secret://` references. Maintainers can register
   or disable them; readers can list readiness without seeing the secret reference.
@@ -418,7 +428,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; its pinned source archive now uses a bounded regular-file extractor. Hosted hostile-repository isolation remains unverified. |
-| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy and private artifact bucket. A Packer AMI template validates; the hosted coordinator records two separate guest generations and requires confirmed termination between them. No AMI build, applied network proof or live launch exists; hosted admission is disabled by default behind an explicit qualification gate. |
+| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy, private artifact bucket, and a separate trusted ECS VPC. A Packer AMI template validates; the hosted coordinator records distinct guest generations and requires confirmed termination between them. No AMI build, applied network proof or live launch exists; hosted admission is disabled by default. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. Hosted authorized-origin and network policy qualification remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |

@@ -1,0 +1,5 @@
+bucket       = "REPLACE-with-existing-private-terraform-state-bucket"
+key          = "ai-engineering-platform/pilot.tfstate"
+region       = "REPLACE-with-selected-region"
+encrypt      = true
+use_lockfile = true
