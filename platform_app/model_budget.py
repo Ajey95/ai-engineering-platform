@@ -262,6 +262,13 @@ def settle_model_call(
         raise ServiceError(
             "USAGE_PRICING_UNQUALIFIED", "Cached token pricing is not qualified", 409
         )
+    usage_receipt = {"input_tokens": inputs, "output_tokens": outputs}
+    for name in ("reasoning_tokens", "cache_read_tokens", "cache_creation_tokens"):
+        if name in usage:
+            value = usage[name]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ServiceError("USAGE_UNKNOWN", "Provider usage is invalid", 409)
+            usage_receipt[name] = value
     if len(output_sha256) != 64 or any(c not in "0123456789abcdef" for c in output_sha256):
         raise ServiceError("RECEIPT_INVALID", "Model output digest is invalid", 400)
     actual = _cost(inputs, outputs, _price(model))
@@ -280,7 +287,7 @@ def settle_model_call(
         action,
         {
             "status": "COMPLETED",
-            "usage": {"input_tokens": inputs, "output_tokens": outputs},
+            "usage": usage_receipt,
             "output_sha256": output_sha256,
             "artifact_ref": artifact_ref,
             "actual_usd": str(actual),

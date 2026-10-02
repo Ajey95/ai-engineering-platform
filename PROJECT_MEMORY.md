@@ -451,3 +451,19 @@ The controlled WSL replay `cd522708-0287-4ca8-9b0e-df1614e3b72e` at
 `ed52940` reached REVIEW_READY/PASSED with ten effects and both media sides
 READY after this change. Full Python suite: 86 passed, one Windows symlink
 privilege skip; Ruff passed.
+
+2026-10-02 fixture context compaction: `platform_app/context_compaction.py`
+reduces verified tool log excerpts when serialized input reaches 80% of the
+model's conservatively estimated input byte capacity or the next required
+content would overflow it. A pending tool cycle fails closed. It keeps the
+task, source commit, immutable permission boundaries, decisions and paired
+tool IDs in the prompt; saves content-addressed full source and deterministic
+summary files with a 32 KiB summary cap. Scoped retrieval validates summary
+and source SHA-256 plus task/decision equivalence. Persisted run creation time
+anchors context source metadata for identical replay. The fixture model path
+records one `context.compacted` event. An integration test forced compaction,
+settled a controlled provider response, then replayed it without a second
+provider request or duplicate event. Provider usage receipt now preserves
+validated reasoning/cache detail fields so replay metadata agrees. This is
+fixture-only; general session compaction and model-side original retrieval
+remain pending.

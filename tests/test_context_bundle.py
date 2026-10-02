@@ -37,7 +37,7 @@ def test_fixture_bundle_marks_untrusted_source_and_pins_hashes():
     assert receipt_item["trust_label"] == "untrusted_tool_output"
     assert file_item["authorization_scope"] == "tenant:tenant/project:project"
     assert bundle["permission_boundaries"] == "Only return a bounded patch"
-    assert bundle["trust_annotations"]["captured_at_meaning"] == "context_assembly_time"
+    assert bundle["trust_annotations"]["captured_at_meaning"] == "run_creation_time"
 
 
 def test_fixture_bundle_refuses_oversized_source():

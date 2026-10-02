@@ -6,12 +6,14 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
 from sqlalchemy import select
 
 from platform_app.context_bundle import fixture_context_bundle
+from platform_app.context_compaction import compact_fixture_context
 from platform_app.model_budget import reserve_model_call, settle_model_call
 from platform_app.models import BudgetEntry, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
@@ -21,8 +23,9 @@ from platform_app.providers import (
     OpenAIResponses,
     ProviderTurn,
 )
-from platform_app.service import ServiceError
+from platform_app.service import ServiceError, append_event
 from platform_app.telemetry import set_safe_attributes, tracer
+from platform_app.token_budget import BudgetError, PriceRule, TokenPolicy, plan_call
 
 KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
@@ -75,15 +78,33 @@ def _prompt(
     history: list[dict],
     artifact_root: Path,
     tool_actions: dict[str, ToolAction],
-) -> str:
-    return json.dumps(
-        fixture_context_bundle(
-            run, task, baseline_receipts, server_source, INSTRUCTION, history,
-            artifact_root, tool_actions,
-        ),
-        ensure_ascii=False,
-        separators=(",", ":"),
+    pending_tool_cycle: bool,
+) -> tuple[str, str | None]:
+    bundle = fixture_context_bundle(
+        run, task, baseline_receipts, server_source, INSTRUCTION, history,
+        artifact_root, tool_actions,
     )
+    snapshot = run.config_snapshot
+    try:
+        price = PriceRule(
+            revision=snapshot["model_price_revision"],
+            input_usd_per_million=Decimal(snapshot["model_price_per_m_input"]),
+            output_usd_per_million=Decimal(snapshot["model_price_per_m_output"]),
+        )
+        capacity = plan_call(
+            snapshot["model_context_limit"], snapshot["model_output_limit"], 0, 4096,
+            TokenPolicy(spend_limit_usd=Decimal(str(snapshot["spend_limit_usd"]))), price,
+        ).input_capacity
+    except (BudgetError, KeyError, ValueError) as error:
+        raise ServiceError(
+            "CONTEXT_UNSATISFIABLE", "Model context policy is invalid", 409
+        ) from error
+    compacted, summary_ref = compact_fixture_context(
+        bundle, capacity, artifact_root, run.id,
+        next_required_bytes=len(INSTRUCTION.encode()) + 1,
+        pending_tool_cycle=pending_tool_cycle,
+    )
+    return json.dumps(compacted, ensure_ascii=False, separators=(",", ":")), summary_ref
 
 
 @tracer.start_as_current_span("model.generate")
@@ -144,9 +165,14 @@ def request_fixture_patch(
                 ToolAction.step_id.in_(list(baseline_receipts)),
             )
         ).all()
-        prompt = _prompt(
+        pending_tool_cycle = db.scalar(
+            select(ToolAction.id).where(
+                ToolAction.run_id == run.id, ToolAction.status == "INTENDED"
+            ).limit(1)
+        ) is not None
+        prompt, summary_ref = _prompt(
             run, task, baseline_receipts, server_source, history, artifact_root,
-            {action.step_id: action for action in baseline_actions},
+            {action.step_id: action for action in baseline_actions}, pending_tool_cycle,
         )
         action, reservation, plan = reserve_model_call(
             db,
@@ -157,6 +183,14 @@ def request_fixture_patch(
             step_id,
             INSTRUCTION + "\n" + prompt,
         )
+        if summary_ref:
+            prior_summaries = db.scalars(select(RunEvent).where(
+                RunEvent.run_id == run.id, RunEvent.event_type == "context.compacted"
+            )).all()
+            if not any(
+                event.payload.get("summary_ref") == summary_ref for event in prior_summaries
+            ):
+                append_event(db, run, "context.compacted", {"summary_ref": summary_ref})
         completed_receipt = action.receipt if action.status == "COMPLETED" else None
         db.commit()
         action_id, reservation_id = action.id, reservation.id

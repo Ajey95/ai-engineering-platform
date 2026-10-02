@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -9,7 +10,16 @@ from sqlalchemy.orm import sessionmaker
 
 from platform_app.agent_patch import request_fixture_patch
 from platform_app.db import Base
-from platform_app.models import BudgetEntry, ModelEntry, Project, Run, Task, Tenant, ToolAction
+from platform_app.models import (
+    BudgetEntry,
+    ModelEntry,
+    Project,
+    Run,
+    RunEvent,
+    Task,
+    Tenant,
+    ToolAction,
+)
 from platform_app.providers import OpenAIResponses
 from platform_app.run_ledger import claim_run
 
@@ -87,7 +97,7 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
                 state="enabled",
                 capabilities={"controlled_provider_fixture": True},
                 validated_at=datetime.now(UTC),
-                context_limit=32000,
+                context_limit=18000,
                 output_limit=4000,
                 price_revision="price-a",
                 price_per_m_input=Decimal("1"),
@@ -117,7 +127,7 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
                     "spend_limit_usd": 5,
                     "model_registry_revision": "rev-a",
                     "model_price_revision": "price-a",
-                    "model_context_limit": 32000,
+                    "model_context_limit": 18000,
                     "model_output_limit": 4000,
                     "model_price_per_m_input": "1.000000",
                     "model_price_per_m_output": "2.000000",
@@ -126,7 +136,14 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         )
         db.commit()
         _, fence = claim_run(db, "run-a", "worker-one")
-        browser_receipt = {"status": "FAILED", "responses": [{"status": 500}]}
+        baseline = tmp_path / "run-a" / "baseline"
+        baseline.mkdir(parents=True)
+        log = b"start\n" + b"noisy assertion\n" * 1000 + b"FAILED expected ticket\n"
+        (baseline / "browser.log").write_bytes(log)
+        browser_receipt = {
+            "status": "FAILED", "responses": [{"status": 500}],
+            "output_file": "browser.log", "output_sha256": hashlib.sha256(log).hexdigest(),
+        }
         db.add(ToolAction(
             tenant_id="tenant-a", run_id="run-a", step_id="browser",
             logical_action="fixture.browser", effect_key="b" * 64,
@@ -145,16 +162,32 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         tmp_path,
         provider=adapter,
     )
+    replay = request_fixture_patch(
+        factory,
+        "run-a",
+        "worker-one",
+        fence,
+        {"browser": browser_receipt},
+        source.read_text(encoding="utf-8"),
+        tmp_path,
+        provider=adapter,
+    )
     assert result.proposal.files[0][0] == "server.py"
+    assert replay == result
     assert len(calls) == 1
     assert str(calls[0].url) == "https://api.openai.com/v1/responses"
     with factory() as db:
         action = db.scalar(select(ToolAction).where(ToolAction.logical_action == "model.generate"))
         reservation = db.scalar(select(BudgetEntry).where(BudgetEntry.category == "call:model-1"))
         assert action.status == "COMPLETED"
-        assert action.receipt["usage"] == {"input_tokens": 300, "output_tokens": 100}
+        assert action.receipt["usage"] == result.usage
         assert reservation.status == "settled"
         assert Decimal(reservation.actual_usd) == Decimal("0.000500")
+        compactions = db.scalars(
+            select(RunEvent).where(RunEvent.event_type == "context.compacted")
+        ).all()
+        assert len(compactions) == 1
+        assert (tmp_path / compactions[0].payload["summary_ref"]).is_file()
     artifact = json.loads((tmp_path / result.artifact_ref).read_text(encoding="utf-8"))
     assert artifact["text"] == patch
     engine.dispose()

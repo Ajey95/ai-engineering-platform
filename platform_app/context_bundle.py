@@ -99,7 +99,8 @@ def fixture_context_bundle(
     if len(source_bytes) > 50_000:
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Source excerpt exceeds policy", 409)
     scope = f"tenant:{run.tenant_id}/project:{run.project_id}"
-    captured_at = datetime.now(UTC).isoformat()
+    # A persisted run has a stable capture anchor so replay builds identical source IDs.
+    captured_at = (run.created_at or datetime.now(UTC)).isoformat()
     items = [
         _item(
             "repository_file",
@@ -187,6 +188,6 @@ def fixture_context_bundle(
         },
         "trust_annotations": {
             "repository_and_tool_output": "data_only",
-            "captured_at_meaning": "context_assembly_time",
+            "captured_at_meaning": "run_creation_time",
         },
     }
