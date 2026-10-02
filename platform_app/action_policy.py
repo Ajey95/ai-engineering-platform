@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from platform_app.config import settings
-from platform_app.models import AuditEvent, Project, Run, Task, Tenant, ToolAction
+from platform_app.models import AuditEvent, Project, Run, SandboxLease, Task, Tenant, ToolAction
 from platform_app.run_ledger import assert_fence, begin_tool_action
 from platform_app.service import ServiceError, canonical_hash
 from platform_app.telemetry import set_safe_attributes, tracer
@@ -59,16 +59,6 @@ def _denial_reason(db: Session, run: Run, intent: ActionIntent) -> str | None:
         return "scope"
     if snapshot.get("policy_version") != tenant.policy_revision:
         return "policy_revision"
-    if settings().environment != "development":
-        return "hosted_execution_unavailable"
-    if (
-        snapshot.get("reproduction", {}).get("fixture_case_id") != "form-submit-001"
-        or project.environment_manifest.get("case_id") != "form-submit-001"
-        or snapshot.get("environment_manifest") != project.environment_manifest
-        or snapshot.get("repository_url") != project.repository_url
-        or snapshot.get("test_url") != project.test_url
-    ):
-        return "fixture_binding"
     if run.cancel_requested or run.state in {"COMPLETED", "FAILED", "CANCELLED", "INCONCLUSIVE"}:
         return "run_closed"
     if not isinstance(snapshot.get("max_tool_calls"), int) or snapshot["max_tool_calls"] < 1:
@@ -85,7 +75,42 @@ def _denial_reason(db: Session, run: Run, intent: ActionIntent) -> str | None:
     )
     if existing is None and count >= snapshot["max_tool_calls"]:
         return "tool_budget"
-
+    if snapshot.get("execution_profile") == "hosted_vm_v1":
+        if intent.name != "model.generate" or run.state not in {"INVESTIGATING", "PATCHING"}:
+            return "action_unregistered"
+        baseline = db.scalar(select(SandboxLease).where(
+            SandboxLease.tenant_id == run.tenant_id,
+            SandboxLease.project_id == run.project_id,
+            SandboxLease.run_id == run.id,
+            SandboxLease.phase == "baseline",
+            SandboxLease.result_sha256.is_not(None),
+        ).order_by(SandboxLease.generation.desc()).limit(1))
+        if (
+            baseline is None or baseline.result_received_at is None
+            or not isinstance(baseline.result_summary, dict)
+            or baseline.result_summary.get("phase") != "baseline"
+        ):
+            return "baseline_missing"
+        if (
+            intent.action_class != "provider_request"
+            or intent.target != run.model_entry_id
+            or intent.source_version != snapshot.get("model_registry_revision")
+            or intent.arguments.get("model_entry_id") != run.model_entry_id
+            or intent.arguments.get("model_revision") != intent.source_version
+            or intent.arguments.get("price_revision") != snapshot.get("model_price_revision")
+        ):
+            return "action_manifest"
+        return None
+    if settings().environment != "development":
+        return "hosted_execution_unavailable"
+    if (
+        snapshot.get("reproduction", {}).get("fixture_case_id") != "form-submit-001"
+        or project.environment_manifest.get("case_id") != "form-submit-001"
+        or snapshot.get("environment_manifest") != project.environment_manifest
+        or snapshot.get("repository_url") != project.repository_url
+        or snapshot.get("test_url") != project.test_url
+    ):
+        return "fixture_binding"
     if intent.name in FIXTURE_ACTIONS.values():
         if (
             FIXTURE_ACTIONS.get(intent.step_id) != intent.name

@@ -58,8 +58,8 @@ def parse_general_patch(raw: str, allowed_paths: frozenset[str]) -> GeneralPatch
     entries = payload["files"]
     if not isinstance(diagnosis, str) or not 1 <= len(diagnosis.strip()) <= 4000:
         raise GeneralPatchError("Repair diagnosis is invalid")
-    if not isinstance(entries, list) or not 1 <= len(entries) <= 4:
-        raise GeneralPatchError("Repair must change one to four files")
+    if not isinstance(entries, list) or len(entries) > 4:
+        raise GeneralPatchError("Repair must change at most four files")
     files: list[ProposedFile] = []
     seen: set[str] = set()
     for entry in entries:
@@ -99,6 +99,8 @@ def build_candidate_tree(
     baseline: SourceArchive, proposal: GeneralPatch, work_root: Path
 ) -> CandidateTree:
     """Apply only approved full-file replacements; never execute the source."""
+    if not proposal.files:
+        raise GeneralPatchError("Repair proposal contains no candidate")
     if hashlib.sha256(baseline.archive).hexdigest() != baseline.sha256:
         raise GeneralPatchError("Pinned source archive digest changed")
     work_root = work_root.resolve(strict=True)

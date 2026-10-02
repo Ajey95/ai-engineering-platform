@@ -4,8 +4,8 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 233 tests with 4 skips after the candidate-phase and
-general patch additions; scoped lint and local Alembic drift check passed.
+Python suite passed 235 tests with 4 skips after the bounded general native
+provider proposal path; scoped lint and local Alembic drift check passed.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider

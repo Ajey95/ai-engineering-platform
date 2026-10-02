@@ -1150,3 +1150,13 @@ and check-receipt pins; it does not claim hidden correctness. Local PostgreSQL
 upgraded with no drift; the full suite passed 233 tests with 4 skips and
 scoped Ruff passed. No general native-model proposal or hosted worker is yet
 connected to these seams, and no real VM was launched.
+
+2026-10-03 bounded general model proposal increment: a hosted-profile model
+action is authorized only after a fenced baseline VM receipt is recorded.
+`general_agent.py` constructs a bounded, trust-labelled prompt from up to four
+pinned source files and baseline guest log tails, reserves spend before a
+native provider call, persists the response and usage receipt, and verifies
+context and output hashes on replay. An empty file list is an explicit
+inconclusive proposal. Controlled provider/ledger tests and the full Python
+suite passed 235 tests with 4 skips; Ruff passed. This is not a live provider
+call or a deployed hosted worker; run admission remains closed.

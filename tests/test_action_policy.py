@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -5,8 +6,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from platform_app.action_policy import FIXTURE_VERSION, ActionIntent, authorize_run_effect
-from platform_app.db import Base
-from platform_app.models import AuditEvent, Project, Run, Task, Tenant, ToolAction
+from platform_app.db import Base, utcnow
+from platform_app.models import AuditEvent, Project, Run, SandboxLease, Task, Tenant, ToolAction
 from platform_app.run_ledger import claim_run, complete_tool_action
 from platform_app.service import ServiceError
 
@@ -139,3 +140,41 @@ def test_tool_budget_blocks_new_effect(scope):
             named_intent(step_id="browser", name="fixture.browser"),
         )
     assert [row.status for row in db.scalars(select(ToolAction)).all()] == ["INTENDED", "DENIED"]
+
+
+def test_general_model_effect_requires_recorded_vm_baseline(scope):
+    db, run, fence = scope
+    run.state = "INVESTIGATING"
+    run.config_snapshot = {
+        **run.config_snapshot,
+        "execution_profile": "hosted_vm_v1",
+        "model_registry_revision": "revision-a",
+        "model_price_revision": "price-a",
+    }
+    db.commit()
+
+    def intent(step):
+        return ActionIntent(
+            step_id=step, name="model.generate", action_class="provider_request",
+            target="model-a", source_version="revision-a",
+            arguments={
+                "model_entry_id": "model-a", "model_revision": "revision-a",
+                "price_revision": "price-a",
+            },
+        )
+
+    with pytest.raises(ServiceError, match="baseline_missing"):
+        authorize_run_effect(db, run, "worker-a", fence, intent("general-model-1"))
+    db.add(SandboxLease(
+        id="lease-a", tenant_id="tenant-a", project_id="project-a",
+        run_id="run-a", generation=1, phase="baseline", lease_fence=fence,
+        client_token="a" * 64, state="terminated", image_id="ami-12345678",
+        instance_type="m6i.large", subnet_id="subnet-12345678",
+        security_group_id="sg-12345678", root_device_name="/dev/xvda",
+        disk_gib=40, expires_at=utcnow() + timedelta(minutes=5),
+        result_sha256="b" * 64, result_received_at=utcnow(),
+        result_summary={"phase": "baseline"},
+    ))
+    db.commit()
+    action = authorize_run_effect(db, run, "worker-a", fence, intent("general-model-2"))
+    assert action.status == "INTENDED"
