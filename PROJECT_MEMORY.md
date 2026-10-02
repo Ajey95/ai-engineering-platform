@@ -487,3 +487,12 @@ baseline diagnosis log URLs; the web log tab links them. A focused API test
 checks authorized bytes, unknown step, other tenant and tampering denial.
 General plugin full-output retrieval, signed hosted storage and full report
 export remain pending.
+
+Verification after commit `c8660e6`: 90 Python tests passed, one Windows
+symlink privilege skip; Ruff clean; Node 24 TypeScript and Vite production
+build passed. API 8101 was relaunched from current source. `/v1/health`
+returned 200; the persisted demo run `e53fe64f-9a5a-4885-9966-81a8c915fc50`
+returned two diagnosis log references in its review packet, and both named
+and oracle authenticated downloads returned 200 with 984 and 7242 bytes.
+The isolated controlled verifier run is stored in its own SQLite DB and is
+not visible through the live PostgreSQL API.
