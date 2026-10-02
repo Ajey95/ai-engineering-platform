@@ -26,6 +26,11 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - Hosted run admission returns `EXECUTION_UNAVAILABLE` until a customer VM
   sandbox is implemented; the development Docker adapter remains isolated to
   synthetic fixtures.
+- Scoped GitHub repository connection records accept canonical HTTPS
+  owner/repo identity and opaque `secret://` references. Maintainers can register
+  or disable them; readers can list readiness without seeing the secret reference.
+  Every new connection stays unverified until an authenticated integration probe
+  exists. No customer checkout or publication is enabled by this record alone.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
 - `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
   claims a lease, archives the fixture and hidden oracle at the run's pinned
@@ -97,7 +102,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 108 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 110 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted

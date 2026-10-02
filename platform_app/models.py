@@ -82,6 +82,35 @@ class ProjectMembership(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RepositoryConnection(Base):
+    __tablename__ = "repository_connections"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            name="fk_repository_connections_project_scope",
+        ),
+        UniqueConstraint(
+            "tenant_id", "project_id", "provider", "repository_ref",
+            name="uq_repository_connections_scope_ref",
+        ),
+        CheckConstraint("provider = 'github'", name="ck_repository_connection_provider"),
+        CheckConstraint(
+            "status IN ('unverified', 'ready', 'disabled')",
+            name="ck_repository_connection_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    repository_ref: Mapped[str] = mapped_column(String(220))
+    credential_ref: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="unverified")
+    created_by: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (

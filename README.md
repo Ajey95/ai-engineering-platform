@@ -12,6 +12,9 @@ case suites; no complete benchmark has run yet.
 
 - FastAPI project, task, model registry, run, event, cancellation, review packet,
   usage and scoped canonical memory endpoints.
+- Project scoped GitHub connection registration with opaque secret references,
+  maintainer authorization and explicit unverified readiness. No GitHub account
+  has been connected or probed.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
 - Tenant daily/monthly inference caps and concurrent run admission limits,

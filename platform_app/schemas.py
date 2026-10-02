@@ -24,6 +24,22 @@ class ProjectRead(StrictModel):
     fixture_case_id: str | None = None
 
 
+class RepositoryConnectionCreate(StrictModel):
+    repository_url: str = Field(min_length=20, max_length=500)
+    credential_ref: str | None = Field(default=None, max_length=300)
+
+
+class RepositoryConnectionRead(StrictModel):
+    id: str
+    project_id: str
+    provider: Literal["github"]
+    repository_ref: str
+    status: str
+    readiness: Literal["credential_required", "verification_required", "ready", "disabled"]
+    created_at: datetime
+    checked_at: datetime | None
+
+
 class TenantMembershipSet(StrictModel):
     role: Literal["owner", "member"]
     status: Literal["active", "disabled"] = "active"

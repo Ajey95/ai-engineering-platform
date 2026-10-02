@@ -630,3 +630,13 @@ results `UNVERIFIED_RESULTS` because this tool cannot attest their origin.
 Only one actual fixture exists; the other 39 cases and live qualification have
 not been performed. Focused tests passed 3/3; the full Python suite passed 108
 with three skips and Ruff passed. This is a contract, not benchmark evidence.
+
+2026-10-02 repository connection increment: added a scoped GitHub connection
+table and Alembic revision `e2466a8aa82c`, strict canonical HTTPS owner/repo
+parsing, opaque `secret://` reference validation, maintainer create/disable,
+reader list, idempotent repeat, and audit events. API omits the credential
+reference and reports `credential_required`, `verification_required` or
+`disabled`; no endpoint marks a connection ready without an integration probe.
+Local PostgreSQL upgraded with no Alembic drift; the disposable migration
+roundtrip, quota and tenant-scope probes passed. Python suite: 110 passed, 3
+skipped; Ruff passed. This does not enable customer checkout or draft PRs.

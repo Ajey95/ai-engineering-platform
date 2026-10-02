@@ -42,6 +42,7 @@ from platform_app.models import (
     Project,
     ProjectMembership,
     RecordingDeletion,
+    RepositoryConnection,
     Run,
     RunEvent,
     Task,
@@ -54,6 +55,7 @@ from platform_app.recording_deletion import (
     purge_local_recording,
     reconcile_local_recording_deletions,
 )
+from platform_app.repository_connections import github_repository_ref, validate_credential_ref
 from platform_app.review_patch import verified_fixture_diff
 from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
@@ -63,6 +65,8 @@ from platform_app.schemas import (
     ProjectCreate,
     ProjectMembershipSet,
     ProjectRead,
+    RepositoryConnectionCreate,
+    RepositoryConnectionRead,
     ResumeInputCreate,
     ReviewDecisionCreate,
     RunCreate,
@@ -579,6 +583,112 @@ def list_projects(
         )
         for p in rows
     ]
+
+
+def _repository_connection_read(row: RepositoryConnection) -> RepositoryConnectionRead:
+    readiness = (
+        "disabled" if row.status == "disabled" else
+        "credential_required" if row.credential_ref is None else
+        "ready" if row.status == "ready" else "verification_required"
+    )
+    return RepositoryConnectionRead(
+        id=row.id, project_id=row.project_id, provider="github",
+        repository_ref=row.repository_ref, status=row.status,
+        readiness=readiness, created_at=row.created_at, checked_at=row.checked_at,
+    )
+
+
+@app.post(
+    "/v1/projects/{project_id}/repository-connections",
+    response_model=RepositoryConnectionRead, status_code=201,
+)
+def create_repository_connection(
+    project_id: str,
+    body: RepositoryConnectionCreate,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    project = require_project_role(db, identity, project_id, frozenset({"maintainer"}))
+    repository_ref = github_repository_ref(body.repository_url)
+    credential_ref = validate_credential_ref(body.credential_ref)
+    db.scalar(select(Project).where(
+        Project.id == project.id, Project.tenant_id == identity[0]
+    ).with_for_update())
+    row = db.scalar(select(RepositoryConnection).where(
+        RepositoryConnection.tenant_id == identity[0],
+        RepositoryConnection.project_id == project_id,
+        RepositoryConnection.provider == "github",
+        RepositoryConnection.repository_ref == repository_ref,
+    ))
+    if row is not None and row.credential_ref == credential_ref and row.status != "disabled":
+        return _repository_connection_read(row)
+    if row is None:
+        row = RepositoryConnection(
+            tenant_id=identity[0], project_id=project_id, provider="github",
+            repository_ref=repository_ref, created_by=identity[1],
+        )
+        db.add(row)
+    row.credential_ref = credential_ref
+    row.status = "unverified"
+    row.checked_at = None
+    tenant = db.get(Tenant, identity[0])
+    db.add(AuditEvent(
+        tenant_id=identity[0], actor=identity[1], action="repository.connection_set",
+        target_ref=row.id, arguments_hash=canonical_hash({
+            "repository_ref": repository_ref, "credential_ref": credential_ref,
+        }), policy_revision=tenant.policy_revision, outcome="unverified",
+    ))
+    db.commit()
+    db.refresh(row)
+    return _repository_connection_read(row)
+
+
+@app.get(
+    "/v1/projects/{project_id}/repository-connections",
+    response_model=list[RepositoryConnectionRead],
+)
+def list_repository_connections(
+    project_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_project_role(db, identity, project_id)
+    rows = db.scalars(select(RepositoryConnection).where(
+        RepositoryConnection.tenant_id == identity[0],
+        RepositoryConnection.project_id == project_id,
+    ).order_by(RepositoryConnection.created_at).limit(100)).all()
+    return [_repository_connection_read(row) for row in rows]
+
+
+@app.delete(
+    "/v1/projects/{project_id}/repository-connections/{connection_id}",
+    response_model=RepositoryConnectionRead,
+)
+def disable_repository_connection(
+    project_id: str,
+    connection_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_project_role(db, identity, project_id, frozenset({"maintainer"}))
+    row = db.scalar(select(RepositoryConnection).where(
+        RepositoryConnection.id == connection_id,
+        RepositoryConnection.tenant_id == identity[0],
+        RepositoryConnection.project_id == project_id,
+    ).with_for_update())
+    if row is None:
+        raise ServiceError("NOT_FOUND", "Repository connection not found", 404)
+    if row.status != "disabled":
+        row.status = "disabled"
+        tenant = db.get(Tenant, identity[0])
+        db.add(AuditEvent(
+            tenant_id=identity[0], actor=identity[1], action="repository.connection_disable",
+            target_ref=row.id, arguments_hash=canonical_hash({"id": row.id}),
+            policy_revision=tenant.policy_revision, outcome="disabled",
+        ))
+        db.commit()
+        db.refresh(row)
+    return _repository_connection_read(row)
 
 
 @app.get("/v1/memberships")
