@@ -12,6 +12,9 @@ case suites; no complete benchmark has run yet.
 
 - FastAPI project, task, model registry, run, event, cancellation, review packet,
   usage and scoped canonical memory endpoints.
+- Canonical memory supports proposed, verified, rejected, superseded, expired
+  and deleted states. Scoped transition history records the actor and reason;
+  retrieval only serves current verified facts.
 - Project scoped GitHub connection registration with opaque secret references,
   maintainer authorization and explicit unverified readiness, visible on the
   Projects screen. No GitHub account has been connected or probed.

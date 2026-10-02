@@ -102,7 +102,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 117 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 119 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -263,7 +263,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Verified/deleted canonical facts now project idempotently to Memgraph from PostgreSQL outbox events. API graph lookup rechecks canonical tenant/project/revision/status and falls back to PostgreSQL on outage, lag or mismatch. A scope rebuild command exists; hosted graph recovery/load qualification remains. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
-| FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |
+| FR-MEM-03 | Partial | Canonical proposed, verified, rejected, superseded, expired and deleted states now have scoped transition history with actor, reason and evidence link. Reviewer/maintainer API roles gate rejection and expiry; non-current states issue projection outbox events and are excluded from lookup. Independent corroboration policy, automatic expiry sweep, regression feedback wiring and reviewer UI remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; hosted hostile-repository isolation remains unverified. |
 | FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
@@ -279,7 +279,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Ten Alembic revisions applied through `729b05a14f6c` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Thirteen Alembic revisions applied through `0f647b9382ae` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

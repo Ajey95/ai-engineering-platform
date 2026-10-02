@@ -34,7 +34,13 @@ from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
 from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
-from platform_app.memory import delete_fact, scoped_lookup
+from platform_app.memory import (
+    delete_fact,
+    expire_fact,
+    reject_fact,
+    scoped_lookup,
+    supersede_fact,
+)
 from platform_app.model_base import utcnow
 from platform_app.model_qualification import (
     QualificationError,
@@ -70,6 +76,7 @@ from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
     ErrorBody,
     EventRead,
+    MemoryTransitionCreate,
     ModelRegister,
     ProjectCreate,
     ProjectMembershipSet,
@@ -1345,7 +1352,9 @@ def download_evidence_bundle(
         path = Path(response.path)
         try:
             if path.stat().st_size > 5_000_000:
-                raise ServiceError("EVIDENCE_TOO_LARGE", "Evidence file exceeds archive policy", 409)
+                raise ServiceError(
+                    "EVIDENCE_TOO_LARGE", "Evidence file exceeds archive policy", 409
+                )
             content = path.read_bytes()
         except OSError as error:
             raise ServiceError("EVIDENCE_CHANGED", "Evidence changed during export", 409) from error
@@ -1518,6 +1527,46 @@ def get_memory(
     }
 
 
+@app.post("/v1/projects/{project_id}/memory/{fact_id}/transition", status_code=202)
+def transition_memory(
+    project_id: str,
+    fact_id: str,
+    body: MemoryTransitionCreate,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    roles = REVIEW_ROLES if body.action == "reject" else frozenset({"maintainer"})
+    require_project_role(db, identity, project_id, roles)
+    fact = db.scalar(select(MemoryFact).where(
+        MemoryFact.id == fact_id,
+        MemoryFact.tenant_id == identity[0],
+        MemoryFact.project_id == project_id,
+    ).with_for_update())
+    if fact is None:
+        raise ServiceError("NOT_FOUND", "Memory fact not found", 404)
+    if body.action == "reject":
+        reject_fact(db, fact, identity[1], body.reason)
+    elif body.action == "expire":
+        expire_fact(db, fact, identity[1], body.reason)
+    else:
+        replacement = db.scalar(select(MemoryFact).where(
+            MemoryFact.id == body.replacement_fact_id,
+            MemoryFact.tenant_id == identity[0],
+            MemoryFact.project_id == project_id,
+        ))
+        if replacement is None:
+            raise ServiceError("NOT_FOUND", "Replacement memory fact not found", 404)
+        supersede_fact(db, fact, replacement, identity[1], body.reason)
+    tenant = db.get(Tenant, identity[0])
+    db.add(AuditEvent(
+        tenant_id=identity[0], actor=identity[1], action=f"memory.{body.action}",
+        target_ref=fact.id, arguments_hash=canonical_hash(body.model_dump()),
+        policy_revision=tenant.policy_revision, outcome=fact.status,
+    ))
+    db.commit()
+    return {"fact_id": fact.id, "status": fact.status, "propagation": "pending"}
+
+
 @app.delete("/v1/projects/{project_id}/memory/{fact_id}", status_code=202)
 def remove_memory(
     project_id: str,
@@ -1535,6 +1584,6 @@ def remove_memory(
     )
     if fact is None:
         raise ServiceError("NOT_FOUND", "Memory fact not found", 404)
-    delete_fact(db, fact)
+    delete_fact(db, fact, actor=identity[1], reason="Deleted by project maintainer")
     db.commit()
     return {"fact_id": fact.id, "status": fact.status, "propagation": "pending"}

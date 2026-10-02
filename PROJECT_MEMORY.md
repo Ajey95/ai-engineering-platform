@@ -691,3 +691,14 @@ returned HTTP 200 with a 13,723-byte ZIP containing named/oracle logs, packet,
 baseline screenshot and manifest. Playwright Chromium verified the Review link
 on that run with no page errors; screenshot in `artifacts/ui-qa/review-bundle.png`.
 Python suite: 117 passed, 3 skipped; web build and Ruff passed.
+
+2026-10-02 memory lifecycle: Alembic `0f647b9382ae` adds a database status
+constraint and scoped `memory_fact_events` provenance table. Canonical service
+supports proposed, verified, rejected, superseded, expired and deleted states;
+non-current transitions emit graph projection events and close validity where
+appropriate. Reviewer/maintainer transition API enforces project scope and
+records an audit event. Both scoped lookup and model context selection require
+current verified validity. Focused tests covered rejection, supersession,
+expiry, events and API role/tenant boundaries. Local PostgreSQL upgraded to
+`0f647b9382ae` with no Alembic drift; disposable migration/tenant/quota probes
+passed. Full Python suite: 119 passed, 3 skipped; Ruff and diff checks passed.

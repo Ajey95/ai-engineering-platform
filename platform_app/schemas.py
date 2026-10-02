@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class StrictModel(BaseModel):
@@ -107,6 +107,18 @@ class PublicationApprovalRead(StrictModel):
     test_evidence_sha256: str
     status: str
     expires_at: datetime
+
+
+class MemoryTransitionCreate(StrictModel):
+    action: Literal["reject", "supersede", "expire"]
+    reason: str = Field(min_length=5, max_length=2000)
+    replacement_fact_id: str | None = Field(default=None, max_length=36)
+
+    @model_validator(mode="after")
+    def validate_replacement(self):
+        if (self.action == "supersede") != (self.replacement_fact_id is not None):
+            raise ValueError("A replacement fact is required only for supersession")
+        return self
 
 
 class ResumeInputCreate(StrictModel):

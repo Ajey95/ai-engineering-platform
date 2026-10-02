@@ -426,6 +426,11 @@ class MemoryFact(Base):
     __tablename__ = "memory_facts"
     __table_args__ = (
         Index("ix_memory_scope_revision", "tenant_id", "project_id", "source_revision", "status"),
+        UniqueConstraint("tenant_id", "project_id", "id", name="uq_memory_facts_scope_id"),
+        CheckConstraint(
+            "status IN ('proposed', 'verified', 'rejected', 'superseded', 'expired', 'deleted')",
+            name="ck_memory_fact_status",
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "project_id"],
             ["projects.tenant_id", "projects.id"],
@@ -447,3 +452,24 @@ class MemoryFact(Base):
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryFactEvent(Base):
+    __tablename__ = "memory_fact_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "fact_id"],
+            ["memory_facts.tenant_id", "memory_facts.project_id", "memory_facts.id"],
+            name="fk_memory_fact_events_fact_scope",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    fact_id: Mapped[str] = mapped_column(String(36), index=True)
+    previous_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    status: Mapped[str] = mapped_column(String(24))
+    actor: Mapped[str] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text)
+    evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
