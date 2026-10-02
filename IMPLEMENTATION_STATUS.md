@@ -139,6 +139,10 @@ before the passing recheck.
 `scripts/verify_postgres_admission.py` now repeats the deletion race in a
 disposable migrated PostgreSQL database and exits nonzero if either request
 fails or more than one final event is written; its latest run passed.
+The visible 5176 demo was refreshed after commit `0a43f1b`: API 8101 starts
+from that revision, Vite runs under bundled Node 24.19.0, and the WSL Docker
+Engine reports 29.8.2. API health and the PostgreSQL-backed HLS manifest both
+returned HTTP 200 after restart.
 The admitted worker baseline verification produced run
 `b2f8ad2f-4c72-4727-be69-bdef8eeabdf6` at pinned commit `5382f81`:
 outbox delivered, PASS/FAIL/FAIL, media READY, reproduction REPRODUCED,

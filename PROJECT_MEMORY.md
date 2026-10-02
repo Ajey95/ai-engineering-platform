@@ -365,3 +365,8 @@ deletion row, one `artifact.deleted` event, HLS absent, screenshot retained.
 The disposable PostgreSQL verifier now includes the same two-request deletion
 race and passed alongside migration roundtrip, duplicate admission, resume and
 tenant constraints.
+
+After commit `0a43f1b`, the PG API on 8101 was restarted from current source
+and the 5176 Vite server was restarted under supported bundled Node 24.19.0.
+Both API health and run `e53fe64f` HLS returned HTTP 200 after restart; the
+WSL Docker Engine reported 29.8.2. Keep 5176 as the user-facing demo URL.
