@@ -88,11 +88,18 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
   the admitted worker publishes baseline and candidate media separately and
   the tenant-scoped development API serves the published effect.
+- `platform_app/private_media.py`, `private_media_store.py`,
+  `private_media_deletion.py` and migration `d8c107a4f0b5`: controlled private
+  S3 upload with SHA-256 verification and encryption, a scoped CloudFront
+  signed-cookie grant, browser refresh, and durable deletion/invalidation
+  reconciliation. Tests use fake S3/CloudFront clients and a generated RSA key;
+  no live AWS delivery, bucket policy or edge authorization has been qualified.
 - `platform_app/recording_deletion.py` and migration `c53718b2a844`:
   a closed run can revoke one recording, remove its local raw WebM and HLS
   directory, keep transcript/screenshot, and retain a scoped deletion/audit
   record. Development startup reapplies tombstones to restored local files.
-  Hosted object/CDN and independent backup propagation are not implemented.
+  Hosted object/CDN cleanup has a controlled worker; live AWS and independent
+  backup propagation remain unverified.
 - Browser receipts include SHA-256 of final PNG screenshots. The tenant-scoped
   API checks the digest on every request and the Runs panel displays before
   and after screenshots.
@@ -115,7 +122,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 155 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 159 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -288,11 +295,11 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. A read-only GitHub probe checks identity, reported push permission, default branch and pull read access; its scoped operator command records readiness and the publication command rechecks it. The REST publisher writes a deterministic branch/draft PR through a durable intent and reconciles uncertain retries. Controlled HTTP tests passed; no live GitHub account, PR write qualification, general repository workflow or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
-| FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; object store absent. |
-| FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
-| FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
-| FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Eighteen Alembic revisions applied through `c2a4d90871e6` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; controlled S3 publisher uploads verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
+| FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
+| FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Private S3 upload exists, but CloudFront distribution, origin access control and live edge verification are absent. |
+| FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Edge/cache authorization, CORS, public behavior separation and live invalidation remain unverified. |
+| FR-DAT-01 | Partial | Nineteen Alembic revisions applied through `d8c107a4f0b5` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
@@ -301,7 +308,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SEC-01 | Partial | The development fixture worker and model path enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. A plugin resolver also checks exact tenant allowlist, enabled version/digest, schema and granted scopes. Hosted broker execution remains absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Partial | Provider keys are read only by the worker from its environment and are not returned by the frontend API; local tests exercise authorization boundaries. Hosted workload identity, encrypted secret references, rotation audit and the AC-24 injection challenge remain absent. |
-| FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. Hosted object/cache/independent restore propagation absent. |
+| FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. A published private recording queues remote S3 deletion and CloudFront invalidation, and its deletion stays pending until both verify. Hosted live propagation and independent restore replay remain. |
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Hosted browser sessions use validated ID tokens, PKCE, server-side session storage, CSRF/origin checks and membership rechecks in controlled tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Partial | Owner-only operations API/UI show tenant-scoped 24-hour run states, verification and reviewer rates, queue/graph age, tool failures, media state, spend/reservations, export quota, durable active alerts and pager delivery backlog. Queue and graph thresholds have a separate persisted evaluator. Provider latency/errors, context size, token estimation error, sandbox utilization, ABR playback and hosted telemetry remain unavailable. |

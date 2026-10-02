@@ -119,7 +119,7 @@ def verify_suite_assets(suite: BenchmarkSuite, repository: Path) -> None:
     root = repository.resolve()
     checked_commits: set[str] = set()
     checked_assets: set[tuple[str, str, str]] = set()
-    checked_fixtures: set[tuple[str, str]] = set()
+    pinned_fixture_files: dict[str, set[str]] = {}
     for case in suite.cases:
         if case.base_commit not in checked_commits:
             valid = subprocess.run(
@@ -129,6 +129,16 @@ def verify_suite_assets(suite: BenchmarkSuite, repository: Path) -> None:
             if valid.returncode != 0:
                 raise BenchmarkError(f"Pinned commit is missing for {case.case_id}")
             checked_commits.add(case.base_commit)
+            fixture_tree = subprocess.run(
+                ["git", "ls-tree", "-r", "-z", "--name-only", case.base_commit,
+                 "--", "benchmarks/fixtures/"],
+                cwd=root, capture_output=True, check=False, timeout=30,
+            )
+            if fixture_tree.returncode != 0:
+                raise BenchmarkError(f"Pinned fixture tree is missing for {case.case_id}")
+            pinned_fixture_files[case.base_commit] = {
+                path.decode("utf-8") for path in fixture_tree.stdout.split(b"\0") if path
+            }
         for relative, expected in (
             (case.hidden_oracle_path, case.hidden_oracle_sha256),
             (case.dependency_lock_path, case.dependency_lock_sha256),
@@ -151,8 +161,6 @@ def verify_suite_assets(suite: BenchmarkSuite, repository: Path) -> None:
             if pinned.returncode != 0 or hashlib.sha256(pinned.stdout).hexdigest() != expected:
                 raise BenchmarkError(f"Pinned asset digest changed for {case.case_id}")
             checked_assets.add((case.base_commit, relative, expected))
-        if (case.base_commit, case.fixture_path) in checked_fixtures:
-            continue
         candidate_fixture = root / case.fixture_path
         fixture = candidate_fixture.resolve()
         if (
@@ -163,13 +171,11 @@ def verify_suite_assets(suite: BenchmarkSuite, repository: Path) -> None:
             or any(path.is_symlink() for path in fixture.rglob("*"))
         ):
             raise BenchmarkError(f"Fixture is missing for {case.case_id}")
-        pinned_fixture = subprocess.run(
-            ["git", "cat-file", "-e", f"{case.base_commit}:{case.fixture_path}"],
-            cwd=root, capture_output=True, check=False, timeout=10,
-        )
-        if pinned_fixture.returncode != 0:
+        if not any(
+            path.startswith(case.fixture_path.rstrip("/") + "/")
+            for path in pinned_fixture_files[case.base_commit]
+        ):
             raise BenchmarkError(f"Pinned fixture is missing for {case.case_id}")
-        checked_fixtures.add((case.base_commit, case.fixture_path))
 
 
 class CaseResult(BaseModel):

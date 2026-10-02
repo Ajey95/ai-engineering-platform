@@ -286,6 +286,32 @@ class RecordingDeletion(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PrivateMediaPublication(Base):
+    __tablename__ = "private_media_publications"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "run_id", "label", name="uq_private_media_scope"),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "run_id"],
+            ["runs.tenant_id", "runs.project_id", "runs.id"],
+            name="fk_private_media_run_scope",
+        ),
+        CheckConstraint("label IN ('baseline', 'candidate')", name="ck_private_media_label"),
+        CheckConstraint("status IN ('ready', 'deleted')", name="ck_private_media_status"),
+        CheckConstraint("object_count > 0 AND byte_count > 0", name="ck_private_media_nonempty"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    label: Mapped[str] = mapped_column(String(16))
+    effect_hash: Mapped[str] = mapped_column(String(64))
+    manifest_sha256: Mapped[str] = mapped_column(String(64))
+    object_count: Mapped[int] = mapped_column(Integer)
+    byte_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="ready")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

@@ -1,10 +1,11 @@
 import Hls from 'hls.js'
 import { useEffect, useRef, useState } from 'react'
+import { api } from './api'
 
 export interface EvidenceMarker { at_seconds: number; label: string; screenshot_url?: string }
 
-export default function MediaPlayer({ manifestUrl, markers = [] }: {
-  manifestUrl: string; markers?: EvidenceMarker[]
+export default function MediaPlayer({ manifestUrl, markers = [], grantPath }: {
+  manifestUrl: string; markers?: EvidenceMarker[]; grantPath?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -35,24 +36,41 @@ export default function MediaPlayer({ manifestUrl, markers = [] }: {
     video.addEventListener('waiting', onWaiting)
     video.addEventListener('playing', onPlaying)
     video.addEventListener('loadeddata', onLoaded)
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = manifestUrl
-    } else if (Hls.isSupported()) {
-      const hls = new Hls({ startLevel: 0, enableWorker: true })
-      hlsRef.current = hls
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setLevels(hls.levels.map((level, index) => ({ index, height: level.height })))
-      })
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) onWaiting()
-        if (data.fatal) setError(`Playback failed: ${data.details}`)
-      })
-      hls.attachMedia(video)
-      hls.loadSource(manifestUrl)
-    } else {
-      setError('HLS playback is unavailable in this browser.')
+    let stopped = false
+    const refreshGrant = async () => {
+      if (!grantPath) return
+      const grant = await api<{ manifest_url: string }>(grantPath, { method: 'POST' })
+      if (grant.manifest_url !== manifestUrl) throw new Error('Recording grant changed.')
     }
+    const startPlayback = () => {
+      if (stopped) return
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = manifestUrl
+      } else if (Hls.isSupported()) {
+        const hls = new Hls({ startLevel: 0, enableWorker: true })
+        hlsRef.current = hls
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setLevels(hls.levels.map((level, index) => ({ index, height: level.height })))
+        })
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) onWaiting()
+          if (data.fatal) setError(`Playback failed: ${data.details}`)
+        })
+        hls.attachMedia(video)
+        hls.loadSource(manifestUrl)
+      } else {
+        setError('HLS playback is unavailable in this browser.')
+      }
+    }
+    void refreshGrant().then(startPlayback).catch(reason => {
+      if (!stopped) setError(String(reason))
+    })
+    const refreshTimer = grantPath ? window.setInterval(() => {
+      void refreshGrant().catch(reason => { if (!stopped) setError(String(reason)) })
+    }, 4 * 60 * 1000) : null
     return () => {
+      stopped = true
+      if (refreshTimer !== null) window.clearInterval(refreshTimer)
       video.removeEventListener('waiting', onWaiting)
       video.removeEventListener('playing', onPlaying)
       video.removeEventListener('loadeddata', onLoaded)
@@ -61,7 +79,7 @@ export default function MediaPlayer({ manifestUrl, markers = [] }: {
       video.removeAttribute('src')
       video.load()
     }
-  }, [manifestUrl])
+  }, [manifestUrl, grantPath])
 
   function chooseQuality(value: string) {
     setQuality(value)

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from platform_app.model_base import utcnow
-from platform_app.models import RecordingDeletion, Run, ToolAction
+from platform_app.models import PrivateMediaPublication, RecordingDeletion, Run, ToolAction
 from platform_app.service import append_event
 
 
@@ -86,6 +86,14 @@ def reconcile_local_recording_deletions(
                 deletion.status = "failed"
                 result["failed"] += 1
                 db.commit()
+                continue
+            pending_remote = db.scalar(select(PrivateMediaPublication.id).where(
+                PrivateMediaPublication.tenant_id == deletion.tenant_id,
+                PrivateMediaPublication.run_id == deletion.run_id,
+                PrivateMediaPublication.label == deletion.label,
+                PrivateMediaPublication.status == "ready",
+            ))
+            if pending_remote is not None:
                 continue
             try:
                 purge_local_recording(db, run, deletion.label, artifact_dir)

@@ -77,7 +77,10 @@ def test_run_media_is_tenant_scoped_and_stays_within_published_effect(tmp_path, 
     (media / "ready.json").write_text(json.dumps({
         "effect_key": effect_key, "master": f"{effect_key}/master.m3u8"
     }))
-    monkeypatch.setattr(api_module, "settings", lambda: SimpleNamespace(artifact_dir=str(root)))
+    monkeypatch.setattr(
+        api_module, "settings",
+        lambda: SimpleNamespace(artifact_dir=str(root), environment="development"),
+    )
     engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as db:

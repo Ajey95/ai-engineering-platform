@@ -646,7 +646,9 @@ function EvidencePanel({ packet, run, deleteRecording, busy }: {
         {(['baseline', 'candidate'] as const).map(label => packet.media_manifest_urls?.[label] &&
           <div key={label}><p>{label === 'baseline' ? 'Before patch' : 'After patch'}</p>
             <Suspense fallback={<p className="muted">Loading player…</p>}>
-              <MediaPlayer manifestUrl={packet.media_manifest_urls[label]!} />
+              <MediaPlayer manifestUrl={packet.media_manifest_urls[label]!}
+                grantPath={packet.media_manifest_urls[label]!.startsWith('/private-media/') ?
+                  `/runs/${run.id}/recordings/${label}/grant` : undefined} />
             </Suspense>
             {['COMPLETED', 'INCONCLUSIVE', 'FAILED', 'CANCELLED', 'REVIEW_READY'].includes(run.state) &&
               <button type="button" className="secondary-button" disabled={busy} onClick={() => void deleteRecording(label)}>

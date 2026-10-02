@@ -911,3 +911,34 @@ Focused routing/budget/agent/worker tests passed 24/24, scoped Ruff passed,
 and the full Python suite passed 155 tests with 3 skips. The failover check
 locks the tenant policy row and denies a change in the project's data class
 from the admission snapshot.
+At commit `1693279c57484bbde805c36a858ab26ac71f7fb2`, the WSL Docker
+controlled-provider verifier processed run `a34e8228-51dd-4677-bddd-26dd1382881c`
+to REVIEW_READY/PASSED with baseline PASS/FAIL/FAIL, candidate PASS/PASS/PASS,
+10 tool effects, delivered outbox and both media READY. It used a predetermined
+provider response (`autonomous_repair=false`) and therefore does not prove live
+provider access or a customer repository workflow.
+
+2026-10-03 private media increment: migration `d8c107a4f0b5` tracks a
+tenant/project/run-scoped S3 publication. A controlled publisher checks HLS
+file scope, SHA-256 and S3 HeadObject checksums, uploads with SSE, and commits
+the publication after all objects. The API grants only an authorized undeleted
+recording through a five-minute RSA-SHA256 CloudFront custom policy scoped to
+that recording path; the React player refreshes at four minutes. The hosted
+API no longer serves local HLS bytes. Deletion writes an outbox event and
+remains pending until the remote worker verifies an empty S3 prefix and a
+CloudFront invalidation marked Completed; local startup reconciliation skips
+published recordings pending remote cleanup. Controlled signer, fake S3/edge,
+API tenant/CSRF and deletion tests passed. Local PostgreSQL upgraded to the
+new head with no Alembic drift, and the web build passed with a Node 21
+warning. No AWS account/region, bucket, distribution, origin access control or
+live playback has been selected or qualified.
+
+The private media publisher now rejects linked ancestor paths and refuses to
+overwrite existing S3 objects with different checksums. The benchmark verifier
+uses one pinned Git tree listing per commit instead of a separate Git process
+per fixture; its Windows timeout failure was reproduced once and the focused
+test then passed. Final verification for this increment: 159 Python tests
+passed, 3 skipped; private media focused tests 4 passed after the last upload
+change; Ruff passed; the web production build passed; Alembic reported no new
+upgrade operations against local PostgreSQL. These are controlled local checks,
+not AWS edge or hosted execution qualification.

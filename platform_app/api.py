@@ -66,6 +66,8 @@ from platform_app.models import (
     MemoryFact,
     MemoryFactEvent,
     ModelEntry,
+    OutboxEvent,
+    PrivateMediaPublication,
     Project,
     ProjectMembership,
     PublicationApproval,
@@ -80,6 +82,7 @@ from platform_app.models import (
 )
 from platform_app.operational_alerts import alert_read, resolve_alert
 from platform_app.operations import operations_snapshot
+from platform_app.private_media import media_prefix, sign_recording_grant
 from platform_app.publication import approve_draft_pr
 from platform_app.recording_deletion import (
     deletion_for,
@@ -418,6 +421,8 @@ def run_media(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
+    if settings().environment != "development":
+        raise HTTPException(status_code=404)
     run = authorized_run(db, identity, run_id)
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
@@ -457,6 +462,48 @@ def run_media(
     return FileResponse(selected, media_type=media_type)
 
 
+@app.post("/v1/runs/{run_id}/recordings/{label}/grant")
+def grant_run_recording(
+    run_id: str,
+    label: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = authorized_run(db, identity, run_id)
+    if label not in {"baseline", "candidate"} or deletion_for(db, run, label) is not None:
+        raise HTTPException(status_code=404)
+    publication = db.scalar(select(PrivateMediaPublication).where(
+        PrivateMediaPublication.tenant_id == run.tenant_id,
+        PrivateMediaPublication.project_id == run.project_id,
+        PrivateMediaPublication.run_id == run.id,
+        PrivateMediaPublication.label == label,
+        PrivateMediaPublication.status == "ready",
+    ))
+    if publication is None:
+        raise HTTPException(status_code=404)
+    try:
+        prefix = media_prefix(
+            run.tenant_id, run.project_id, run.id, label, publication.effect_hash
+        )
+    except ValueError as error:
+        raise ServiceError("MEDIA_NOT_READY", "Private media scope is invalid", 409) from error
+    try:
+        grant = sign_recording_grant(settings(), prefix)
+    except ValueError as error:
+        raise ServiceError(
+            "CDN_NOT_CONFIGURED", "Private media delivery is unavailable", 503
+        ) from error
+    response = JSONResponse({
+        "manifest_url": grant.manifest_url, "expires_at": grant.expires_at.isoformat(),
+    })
+    for name, value in grant.cookies.items():
+        response.set_cookie(
+            name, value, path=grant.prefix, secure=True, httponly=True,
+            samesite="strict",
+        )
+    return response
+
+
 @app.delete("/v1/runs/{run_id}/recordings/{label}")
 def delete_run_recording(
     run_id: str,
@@ -478,6 +525,12 @@ def delete_run_recording(
         raise ServiceError("RUN_ACTIVE", "Recording deletion requires a closed run", 409)
     deletion = deletion_for(db, run, label)
     if deletion is None:
+        publication = db.scalar(select(PrivateMediaPublication).where(
+            PrivateMediaPublication.tenant_id == run.tenant_id,
+            PrivateMediaPublication.run_id == run.id,
+            PrivateMediaPublication.label == label,
+            PrivateMediaPublication.status == "ready",
+        ))
         deletion = RecordingDeletion(
             tenant_id=run.tenant_id,
             run_id=run.id,
@@ -486,6 +539,12 @@ def delete_run_recording(
             status="pending",
         )
         db.add(deletion)
+        if publication is not None:
+            db.add(OutboxEvent(
+                tenant_id=run.tenant_id,
+                topic="private_media.delete",
+                payload={"run_id": run.id, "label": label},
+            ))
         db.add(AuditEvent(
             tenant_id=run.tenant_id,
             actor=identity[1],
@@ -508,6 +567,16 @@ def delete_run_recording(
         .where(RecordingDeletion.id == deletion.id)
         .execution_options(populate_existing=True)
     )
+    publication = db.scalar(select(PrivateMediaPublication).where(
+        PrivateMediaPublication.tenant_id == run.tenant_id,
+        PrivateMediaPublication.run_id == run.id,
+        PrivateMediaPublication.label == label,
+        PrivateMediaPublication.status == "ready",
+    ))
+    if publication is not None:
+        return JSONResponse(
+            {"run_id": run.id, "label": label, "status": "pending"}, status_code=202
+        )
     if deletion.status != "complete":
         try:
             purge_local_recording(db, run, label, settings().artifact_dir)
@@ -1330,12 +1399,30 @@ def review_packet(
     for label in ("baseline", "candidate"):
         if label in deleted_labels:
             continue
-        media_receipt = receipts.get(f"media_{label}") or {}
-        master = media_receipt.get("master")
-        if media_receipt.get("status") == "READY" and isinstance(master, str):
-            parts = Path(master).parts
-            if len(parts) >= 2 and re.fullmatch(r"[0-9a-f]{64}", parts[-2]):
-                media_urls[label] = f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
+        if settings().environment != "development":
+            publication = db.scalar(select(PrivateMediaPublication).where(
+                PrivateMediaPublication.tenant_id == run.tenant_id,
+                PrivateMediaPublication.project_id == run.project_id,
+                PrivateMediaPublication.run_id == run.id,
+                PrivateMediaPublication.label == label,
+                PrivateMediaPublication.status == "ready",
+            ))
+            if publication is not None:
+                try:
+                    prefix = media_prefix(
+                        run.tenant_id, run.project_id, run.id,
+                        label, publication.effect_hash,
+                    )
+                except ValueError:
+                    continue
+                media_urls[label] = f"/{prefix}master.m3u8"
+        else:
+            media_receipt = receipts.get(f"media_{label}") or {}
+            master = media_receipt.get("master")
+            if media_receipt.get("status") == "READY" and isinstance(master, str):
+                parts = Path(master).parts
+                if len(parts) >= 2 and re.fullmatch(r"[0-9a-f]{64}", parts[-2]):
+                    media_urls[label] = f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
     screenshot_urls = {
         label: f"/v1/runs/{run.id}/screenshot/{label}"
         for label, receipt in (("baseline", baseline_browser), ("candidate", candidate_browser))

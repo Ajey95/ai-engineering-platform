@@ -75,6 +75,13 @@ qualify; a read-only probe cannot prove those rights.
   and digests; the repair context includes bounded, verified excerpts and
   references paired to completed tool action IDs and typed ToolResult records.
 - Local FFmpeg HLS encoding with staging and immutable publication.
+- A controlled private-media publisher uploads complete HLS files with SHA-256
+  checksums and server-side encryption to a scoped S3 prefix, then records a
+  ready publication. An authorized viewer can receive five-minute CloudFront
+  signed cookies for exactly one recording path; the player refreshes them.
+  Deletion revokes new grants immediately and stays pending until a separate
+  worker verifies S3 cleanup and CloudFront invalidation. These paths have
+  local fake-client tests only; no AWS bucket or distribution is configured.
 - A per-recording delete route and Review control for closed runs. It revokes
   local media access, removes that side's raw WebM and HLS files, and retains
   the run transcript and screenshot with a durable deletion record.
@@ -99,8 +106,9 @@ Hosted API identity supports OIDC bearer tokens and a browser authorization-code
 flow with PKCE. Browser sessions are opaque, stored server-side and protected by
 Secure, HttpOnly, SameSite cookies and a CSRF header. This flow has passed only
 controlled issuer tests; a real issuer has not been connected. Customer run
-admission remains disabled until the production sandbox is qualified. Private
-hosted media delivery is not implemented.
+admission remains disabled until the production sandbox is qualified. Hosted
+private media code is present, but its AWS origin, edge policy and playback have
+not been qualified with a live account.
 
 ## Local setup
 
@@ -384,6 +392,26 @@ with `EXECUTION_UNAVAILABLE` until a customer sandbox is implemented. The
 bootstrap command is an operator action; `--owner-subject` must come from a
 verified identity. This local implementation has not been tested against a
 real issuer or deployed identity provider.
+
+Private hosted media requires the API and private recording behavior on the
+same HTTPS hostname, a private S3 bucket with CloudFront origin access control,
+and a trusted key group on the `private-media/*` behavior. Configure
+`AIP_PRIVATE_MEDIA_BUCKET`, `AIP_CLOUDFRONT_DISTRIBUTION_ID`,
+`AIP_CLOUDFRONT_KEY_PAIR_ID`, and a base64-encoded RSA private key in
+`AIP_CLOUDFRONT_PRIVATE_KEY_B64`; optionally set `AIP_PRIVATE_MEDIA_KMS_KEY_ID`.
+The signing key stays in the API secret manager, while the publisher/deletion
+worker uses an IAM role for S3 and CloudFront. The API does not serve hosted
+recording bytes from its local filesystem. Once a completed recording exists,
+the operator paths are:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.publish_private_media --run-id RUN_ID --label baseline
+.venv\Scripts\python.exe -m scripts.dispatch_private_media_deletions --serve
+```
+
+The distribution, bucket policy, IAM roles, TLS hostname, cache behavior, and
+live upload/playback/deletion checks still require the chosen AWS account and
+region. This code path does not enable customer run admission by itself.
 
 ## Provider model qualification
 
