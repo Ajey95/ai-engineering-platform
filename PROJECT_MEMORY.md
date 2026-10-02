@@ -467,3 +467,15 @@ provider request or duplicate event. Provider usage receipt now preserves
 validated reasoning/cache detail fields so replay metadata agrees. This is
 fixture-only; general session compaction and model-side original retrieval
 remain pending.
+
+2026-10-02 post-compaction verification: full Python suite passed 89 tests with
+one Windows symlink privilege skip; Ruff passed `platform_app tests scripts`
+and `git diff --check` was clean. Commit `7918476` contains compaction. An
+older development worker pair and the prior current worker pair were stopped
+after a PostgreSQL query found no leased runs; one worker was relaunched with
+WSL runtime and image `aip-dev-sandbox:0.1.1`. API `/v1/health` and web 5176
+returned 200. Controlled Docker replay
+`0c3b4098-742a-4881-80d6-4bdc7dac2a52` at pinned commit `7918476`
+reached REVIEW_READY/PASSED, with ten completed effects, baseline and
+candidate media READY. Its provider response was synthetic and proves only
+the local pipeline.
