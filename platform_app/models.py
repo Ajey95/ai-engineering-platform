@@ -32,6 +32,7 @@ class Tenant(Base):
     monthly_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=500)
     max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
     model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
+    plugin_allowlist: Mapped[list] = mapped_column(JsonType, default=list)
 
 
 class TenantMembership(Base):
@@ -265,6 +266,31 @@ class ModelRoutingEvidence(Base):
     available: Mapped[bool] = mapped_column(Boolean, default=False)
     source_sha256: Mapped[str] = mapped_column(String(64))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PluginEntry(Base):
+    __tablename__ = "plugin_entries"
+    __table_args__ = (UniqueConstraint("plugin_id", "version", name="uq_plugin_version"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    plugin_id: Mapped[str] = mapped_column(String(100), index=True)
+    version: Mapped[str] = mapped_column(String(60))
+    manifest: Mapped[dict] = mapped_column(JsonType)
+    manifest_sha256: Mapped[str] = mapped_column(String(64))
+    artifact_sha256: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24), default="registered")
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PluginRegistryEvent(Base):
+    __tablename__ = "plugin_registry_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    plugin_entry_id: Mapped[str] = mapped_column(ForeignKey("plugin_entries.id"), index=True)
+    actor: Mapped[str] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(40))
+    outcome: Mapped[str] = mapped_column(String(40))
+    manifest_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditEvent(Base):

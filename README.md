@@ -118,6 +118,24 @@ is configured in this checkout, so `auto` currently returns
 containing `{"enabled": false}` disables routing. Manual model selection is
 still available under its existing qualification checks.
 
+Pinned plugin manifests can be registered, checked against an exact local
+artifact digest, enabled or disabled, and allowlisted for a tenant from the
+trusted operator shell. The manifest schema requires tool JSON schemas,
+permission scopes, destinations and limits; registration alone grants no tool
+authority. The operator command is:
+
+```powershell
+uv run python -m scripts.manage_plugin --operator OPERATOR_ID register --manifest MANIFEST_JSON
+uv run python -m scripts.manage_plugin --operator OPERATOR_ID validate --plugin-id PLUGIN_ID --version VERSION --artifact REVIEWED_ARTIFACT
+uv run python -m scripts.manage_plugin --operator OPERATOR_ID enable --plugin-id PLUGIN_ID --version VERSION
+uv run python -m scripts.manage_plugin --operator OPERATOR_ID allowlist --tenant-id TENANT_ID --entry PLUGIN_ID@VERSION
+```
+
+The resolver rejects unapproved versions, changed manifests, missing scopes
+and invalid arguments. Remote MCP versions remain disabled until an isolated
+transport, credential audience and egress enforcement are implemented; no
+external plugin is currently executed by the worker.
+
 ```powershell
 uv sync --extra dev
 Copy-Item .env.example .env

@@ -97,7 +97,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 102 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 105 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -242,8 +242,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MOD-05 | Partial | `selected_model_entry=auto` now filters by explicit tenant model/data-class policy, current live qualification and tool capability checks, context/output limits, availability and fresh 30-sample model routing evidence; deterministic scoring compares recorded utility, latency and cost. Policy changes are audited through an operator CLI. No real platform benchmark evidence or live provider health exists yet, so the route fails closed in ordinary use. |
 | FR-MOD-06 | Missing | Authorized cross-provider failover absent. |
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
-| FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
-| FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
+| FR-PLG-01 | Partial | Strict manifests now require identity/version, publisher, artifact digest, transport, reviewed JSON schemas, permission scopes, network destinations, credential types, runtime/output limits, side effect class and compatibility. Registry lifecycle records registration, artifact digest validation, enable/disable and events. External execution remains absent. |
+| FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
 | FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. General tasks and live autonomous repair remain absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
@@ -274,13 +274,13 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Nine Alembic revisions applied through `2d71e508a104` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Ten Alembic revisions applied through `729b05a14f6c` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
 | FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens now admit a clearly labelled local fixture with pinned commit and show its real worker evidence; full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
-| FR-SEC-01 | Partial | The development fixture worker and model path now enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. Hosted broker and plugin authority absent. |
+| FR-SEC-01 | Partial | The development fixture worker and model path enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. A plugin resolver also checks exact tenant allowlist, enabled version/digest, schema and granted scopes. Hosted broker execution remains absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Partial | Provider keys are read only by the worker from its environment and are not returned by the frontend API; local tests exercise authorization boundaries. Hosted workload identity, encrypted secret references, rotation audit and the AC-24 injection challenge remain absent. |
 | FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. Hosted object/cache/independent restore propagation absent. |

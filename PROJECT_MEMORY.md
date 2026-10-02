@@ -598,3 +598,24 @@ Pure outbox/fallback/API tests passed. The full Python suite passed 102 tests
 with three skips (two opt-in database gates and the Windows symlink privilege
 skip); Ruff and diff checks passed. Hosted graph recovery and load remain
 unverified.
+Committed the graph increment as `72ca67c`. Restarted API 8101 with
+`AIP_MEMGRAPH_URI`, restarted the development worker, and started the graph
+projection worker as separate foreground sessions. API health and Vite 5176
+returned HTTP 200; a scoped local memory request returned retrieval mode
+`graph`. The Memgraph service is running in WSL Docker. This smoke request had
+no matching fact, while the opt-in integration test verified a real projected
+fact and deletion.
+
+2026-10-02 plugin registry foundation: added strict reviewed manifest schemas,
+version/artifact digest pinning, registry lifecycle events, exact tenant
+allowlist and tool-resolution checks for schemas and scopes. External JSON
+schema references are rejected to avoid network resolution during validation.
+Remote MCP endpoints must be public HTTPS origins in the declared allowlist;
+remote MCP cannot be enabled yet because isolated transport and credential
+audience enforcement are absent. A trusted operator CLI registers, validates,
+enables/disables and allowlists versions. Local PostgreSQL upgraded through
+`729b05a14f6c` with no Alembic drift; focused lifecycle/tampering tests passed.
+The full suite passed 105 tests with three skips; Ruff and diff checks passed.
+The disposable PostgreSQL verifier passed migration roundtrip, resume and its
+race probes at the new head. The worker does not execute external plugin tools
+yet.
