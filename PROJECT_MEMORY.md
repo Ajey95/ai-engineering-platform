@@ -479,3 +479,11 @@ returned 200. Controlled Docker replay
 reached REVIEW_READY/PASSED, with ten completed effects, baseline and
 candidate media READY. Its provider response was synthetic and proves only
 the local pipeline.
+
+2026-10-02 diagnosis log retrieval: the API now serves completed fixture
+named/browser/oracle logs from run-scoped artifact paths only after project
+authorization and full SHA-256 receipt verification. The review packet lists
+baseline diagnosis log URLs; the web log tab links them. A focused API test
+checks authorized bytes, unknown step, other tenant and tampering denial.
+General plugin full-output retrieval, signed hosted storage and full report
+export remain pending.

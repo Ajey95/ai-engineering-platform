@@ -233,7 +233,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
-| FR-PLG-03 | Partial | Fixture context now serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. General plugin broker execution and authorized full-output retrieval remain. |
+| FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
 | FR-HAR-01 | Partial | Development outbox worker can poll continuously and executes baseline/controlled candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
@@ -254,7 +254,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
-| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs and a verified fixture diff download; diagnosis evidence, alternatives and full packet export remain. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis log downloads; the web log tab links the verified files. Alternatives and full packet export remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is audited and separate from publication; bound draft PR approval and reconciliation absent. |

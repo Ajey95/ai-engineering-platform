@@ -437,6 +437,78 @@ def run_screenshot(
     return FileResponse(selected, media_type="image/png")
 
 
+EVIDENCE_DIRS = {
+    "named": "baseline",
+    "browser": "baseline",
+    "oracle": "baseline",
+    "candidate_named": "candidate/evidence",
+    "candidate_browser": "candidate/evidence",
+    "candidate_oracle": "candidate/evidence",
+}
+
+
+@app.get("/v1/runs/{run_id}/evidence/{step_id}/output")
+def run_evidence_output(
+    run_id: str,
+    step_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = authorized_run(db, identity, run_id)
+    folder = EVIDENCE_DIRS.get(step_id)
+    if folder is None:
+        raise HTTPException(status_code=404)
+    action = db.scalar(
+        select(ToolAction).where(
+            ToolAction.run_id == run.id,
+            ToolAction.tenant_id == identity[0],
+            ToolAction.step_id == step_id,
+            ToolAction.logical_action == f"fixture.{step_id}",
+            ToolAction.status == "COMPLETED",
+        )
+    )
+    receipt = action.receipt if action else None
+    filename = receipt.get("output_file") if receipt else None
+    digest = receipt.get("output_sha256") if receipt else None
+    if (
+        not isinstance(filename, str)
+        or filename in {".", ".."}
+        or re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", filename) is None
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        raise HTTPException(status_code=404)
+    try:
+        root = Path(settings().artifact_dir).resolve(strict=True)
+        run_root = root / run.id
+        selected_dir = run_root / folder
+        selected = selected_dir / filename
+        if (
+            run_root.is_symlink()
+            or (run_root / "candidate").is_symlink()
+            or selected_dir.is_symlink()
+            or selected.is_symlink()
+        ):
+            raise HTTPException(status_code=404)
+        resolved = selected.resolve(strict=True)
+        if (
+            not selected_dir.resolve(strict=True).is_relative_to(run_root.resolve(strict=True))
+            or not resolved.is_relative_to(selected_dir.resolve(strict=True))
+            or not resolved.is_file()
+        ):
+            raise HTTPException(status_code=404)
+        with resolved.open("rb") as content:
+            if hashlib.file_digest(content, "sha256").hexdigest() != digest:
+                raise HTTPException(status_code=404)
+    except OSError as error:
+        raise HTTPException(status_code=404) from error
+    return FileResponse(
+        resolved, media_type="application/octet-stream",
+        filename=f"{step_id}-{filename}",
+        content_disposition_type="attachment",
+    )
+
+
 @app.post("/v1/projects", response_model=ProjectRead, status_code=201)
 def create_project(
     body: ProjectCreate,
@@ -979,7 +1051,12 @@ def review_packet(
         "autonomous_repair": bool(
             candidate_patch and model_completed and provider_mode == "native_api"
         ),
-        "diagnosis_evidence_refs": [],
+        "diagnosis_evidence_refs": [
+            f"/v1/runs/{run.id}/evidence/{step}/output"
+            for step in ("named", "browser", "oracle")
+            if isinstance((receipts.get(step) or {}).get("output_file"), str)
+            and isinstance((receipts.get(step) or {}).get("output_sha256"), str)
+        ],
         "patch_hash": (candidate_patch or {}).get("patch_sha256"),
         "patch_url": f"/v1/runs/{run.id}/patch" if candidate_patch else None,
         "changed_files": (candidate_patch or {}).get("changed_files", []),

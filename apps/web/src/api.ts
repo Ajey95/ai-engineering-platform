@@ -77,6 +77,7 @@ export interface ReviewPacket {
   patch_hash?: string | null
   patch_url?: string | null
   diagnosis_hypothesis?: string | null
+  diagnosis_evidence_refs: string[]
   actual_model_spend_usd?: string
   browser_evidence_refs: string[]
   media_manifest_url?: string | null
