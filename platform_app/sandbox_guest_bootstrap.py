@@ -112,7 +112,7 @@ def render_user_data(
         "umask 077\n"
         "install -d -m 0700 /run/aip\n"
         f"printf '%s' '{encoded}' | base64 -d > /run/aip/bootstrap.json\n"
-        "exec /usr/bin/env PYTHONPATH=/opt/aip /usr/bin/python3 "
+        "exec /usr/bin/env PYTHONPATH=/opt/aip /opt/aip/.venv/bin/python "
         "-m platform_app.sandbox_guest_bootstrap "
         "--config /run/aip/bootstrap.json\n"
     )
@@ -319,8 +319,9 @@ def run_guest_bootstrap(config: GuestBootstrapConfig, root: Path) -> dict:
         raise GuestBootstrapError("Sandbox execution window has expired")
     command = [
         "runuser", "-u", "aipguest", "--", "env", "-i",
-        "HOME=/home/aipguest", "PATH=/usr/local/bin:/usr/bin:/bin",
-        "PYTHONPATH=/opt/aip", "/usr/bin/python3", "-m", "platform_app.guest_runner",
+        "HOME=/home/aipguest", "PATH=/opt/aip/.venv/bin:/opt/node/bin:/usr/bin:/bin",
+        "PYTHONPATH=/opt/aip", "PLAYWRIGHT_BROWSERS_PATH=/opt/aip/browsers",
+        "/opt/aip/.venv/bin/python", "-m", "platform_app.guest_runner",
         "--manifest", str(manifest_path), "--workspace", str(workspace),
         "--artifacts", str(artifacts), "--case-id",
         "sandbox-" + hashlib.sha256(config.lease_id.encode()).hexdigest()[:32],

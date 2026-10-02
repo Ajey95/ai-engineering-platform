@@ -62,6 +62,14 @@ not a live provider, customer repository, AWS or GitHub qualification.
   policy scoped to sandbox input/output prefixes. Terraform provider 6.67.0
   initialized, format and validate passed. It has not been planned or applied
   in a selected account, and no guest image or live S3 transport exists.
+- `infra/sandbox-ami` now defines a pinned-source Packer EC2 image build for
+  Ubuntu 24.04 x86_64. It packages the repository's Python source and `uv.lock`
+  deterministically, installs Node 24.21.0 after SHA-256 verification,
+  installs locked Python dependencies and Playwright Chromium, creates uid
+  10001, and runs import/browser smoke checks as the guest user. Packer
+  1.15.4 `fmt -check` and `validate` passed with Amazon plugin 1.8.1;
+  shell syntax and runtime-bundle tests passed. No selected account/source AMI
+  or actual image build exists, so boot and runtime isolation are unverified.
 - `platform_app/repository_archive.py` packages one exact Git commit into a
   bounded tar after verifying the resolved commit and rejecting unsafe
   entries; a controlled test proved dirty/untracked files are excluded.

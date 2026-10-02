@@ -1109,3 +1109,14 @@ focused broker/transport/bootstrap tests passed 19/19, and scoped Ruff passed.
 No AMI, AWS account run,
 customer repository path or independent hosted repair has been verified;
 hosted admission remains disabled.
+
+2026-10-03 guest AMI definition increment: `infra/sandbox-ami` pins a
+source Ubuntu 24.04 AMI input, Amazon Packer plugin 1.8.1, Node 24.21.0
+archive SHA-256, Python `uv.lock`, Playwright Chromium and uid 10001. The
+user-data bootstrap and unprivileged runner now use `/opt/aip/.venv`, and
+the image build checks a Chromium launch as the guest user. A deterministic
+runtime bundle builder packages only `platform_app` Python files and lock/
+project metadata. Packer 1.15.4 `init`, `fmt -check` and `validate` passed
+using a local plugin cache on D: after C: lacked space; `bash -n` and seven
+focused Python tests passed. No AMI build or EC2 guest run occurred because
+the region, account, source AMI and build subnet are not selected.

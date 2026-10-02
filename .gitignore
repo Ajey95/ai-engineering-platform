@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.cache/
 *.pyc
 .env
 node_modules/
@@ -15,3 +16,5 @@ artifacts/
 *.tfstate.*
 *.tfvars
 *.tfvars.json
+infra/sandbox-ami/guest-runtime.tar
+infra/sandbox-ami/manifest.json
