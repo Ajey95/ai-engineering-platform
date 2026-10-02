@@ -67,6 +67,7 @@ from platform_app.models import (
     TenantMembership,
     ToolAction,
 )
+from platform_app.operational_alerts import alert_read, resolve_alert
 from platform_app.operations import operations_snapshot
 from platform_app.publication import approve_draft_pr
 from platform_app.recording_deletion import (
@@ -78,6 +79,7 @@ from platform_app.repository_connections import github_repository_ref, validate_
 from platform_app.review_patch import verified_fixture_diff
 from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
+    AlertResolutionCreate,
     ErrorBody,
     EventRead,
     MemoryTransitionCreate,
@@ -1476,6 +1478,19 @@ def operations_summary(
 ):
     require_owner(db, identity)
     return operations_snapshot(db, identity[0])
+
+
+@app.post("/v1/operations/alerts/{alert_id}/resolve")
+def resolve_operations_alert(
+    alert_id: str,
+    body: AlertResolutionCreate,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    alert = resolve_alert(db, identity[0], alert_id, identity[1], body.reason)
+    db.commit()
+    return alert_read(alert)
 
 
 @app.get("/v1/usage")

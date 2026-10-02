@@ -12,12 +12,14 @@ from platform_app.db import utcnow
 from platform_app.models import (
     BudgetEntry,
     ExportCharge,
+    OperationalAlert,
     OutboxEvent,
     Run,
     RunEvent,
     Tenant,
     ToolAction,
 )
+from platform_app.operational_alerts import alert_read
 from platform_app.ops_alerts import current_warning_details
 
 
@@ -108,6 +110,10 @@ def operations_snapshot(
         warnings.append("runnable_queue_over_5_minutes")
     if graph_age is not None and graph_age > 60:
         warnings.append("graph_projection_over_60_seconds")
+    active_alerts = db.scalars(select(OperationalAlert).where(
+        OperationalAlert.tenant_id == tenant_id,
+        OperationalAlert.state.in_(["observing", "firing"]),
+    ).order_by(OperationalAlert.first_seen_at)).all()
     return {
         "window_start": cutoff.isoformat(), "observed_at": now.isoformat(),
         "runs": {
@@ -131,6 +137,7 @@ def operations_snapshot(
         },
         "warnings_now": warnings,
         "warning_details": current_warning_details(warnings),
+        "active_alerts": [alert_read(row) for row in active_alerts],
         "unavailable": [
             "provider_latency_and_error_rate", "context_size_and_compaction_rate",
             "token_estimation_error", "sandbox_utilization", "abr_playback_quality",

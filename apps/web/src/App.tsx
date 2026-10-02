@@ -39,6 +39,10 @@ type OperationsSummary = {
   warnings_now: string[]
   warning_details: { alert_id: string; owner: string; impact: string; runbook: string
     evaluation: string }[]
+  active_alerts: { id: string; alert_id: string; state: string; generation: number
+    severity: string; owner: string; impact: string; runbook: string
+    first_seen_at: string; last_observed_at: string; fired_at: string | null
+    evidence: Record<string, string | number> }[]
   unavailable: string[]
 }
 
@@ -351,6 +355,19 @@ export default function App() {
     finally { setBusy(false) }
   }
 
+  async function resolveOperationsAlert(event: React.FormEvent<HTMLFormElement>, alertId: string) {
+    event.preventDefault(); setBusy(true); setOperationsError('')
+    const reason = String(new FormData(event.currentTarget).get('reason') || '')
+    try {
+      await api(`/operations/alerts/${alertId}/resolve`, {
+        method: 'POST', body: jsonBody({ reason }),
+      })
+      setOperations(await api<OperationsSummary>('/operations/summary'))
+    } catch (cause) {
+      setOperationsError(cause instanceof Error ? cause.message : 'Alert resolution failed')
+    } finally { setBusy(false) }
+  }
+
   function navigate(target: Page) {
     setPage(target); setMenuOpen(false); setError('')
     if (target === 'review' && !selectedRun && runs[0]) setSelectedRun(runs[0].id)
@@ -426,7 +443,8 @@ export default function App() {
               <div className="content-panel"><h2>Run states</h2>{Object.entries(operations.runs.by_state).length ? Object.entries(operations.runs.by_state).map(([state, count]) => <div className="list-row" key={state}><span>{state.replaceAll('_', ' ')}</span><strong>{count}</strong></div>) : <p className="muted">No runs in this window.</p>}</div>
               <div className="content-panel"><h2>Tools, media and exports</h2><div className="list-row"><span>Failed tool effects</span><strong>{operations.tools.failed_count}</strong></div>{Object.entries(operations.tools.by_policy_result).map(([policy, count]) => <div className="list-row" key={policy}><span>Tool policy: {policy}</span><strong>{count}</strong></div>)}{Object.entries(operations.media.by_status).map(([status, count]) => <div className="list-row" key={status}><span>Media: {status}</span><strong>{count}</strong></div>)}<div className="list-row"><span>Evidence ZIP today</span><strong>{(operations.exports.used_bytes_today / 1_000_000).toFixed(2)} / {(operations.exports.daily_cap_bytes / 1_000_000).toFixed(0)} MB</strong></div></div>
             </div>
-            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warning_details.length ? operations.warning_details.map(item => <p className="ops-warning" key={item.alert_id}>{item.alert_id.replaceAll('_', ' ')} · {item.owner}<small>{item.impact}</small></p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These are snapshot checks, not sustained alerts or a paging service.</p></div>
+            <div className="content-panel"><h2>Durable alerts</h2>{operations.active_alerts.length ? operations.active_alerts.map(item => <div className="ops-warning" key={item.id}><strong>{item.alert_id.replaceAll('_', ' ')} · {item.state} · {item.severity}</strong><small>{item.impact} Owner: {item.owner}. First seen {date(item.first_seen_at)}.</small><small>Runbook: {item.runbook}</small>{item.state === 'firing' && <form onSubmit={event => void resolveOperationsAlert(event, item.id)}><label>Resolution reason<input name="reason" minLength={8} maxLength={2000} required placeholder="What was checked and fixed?" /></label><button className="secondary-button" disabled={busy}>Resolve</button></form>}</div>) : <p className="muted">No active alerts recorded.</p>}<p className="muted">Alert state updates while the operations evaluator is running. No external paging destination is configured.</p></div>
+            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warning_details.length ? operations.warning_details.map(item => <p className="ops-warning" key={item.alert_id}>{item.alert_id.replaceAll('_', ' ')} · {item.owner}<small>{item.impact}</small></p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These instantaneous checks may differ from sustained alert state.</p></div>
             <div className="content-panel"><h2>Metrics awaiting instrumentation</h2><p className="muted">{operations.unavailable.map(item => item.replaceAll('_', ' ')).join(' · ')}</p></div>
           </>}
         </section>}

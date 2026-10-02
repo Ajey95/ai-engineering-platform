@@ -801,3 +801,21 @@ hosted per-run VM isolation, live provider qualification, 39 benchmark cases,
 private CDN delivery, external plugin execution, sustained operations alerts,
 and hosted restore/load/security qualification. The user asked for no schedule
 and to defer external credentials until code-side work is done.
+
+2026-10-03 operational alert increment: added Alembic `e4f23aa7190b` and
+tenant-scoped durable alert/transition records. A separate evaluator samples
+runnable queue and graph outbox lag under a tenant lock. Queue warning fires
+only after ten minutes of observations no more than 90 seconds apart; graph
+lag fires immediately. A persisted `budget.breached` run event fires a sticky
+page that an owner can resolve with a recorded reason; a new event reopens it.
+The owner Operations page shows active alerts and resolution controls. Local
+PostgreSQL migrated to the new head; Alembic check found no drift. The local
+evaluator is running with 30-second polling and the API was restarted on
+8101; the existing 5173 frontend proxies it successfully. Desktop and mobile
+Chromium rendered the page from the real API with no JS errors or horizontal
+overflow. The full Python suite passed 133 tests, 3 skipped; Ruff and web
+build passed. External paging, hosted supervision and the other alert evidence
+producers remain absent. An uncommitted `memory.py` edit at turn start removed
+required functions and broke API import; its diff was saved under ignored
+`artifacts/memory_preexisting_2026-10-03.patch` before restoring the last
+committed file. No user-authored code was silently discarded.

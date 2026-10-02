@@ -11,6 +11,7 @@ from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
     ExportCharge,
+    OperationalAlert,
     OutboxEvent,
     Project,
     Run,
@@ -126,9 +127,20 @@ def test_operations_api_requires_tenant_owner(monkeypatch):
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         db.add(Tenant(id="tenant-a", name="A"))
+        db.add(Tenant(id="tenant-b", name="B"))
         db.add_all([
             TenantMembership(tenant_id="tenant-a", subject="alice", role="owner"),
             TenantMembership(tenant_id="tenant-a", subject="bob", role="member"),
+            OperationalAlert(
+                id="alert-a", tenant_id="tenant-a", alert_id="budget_breach",
+                state="firing", generation=1, first_seen_at=datetime.now(UTC),
+                last_observed_at=datetime.now(UTC), evidence={"event_id": "event-a"},
+            ),
+            OperationalAlert(
+                id="alert-b", tenant_id="tenant-b", alert_id="budget_breach",
+                state="firing", generation=1, first_seen_at=datetime.now(UTC),
+                last_observed_at=datetime.now(UTC), evidence={"event_id": "event-b"},
+            ),
         ])
         db.commit()
 
@@ -142,12 +154,24 @@ def test_operations_api_requires_tenant_owner(monkeypatch):
     try:
         client = TestClient(api.app)
         assert client.get("/v1/operations/summary").status_code == 403
+        assert client.post(
+            "/v1/operations/alerts/alert-a/resolve", json={"reason": "Reviewed event"}
+        ).status_code == 403
         actor[0] = "alice"
         response = client.get("/v1/operations/summary")
         assert response.status_code == 200, response.text
         assert response.json()["runs"]["verification_pass_rate"] is None
         assert response.json()["runs"]["review_acceptance_rate"] is None
         assert response.json()["unavailable"]
+        assert [item["id"] for item in response.json()["active_alerts"]] == ["alert-a"]
+        assert client.post(
+            "/v1/operations/alerts/alert-b/resolve", json={"reason": "Reviewed event"}
+        ).status_code == 404
+        resolved = client.post(
+            "/v1/operations/alerts/alert-a/resolve", json={"reason": "Reviewed event"}
+        )
+        assert resolved.status_code == 200, resolved.text
+        assert resolved.json()["state"] == "resolved"
     finally:
         api.app.dependency_overrides.clear()
         engine.dispose()

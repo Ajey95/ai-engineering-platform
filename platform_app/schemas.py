@@ -125,6 +125,10 @@ class ResumeInputCreate(StrictModel):
     input_text: str = Field(min_length=5, max_length=4000)
 
 
+class AlertResolutionCreate(StrictModel):
+    reason: str = Field(min_length=8, max_length=2000)
+
+
 class EventRead(StrictModel):
     schema_version: str = "1.0"
     event_id: str

@@ -1,6 +1,6 @@
 # Implementation status against PRD 1.0
 
-Updated 2026-10-02. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
+Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run.
@@ -102,7 +102,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 119 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 133 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -279,7 +279,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Fourteen Alembic revisions applied through `a9db61e2c7f4` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Fifteen Alembic revisions applied through `e4f23aa7190b` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
@@ -291,8 +291,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. Hosted object/cache/independent restore propagation absent. |
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
-| FR-OBS-02 | Partial | Owner-only operations API/UI now show tenant-scoped 24-hour run states, passed-verification/inconclusive rates among closed runs, reviewer acceptance among decided reviews, current runnable queue and graph backlog age, tool denials/failures, media state counts, actual inference spend, outstanding call reservations and daily evidence export bytes/cap. Snapshot thresholds flag queue and graph lag. Provider latency/errors, context size, token estimation error, sandbox utilization, ABR playback, sustained alerting and hosted telemetry remain explicitly unavailable. |
-| FR-OPS-01 | Partial | A versioned alert catalog now assigns owner, impact and a real runbook anchor to five critical paging conditions and five warning conditions. Seven required response runbooks cover provider, worker, sandbox, memory, media, restore, publication and shared security response. Current queue/graph dashboard warnings include owner and impact, explicitly labelled snapshot-only. No pager integration, sustained threshold evaluator, hosted responder qualification or restore drill exists. |
+| FR-OBS-02 | Partial | Owner-only operations API/UI show tenant-scoped 24-hour run states, verification and reviewer rates, queue/graph age, tool failures, media state, spend/reservations, export quota and durable active alerts. Queue and graph thresholds have a separate persisted evaluator. Provider latency/errors, context size, token estimation error, sandbox utilization, ABR playback and hosted telemetry remain unavailable. |
+| FR-OPS-01 | Partial | The versioned catalog assigns owner, impact and runbook to five paging and five warning classes. A tenant-row-locked evaluator now persists queue warnings only after repeated samples over ten minutes, resets after a monitoring gap, fires graph lag immediately and derives sticky budget-breach pages from canonical run events. It records transitions and source evidence; owner-only API/UI resolution requires a reason. Local evaluator runs continuously and desktop/mobile Chromium checks passed. Other alert inputs, external pager delivery, monitor supervision, hosted responder qualification and restore drill remain absent. |
 | FR-EVL-01 | Partial | A strict versioned suite contract now requires exactly ten cases in each of the 30 bug plus 10 non-bug categories, at least 20 held out, distinct fixtures and hidden oracles, pinned Git assets, digests and accepted outcomes. Only one actual development fixture exists; the remaining 39 cases and protected oracle execution are absent. |
 | FR-EVL-02 | Partial | A conservative scorer requires one distinct attempt per case and one model, includes failures in denominators and flags false success. Supplied result fields are labelled unverified; no provider has run a complete benchmark or received qualification. |
 | FR-EVL-03 | Partial | Push/PR workflow now runs Python tests/lint, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and benchmark/model-change qualification gates remain. |

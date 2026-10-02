@@ -409,6 +409,41 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class OperationalAlert(Base):
+    __tablename__ = "operational_alerts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "alert_id", name="uq_operational_alert_tenant_kind"),
+        CheckConstraint(
+            "state IN ('observing', 'firing', 'resolved')",
+            name="ck_operational_alert_state",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    alert_id: Mapped[str] = mapped_column(String(100))
+    state: Mapped[str] = mapped_column(String(20))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_cursor: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    evidence: Mapped[dict] = mapped_column(JsonType, default=dict)
+
+
+class OperationalAlertEvent(Base):
+    __tablename__ = "operational_alert_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    alert_id: Mapped[str] = mapped_column(ForeignKey("operational_alerts.id"), index=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    generation: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(200))
+    reason: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ModelRegistryEvent(Base):
     __tablename__ = "model_registry_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

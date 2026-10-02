@@ -1,11 +1,21 @@
 # Operations response runbooks
 
 These runbooks describe the intended response for the reference deployment.
-The current checkout runs locally. It has no pager, hosted sandbox, CDN, or
-qualified restore region. An owner verifies the tenant, run, revision and
+The current checkout runs locally. It has no external pager, hosted sandbox,
+CDN, or qualified restore region. A local operational evaluator persists queue,
+graph and budget-breach alert state; the other catalog conditions need their
+own evidence producers. An owner verifies the tenant, run, revision and
 time window before taking action. Keep restricted evidence out of ordinary
 chat, dashboards and tickets. The machine-readable owner and impact catalog is
 `platform_app/ops_alerts.py`.
+
+Run the evaluator as a supervised process with
+`python -m scripts.evaluate_operations --serve --poll-seconds 30`. Queue
+warnings require samples no more than 90 seconds apart for ten minutes after
+crossing five minutes of queue age. A stopped evaluator cannot prove continuous
+failure. Firing alerts appear in the owner Operations view; resolving one
+requires a recorded reason. A new budget-breach event reopens a resolved alert.
+There is no external paging delivery yet, so operators must inspect the view.
 
 ## Security incident
 
