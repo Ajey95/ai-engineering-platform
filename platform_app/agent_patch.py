@@ -15,13 +15,14 @@ from sqlalchemy import select
 from platform_app.context_bundle import fixture_context_bundle
 from platform_app.context_compaction import compact_fixture_context
 from platform_app.memory import select_context_facts
-from platform_app.model_budget import reserve_model_call, settle_model_call
+from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
 from platform_app.models import BudgetEntry, MemoryFact, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
 from platform_app.providers import (
     AnthropicMessages,
     GeminiGenerateContent,
     OpenAIResponses,
+    ProviderError,
     ProviderTurn,
 )
 from platform_app.run_ledger import assert_fence
@@ -76,6 +77,11 @@ def _replay_completed(
     action: ToolAction, artifact_root: Path, run_id: str, step_id: str
 ) -> AgentPatchResult:
     receipt = action.receipt or {}
+    if receipt.get("status") == "REJECTED":
+        raise ServiceError(
+            receipt.get("error_code", "PROVIDER_REJECTED"),
+            "Provider rejected the model request", 409,
+        )
     relative_ref = receipt.get("artifact_ref")
     expected_digest = receipt.get("output_sha256")
     if relative_ref != f"{run_id}/model/{step_id}.json":
@@ -230,7 +236,20 @@ def request_fixture_patch(
         expected_provider = model.provider
 
     # The committed intent and reservation precede this external request.
-    turn = selected_provider.generate(model_id, INSTRUCTION, prompt, {}, plan.output_reserve)
+    try:
+        turn = selected_provider.generate(model_id, INSTRUCTION, prompt, {}, plan.output_reserve)
+    except ProviderError as error:
+        if error.status_code in {400, 401, 403, 404, 429}:
+            with session_factory() as db:
+                run = db.get(Run, run_id)
+                action = db.get(ToolAction, action_id)
+                reservation = db.get(BudgetEntry, reservation_id)
+                reject_model_call(
+                    db, run, worker_id, fence, action, reservation,
+                    error.code, error.status_code,
+                )
+                db.commit()
+        raise
     if turn.provider != expected_provider:
         raise ServiceError("PROVIDER_MISMATCH", "Provider response source changed", 409)
     raw = turn.text

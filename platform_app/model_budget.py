@@ -320,3 +320,43 @@ def settle_model_call(
             {"scope": scope, "step_id": action.step_id, "actual_usd": str(actual)},
         )
     return actual
+
+
+@tracer.start_as_current_span("model.reject")
+def reject_model_call(
+    db: Session,
+    run: Run,
+    worker_id: str,
+    fence: int,
+    action: ToolAction,
+    reservation: BudgetEntry,
+    error_code: str,
+    status_code: int,
+) -> None:
+    """Release liability only for a definitive HTTP rejection with no model result."""
+    assert_fence(run, worker_id, fence)
+    if status_code not in {400, 401, 403, 404, 429}:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Provider outcome requires review", 409)
+    if (
+        action.tenant_id != run.tenant_id or action.run_id != run.id
+        or reservation.tenant_id != run.tenant_id or reservation.run_id != run.id
+        or action.status != "INTENDED" or reservation.status != "reserved"
+        or reservation.category != f"call:{action.step_id}"
+    ):
+        raise ServiceError("LEDGER_STATE", "Model rejection ledger does not match", 409)
+    try:
+        lock_tenant(db, run.tenant_id, require_active=False)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 403) from error
+    reservation.status = "released"
+    reservation.actual_usd = Decimal(0)
+    complete_tool_action(
+        db, run, worker_id, fence, action,
+        {"status": "REJECTED", "error_code": error_code, "http_status": status_code},
+    )
+    append_event(db, run, "model.rejected", {
+        "step_id": action.step_id, "error_code": error_code, "http_status": status_code,
+    })
+    append_event(db, run, "budget.updated", {
+        "step_id": action.step_id, "reserved_usd": "0", "actual_usd": "0",
+    })

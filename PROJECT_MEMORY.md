@@ -883,3 +883,13 @@ returned 200 for health and the development session. Headless Chromium loaded
 the workspace at 1440 and 390 pixels with no page errors or horizontal overflow.
 The in-app browser controller failed to load its request-header policy, so this
 UI check used local Playwright instead.
+
+2026-10-03 model rejection accounting increment: a definite provider HTTP
+400/401/403/404/429 rejection now records a completed rejected model effect,
+releases its reserved liability under the tenant lock, emits bounded model and
+budget events, and replays as the same rejection without another provider call.
+A timeout/transport failure keeps its model effect INTENDED and reservation
+pending because outcome and billing are unknown; replay fails closed. Focused
+budget/agent/worker tests passed 17/17, then focused budget/agent tests passed
+11/11 after adding timeout coverage. Ruff passed. Live provider behavior is
+unqualified and automatic cross-provider failover remains absent.

@@ -67,7 +67,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
   included in input accounting and Google thinking tokens in output accounting.
   HTTP authentication, access, rate, timeout, overload, context and schema
   failures now have distinct safe codes; provider response bodies are not
-  propagated in errors. A billed OpenAI refusal retains usage and is rejected
+  propagated in errors. Definitive HTTP 400/401/403/404/429 rejections now
+  release the call reservation and leave a durable rejection receipt; timeouts
+  retain their pending liability and prohibit blind replay. A billed OpenAI
+  refusal retains usage and is rejected
   after settlement in the fixture patch path. No provider account has been
   used or qualified.
 - `platform_app/browser_runner.py`, `verifier.py`: controlled fixture browser
@@ -112,7 +115,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 150 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 153 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -270,7 +273,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CTX-03 | Partial | Fixture model input compacts at 80% of its conservative byte budget or before overflow. It preserves immutable constraints, tool call/result IDs, source commit and user decisions; writes content-addressed source/summary artifacts and one durable event. Scoped retrieval verifies both digests and decision equivalence. Controlled provider integration replays the same completed call without a second request. General transcript/session compaction, authorized agent retrieval and provider tool-cycle continuation remain absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Partial | Synthetic named-test and oracle output streams directly to complete artifact files with byte count and SHA-256 receipts; model context carries bounded, verified head/tail excerpts and references paired to completed tool action IDs. General DOM snapshot storage and provider tool-cycle compaction remain. |
-| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Live account and outage reconciliation unverified. |
+| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Definitive HTTP rejections release liability with a persisted receipt, while timeouts remain unresolved and cannot be replayed blindly. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Verified/deleted canonical facts now project idempotently to Memgraph from PostgreSQL outbox events. API graph lookup rechecks canonical tenant/project/revision/status and falls back to PostgreSQL on outage, lag or mismatch. A scope rebuild command exists; hosted graph recovery/load qualification remains. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |

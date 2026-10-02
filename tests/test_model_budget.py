@@ -1,14 +1,17 @@
 import hashlib
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
+import httpx
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from platform_app.agent_patch import request_fixture_patch
 from platform_app.db import Base
-from platform_app.model_budget import reserve_model_call, settle_model_call
+from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
 from platform_app.models import (
     BudgetEntry,
     ModelEntry,
@@ -19,6 +22,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
+from platform_app.providers import OpenAIResponses, ProviderError
 from platform_app.run_ledger import claim_run
 from platform_app.service import ServiceError
 
@@ -138,6 +142,104 @@ def test_model_reservation_precedes_settlement_and_uses_reported_usage(scope):
     with pytest.raises(ServiceError) as error:
         reserve_model_call(db, run, "worker-one", fence, model, "model-2", "Again")
     assert error.value.code == "BUDGET_EXHAUSTED"
+
+
+def test_definitive_rejection_releases_reservation_but_unknown_outcome_stays_pending(scope):
+    db, run, model, fence = scope
+    action, reservation, _ = reserve_model_call(
+        db, run, "worker-one", fence, model, "model-1", "Fix the form"
+    )
+    db.commit()
+    with pytest.raises(ServiceError) as uncertain:
+        reject_model_call(
+            db, run, "worker-one", fence, action, reservation,
+            "PROVIDER_TIMEOUT", 504,
+        )
+    assert uncertain.value.code == "EFFECT_OUTCOME_UNKNOWN"
+    assert action.status == "INTENDED" and reservation.status == "reserved"
+    reject_model_call(
+        db, run, "worker-one", fence, action, reservation,
+        "PROVIDER_RATE_LIMITED", 429,
+    )
+    db.commit()
+    assert action.status == "COMPLETED"
+    assert action.receipt == {
+        "status": "REJECTED", "error_code": "PROVIDER_RATE_LIMITED", "http_status": 429,
+    }
+    assert reservation.status == "released" and Decimal(reservation.actual_usd) == 0
+    assert db.scalar(select(RunEvent).where(RunEvent.event_type == "model.rejected"))
+    with pytest.raises(ServiceError) as no_retry:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-2", "Again")
+    assert no_retry.value.code == "BUDGET_EXHAUSTED"
+
+
+def test_fixture_request_records_http_rejection_and_does_not_repeat_it(scope, tmp_path):
+    db, run, _, fence = scope
+    calls = []
+
+    def reject(request):
+        calls.append(request)
+        return httpx.Response(429, json={"error": {"message": "rate limited"}})
+
+    adapter = OpenAIResponses(
+        "test-only-key", client=httpx.Client(transport=httpx.MockTransport(reject))
+    )
+    source = Path(__file__).resolve().parents[1] / "benchmarks/fixtures/form-submit/base/server.py"
+    db.commit()
+    with pytest.raises(ProviderError) as rejected:
+        request_fixture_patch(
+            lambda: Session(db.bind), run.id, "worker-one", fence,
+            {}, source.read_text(encoding="utf-8"), tmp_path, provider=adapter,
+        )
+    assert rejected.value.code == "PROVIDER_RATE_LIMITED"
+    with Session(db.bind) as check:
+        action = check.scalar(select(ToolAction).where(
+            ToolAction.logical_action == "model.generate"
+        ))
+        reservation = check.scalar(select(BudgetEntry).where(
+            BudgetEntry.category == "call:model-1"
+        ))
+        assert action.receipt["status"] == "REJECTED"
+        assert reservation.status == "released"
+    with pytest.raises(ServiceError) as replay:
+        request_fixture_patch(
+            lambda: Session(db.bind), run.id, "worker-one", fence,
+            {}, source.read_text(encoding="utf-8"), tmp_path, provider=adapter,
+        )
+    assert replay.value.code == "PROVIDER_RATE_LIMITED"
+    assert len(calls) == 1
+
+
+def test_fixture_timeout_remains_uncertain_and_cannot_reissue(scope, tmp_path):
+    db, run, _, fence = scope
+    calls = []
+
+    def timeout(request):
+        calls.append(request)
+        raise httpx.ReadTimeout("unknown provider outcome")
+
+    adapter = OpenAIResponses(
+        "test-only-key", client=httpx.Client(transport=httpx.MockTransport(timeout))
+    )
+    source = Path(__file__).resolve().parents[1] / "benchmarks/fixtures/form-submit/base/server.py"
+    db.commit()
+    for expected in ("PROVIDER_TIMEOUT", "EFFECT_OUTCOME_UNKNOWN"):
+        with pytest.raises((ProviderError, ServiceError)) as error:
+            request_fixture_patch(
+                lambda: Session(db.bind), run.id, "worker-one", fence,
+                {}, source.read_text(encoding="utf-8"), tmp_path, provider=adapter,
+            )
+        assert error.value.code == expected
+    with Session(db.bind) as check:
+        action = check.scalar(select(ToolAction).where(
+            ToolAction.logical_action == "model.generate"
+        ))
+        reservation = check.scalar(select(BudgetEntry).where(
+            BudgetEntry.category == "call:model-1"
+        ))
+        assert action.status == "INTENDED"
+        assert reservation.status == "reserved"
+    assert len(calls) == 1
 
 
 def test_unqualified_model_and_uncertain_usage_fail_closed(scope):
