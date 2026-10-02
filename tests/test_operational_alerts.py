@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import create_engine, func, select
+import pytest
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -22,18 +24,25 @@ def _database():
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine)
     return engine
 
 
 def _run(db: Session, tenant_id: str, now: datetime) -> Run:
     db.add(Tenant(id=tenant_id, name=tenant_id))
+    db.flush()
     db.add(Project(id=f"{tenant_id}-project", tenant_id=tenant_id, name="Project"))
+    db.flush()
     db.add(Task(
         id=f"{tenant_id}-task", tenant_id=tenant_id,
         project_id=f"{tenant_id}-project", report="Bug",
         expected_behavior="pass", actual_behavior="fail", created_by="owner",
     ))
+    db.flush()
     run = Run(
         id=f"{tenant_id}-run", tenant_id=tenant_id, project_id=f"{tenant_id}-project",
         task_id=f"{tenant_id}-task", created_by="owner", idempotency_key=tenant_id,
@@ -127,4 +136,26 @@ def test_graph_fires_immediately_and_budget_breach_stays_until_resolution():
         db.commit()
         assert budget.state == "firing" and budget.generation == 2
         assert budget.source_cursor == "breach-2"
+    engine.dispose()
+
+
+def test_alert_transition_cannot_claim_another_tenant():
+    engine = _database()
+    now = datetime(2026, 10, 2, 12, tzinfo=UTC)
+    with Session(engine) as db:
+        db.add_all([Tenant(id="a", name="A"), Tenant(id="b", name="B")])
+        db.flush()
+        alert = OperationalAlert(
+            tenant_id="a", alert_id="budget_breach", state="firing",
+            generation=1, first_seen_at=now, last_observed_at=now, evidence={},
+        )
+        db.add(alert)
+        db.flush()
+        db.add(OperationalAlertEvent(
+            alert_id=alert.id, tenant_id="b", generation=1, state="firing",
+            actor="operator", reason="wrong tenant", evidence={}, created_at=now,
+        ))
+        with pytest.raises(IntegrityError):
+            db.flush()
+        db.rollback()
     engine.dispose()

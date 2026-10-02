@@ -106,7 +106,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 142 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 143 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -283,7 +283,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Fifteen Alembic revisions applied through `e4f23aa7190b` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Sixteen Alembic revisions applied through `b6e1c4a0d9f2` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key also rejects cross-tenant transitions on PostgreSQL. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

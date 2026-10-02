@@ -834,3 +834,11 @@ Focused provider/patch/worker tests passed 22/22. Full Python suite passed
 The provider increment was committed as `85bfe32`; the local API was restarted
 from that revision on port 8101, and the existing 5173 proxy returned HTTP 200
 for health and the owner Operations snapshot. The worktree was clean at handoff.
+
+2026-10-03 alert scope correction: migration `b6e1c4a0d9f2` adds a composite
+foreign key from alert transitions to their alert's tenant and ID. An
+automated SQLite foreign-key test and a rollback-only PostgreSQL probe both
+rejected a transition claiming a different tenant. Local PostgreSQL upgraded
+to the new head and Alembic check found no drift. The first strict SQLite run
+exposed missing fixture flush ordering; the fixture was corrected, and focused
+alert/operations tests passed 5/5.

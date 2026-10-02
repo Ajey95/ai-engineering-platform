@@ -413,6 +413,7 @@ class OperationalAlert(Base):
     __tablename__ = "operational_alerts"
     __table_args__ = (
         UniqueConstraint("tenant_id", "alert_id", name="uq_operational_alert_tenant_kind"),
+        UniqueConstraint("tenant_id", "id", name="uq_operational_alert_scope_id"),
         CheckConstraint(
             "state IN ('observing', 'firing', 'resolved')",
             name="ck_operational_alert_state",
@@ -433,8 +434,15 @@ class OperationalAlert(Base):
 
 class OperationalAlertEvent(Base):
     __tablename__ = "operational_alert_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "alert_id"],
+            ["operational_alerts.tenant_id", "operational_alerts.id"],
+            name="fk_operational_alert_events_scope",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    alert_id: Mapped[str] = mapped_column(ForeignKey("operational_alerts.id"), index=True)
+    alert_id: Mapped[str] = mapped_column(String(36), index=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     generation: Mapped[int] = mapped_column(Integer)
     state: Mapped[str] = mapped_column(String(20))
