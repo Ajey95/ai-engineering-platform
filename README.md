@@ -164,6 +164,13 @@ longer matches its receipt.
 The Evidence tab also shows before/after PNG screenshots from admitted browser
 runs. Their SHA-256 digests are checked against persisted browser receipts
 each time the local tenant-scoped route serves them.
+For a local `PAUSED_INPUT` run, the Runs screen accepts a bounded answer and
+posts it to `/v1/runs/{id}/resume` with an `Idempotency-Key`. The API checks
+current project membership, unchanged policy revision and unresolved effects
+before it records the answer and requeues one dispatch. The fixture worker
+replays completed effects against their receipts. Approval and budget pauses
+do not have a resume path yet; hosted resume remains disabled with the hosted
+sandbox gate.
 For a `REVIEW_READY` fixture run, the reviewer can accept or reject the packet
 in the Runs or Review screen. Rejection requires a reason. Both decisions are
 audited, close the run, and leave the test verdict intact. Accepting a packet

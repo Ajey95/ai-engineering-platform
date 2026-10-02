@@ -41,6 +41,7 @@ from platform_app.models import (
     ToolAction,
 )
 from platform_app.review_patch import verified_fixture_diff
+from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
     ErrorBody,
     EventRead,
@@ -48,6 +49,7 @@ from platform_app.schemas import (
     ProjectCreate,
     ProjectMembershipSet,
     ProjectRead,
+    ResumeInputCreate,
     ReviewDecisionCreate,
     RunCreate,
     RunRead,
@@ -606,6 +608,23 @@ def cancel_run(
     if run.created_by != identity[1]:
         require_project_role(db, identity, run.project_id, frozenset({"maintainer"}))
     request_cancel(db, run, identity[1])
+    db.commit()
+    db.refresh(run)
+    return run_read(run)
+
+
+@app.post("/v1/runs/{run_id}/resume", response_model=RunRead, status_code=202)
+def resume_run(
+    run_id: str,
+    body: ResumeInputCreate,
+    idempotency_key: str = Header(min_length=8, max_length=200),
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    authorized_run(db, identity, run_id, WRITE_ROLES)
+    run = resume_input_run(
+        db, identity[0], run_id, identity[1], body.input_text, idempotency_key
+    )
     db.commit()
     db.refresh(run)
     return run_read(run)

@@ -634,7 +634,10 @@ class DevelopmentWorker:
                     "form-submit-001"
                 ):
                     continue
-                if run.state in {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}:
+                if run.state in {
+                    "COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED",
+                    "REVIEW_READY", "PAUSED_INPUT", "PAUSED_APPROVAL", "PAUSED_BUDGET",
+                }:
                     candidate.status = "delivered"
                     continue
                 if (

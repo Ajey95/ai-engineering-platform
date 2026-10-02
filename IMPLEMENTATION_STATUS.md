@@ -70,7 +70,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 58 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 60 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -105,6 +105,17 @@ A later controlled response run `a42516d1-7377-49e5-a997-a74f215b0bb1`
 at commit `e7b3c2c` exercised the ContextBundle prompt path and again reached
 `REVIEW_READY` with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and
 both media READY. `autonomous_repair=false` remains correct.
+Controlled run `548f0098-b0c7-4524-a6a1-3e4d9a4cb1ff` at commit
+`8f28f50` exercised `PAUSED_INPUT` -> answer -> queued dispatch ->
+`REVIEW_READY`: the superseded dispatch and resumed dispatch both reached
+`delivered`, with the same baseline/candidate checks and media READY. The
+provider response remained predetermined. An isolated browser QA session
+verified the paused answer form on desktop and mobile, submitted it through
+the API (202), observed `QUEUED`, saw no page errors and no mobile overflow.
+A second controlled run `a5947e25-9a7e-4941-b6b5-e74e9bbfcfa8` asserted
+that the submitted answer and its trust label reached the native model request.
+The disposable PostgreSQL verifier also observed one old dispatch marked
+`delivered` and one new `pending` dispatch after a paused-input resume.
 Production startup requires configured OIDC and PostgreSQL. This has only
 been exercised with local signed tokens and a disposable database, and hosted
 run execution remains deliberately disabled.
@@ -128,7 +139,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |
 | FR-HAR-01 | Partial | Development outbox worker executes baseline and controlled-provider candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
-| FR-HAR-03 | Partial | Paused state releases lease; resume and snapshot reconciliation absent. |
+| FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
 | FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items; general evidence selection, durable history/memory and live token accounting remain. |
@@ -159,7 +170,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; receipts, patch preview, and reviewer decision are visible, full workspace/admin absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; receipts, patch preview, reviewer decision and paused-input answer control are visible, full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | Fail-closed tool schema/permission primitives; complete deterministic policy absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |

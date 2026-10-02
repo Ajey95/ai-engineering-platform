@@ -5,8 +5,9 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from platform_app.config import settings
 from platform_app.db import utcnow
-from platform_app.models import Run, ToolAction
+from platform_app.models import AuditEvent, OutboxEvent, Run, Tenant, ToolAction
 from platform_app.service import ServiceError, append_event, canonical_hash
 
 ACTIVE_STATES = {"PREPARING", "REPRODUCING", "INVESTIGATING", "PATCHING", "VERIFYING"}
@@ -20,14 +21,29 @@ def aware(value: datetime) -> datetime:
 
 ALLOWED_TRANSITIONS = {
     "QUEUED": {"PREPARING", "CANCELLED"},
-    "PREPARING": {"REPRODUCING", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
-    "REPRODUCING": {"INVESTIGATING", "INCONCLUSIVE", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
-    "INVESTIGATING": {"PATCHING", "INCONCLUSIVE", "FAILED", "PAUSED_INPUT", "CANCEL_REQUESTED"},
-    "PATCHING": {"VERIFYING", "FAILED", "PAUSED_BUDGET", "CANCEL_REQUESTED"},
-    "VERIFYING": {"PATCHING", "REVIEW_READY", "FAILED", "CANCEL_REQUESTED"},
-    "REVIEW_READY": {"PATCHING", "COMPLETED", "CANCEL_REQUESTED"},
+    "PREPARING": {"REPRODUCING", "FAILED", "PAUSED_INPUT", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
+    "REPRODUCING": {
+        "INVESTIGATING",
+        "INCONCLUSIVE",
+        "FAILED",
+        "PAUSED_INPUT",
+        "PAUSED_APPROVAL",
+        "CANCEL_REQUESTED",
+    },
+    "INVESTIGATING": {
+        "PATCHING",
+        "INCONCLUSIVE",
+        "FAILED",
+        "PAUSED_INPUT",
+        "PAUSED_APPROVAL",
+        "CANCEL_REQUESTED",
+    },
+    "PATCHING": {"VERIFYING", "FAILED", "PAUSED_BUDGET", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
+    "VERIFYING": {"PATCHING", "REVIEW_READY", "FAILED", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
+    "REVIEW_READY": {"PATCHING", "COMPLETED", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
     "PAUSED_INPUT": {"QUEUED", "CANCELLED"},
     "PAUSED_BUDGET": {"QUEUED", "CANCELLED"},
+    "PAUSED_APPROVAL": {"QUEUED", "CANCELLED"},
     "CANCEL_REQUESTED": {"CANCELLED"},
 }
 
@@ -73,7 +89,10 @@ def transition(
         raise ServiceError("RUN_CANCELLED", "Cancellation stops new work", 409)
     if next_state not in ALLOWED_TRANSITIONS.get(run.state, set()):
         raise ServiceError("INVALID_TRANSITION", f"Cannot move {run.state} to {next_state}", 409)
+    previous_state = run.state
     run.state = next_state
+    if next_state.startswith("PAUSED"):
+        run.resume_target = previous_state
     if verdict is not None:
         if verdict not in {"PASSED", "FAILED", "INCONCLUSIVE", "NOT_RUN"}:
             raise ServiceError("INVALID_VERDICT", "Unknown verification verdict", 400)
@@ -88,6 +107,104 @@ def transition(
     ):
         run.lease_owner = None
         run.lease_until = None
+
+
+def resume_input_run(
+    db: Session,
+    tenant_id: str,
+    run_id: str,
+    actor: str,
+    input_text: str,
+    idempotency_key: str,
+) -> Run:
+    """Requeue a paused input run only after checking policy and effect uncertainty."""
+    if settings().environment != "development":
+        raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
+    run = db.scalar(
+        select(Run).where(Run.id == run_id, Run.tenant_id == tenant_id).with_for_update()
+    )
+    if run is None:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
+    answer = input_text.strip()
+    if not 5 <= len(answer) <= 4000:
+        raise ServiceError("INPUT_REQUIRED", "A bounded answer is required", 400)
+    input_hash = canonical_hash({"actor": actor, "input_text": answer})
+    if run.resume_key == idempotency_key and run.state != "PAUSED_INPUT":
+        if run.resume_input_hash != input_hash:
+            raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for different input", 409)
+        return run
+    if run.state != "PAUSED_INPUT" or run.resume_target not in ACTIVE_STATES:
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run is not waiting for input", 409)
+    if run.resume_key == idempotency_key:
+        raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a prior resume", 409)
+    if run.cancel_requested or run.lease_owner or run.lease_until:
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run still has active ownership", 409)
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or tenant.status != "active":
+        raise ServiceError("TENANT_DISABLED", "Tenant is not active", 403)
+    if tenant.policy_revision != run.config_snapshot.get("policy_version"):
+        raise ServiceError("POLICY_REVIEW_REQUIRED", "Run policy changed", 409)
+    uncertain = db.scalar(
+        select(ToolAction.id)
+        .where(
+            ToolAction.tenant_id == tenant_id,
+            ToolAction.run_id == run_id,
+            ToolAction.status == "INTENDED",
+        )
+        .limit(1)
+    )
+    if uncertain is not None:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    target = run.resume_target
+    run.state = "QUEUED"
+    run.resume_key = idempotency_key
+    run.resume_input_hash = input_hash
+    stale_dispatches = db.scalars(
+        select(OutboxEvent)
+        .where(
+            OutboxEvent.tenant_id == tenant_id,
+            OutboxEvent.topic == "run.dispatch",
+            OutboxEvent.status.in_(["pending", "processing"]),
+            OutboxEvent.payload["run_id"].as_string() == run.id,
+        )
+        .with_for_update()
+    ).all()
+    for event in stale_dispatches:
+        event.status = "delivered"
+    append_event(
+        db,
+        run,
+        "run.resumed",
+        {
+            "resume_target": target,
+            "actor": actor,
+            "input_text": answer,
+        },
+    )
+    db.add(
+        OutboxEvent(
+            tenant_id=tenant_id,
+            topic="run.dispatch",
+            payload={"run_id": run.id, "resume_key": idempotency_key},
+        )
+    )
+    db.add(
+        AuditEvent(
+            tenant_id=tenant_id,
+            actor=actor,
+            action="run.resume",
+            target_ref=run.id,
+            arguments_hash=canonical_hash(
+                {
+                    "run_id": run.id,
+                    "input_text": answer,
+                }
+            ),
+            policy_revision=tenant.policy_revision,
+            outcome="allowed",
+        )
+    )
+    return run
 
 
 def begin_tool_action(

@@ -33,6 +33,7 @@ from platform_app.models import (
     Tenant,
     TenantMembership,
 )
+from platform_app.run_ledger import claim_run, resume_input_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import admit_run
 
@@ -262,9 +263,32 @@ def main() -> int:
             schema_roundtrip = (
                 session.scalar(text("SELECT version_num FROM alembic_version")) == revision
             )
+            owned, fence = claim_run(session, ids[0], "resume-probe-worker")
+            transition(session, owned, "resume-probe-worker", fence, "PREPARING")
+            transition(session, owned, "resume-probe-worker", fence, "PAUSED_INPUT")
+            session.commit()
+            resumed = resume_input_run(
+                session,
+                "fixture-tenant",
+                ids[0],
+                "fixture",
+                "Use the valid form submission scenario",
+                "resume-probe-key-001",
+            )
+            session.commit()
+            dispatches = session.scalars(
+                select(OutboxEvent).where(
+                    OutboxEvent.tenant_id == "fixture-tenant",
+                    OutboxEvent.topic == "run.dispatch",
+                )
+            ).all()
+            postgres_resume = resumed.state == "QUEUED" and sorted(
+                event.status for event in dispatches
+            ) == ["delivered", "pending"]
         result = {
             "schema_revision": revision,
             "schema_roundtrip": schema_roundtrip,
+            "postgres_resume": postgres_resume,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
             "cross_tenant_membership_denied": cross_tenant_membership_denied,
@@ -282,6 +306,7 @@ def main() -> int:
             and cross_tenant_task_denied
             and cross_tenant_event_denied
             and schema_roundtrip
+            and postgres_resume
             and all(v == 1 for v in counts.values())
             else 1
         )

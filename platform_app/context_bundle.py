@@ -15,8 +15,13 @@ def _digest(data: bytes) -> str:
 
 
 def _item(
-    category: str, locator: str, revision: str, excerpt: str,
-    captured_at: str, trust_label: str, scope: str,
+    category: str,
+    locator: str,
+    revision: str,
+    excerpt: str,
+    captured_at: str,
+    trust_label: str,
+    scope: str,
 ) -> dict:
     raw = excerpt.encode("utf-8")
     digest = _digest(raw)
@@ -35,32 +40,55 @@ def _item(
 
 
 def fixture_context_bundle(
-    run: Run, task: Task, baseline_receipts: dict, server_source: str,
+    run: Run,
+    task: Task,
+    baseline_receipts: dict,
+    server_source: str,
     instruction: str,
+    history: list[dict] | None = None,
 ) -> dict:
     source_bytes = server_source.encode("utf-8")
     if len(source_bytes) > 50_000:
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Source excerpt exceeds policy", 409)
     scope = f"tenant:{run.tenant_id}/project:{run.project_id}"
     captured_at = datetime.now(UTC).isoformat()
-    items = [_item(
-        "repository_file", "server.py", run.base_commit, server_source,
-        captured_at, "untrusted_repository_content", scope,
-    )]
+    items = [
+        _item(
+            "repository_file",
+            "server.py",
+            run.base_commit,
+            server_source,
+            captured_at,
+            "untrusted_repository_content",
+            scope,
+        )
+    ]
     for name, receipt in sorted(baseline_receipts.items()):
-        excerpt = json.dumps({
-            "status": receipt.get("status"),
-            "exit_code": receipt.get("exit_code"),
-            "output_sha256": receipt.get("output_sha256"),
-            "responses": (receipt.get("responses") or [])[:5],
-            "page_errors": (receipt.get("page_errors") or [])[:5],
-        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        excerpt = json.dumps(
+            {
+                "status": receipt.get("status"),
+                "exit_code": receipt.get("exit_code"),
+                "output_sha256": receipt.get("output_sha256"),
+                "responses": (receipt.get("responses") or [])[:5],
+                "page_errors": (receipt.get("page_errors") or [])[:5],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         if len(excerpt.encode("utf-8")) > 20_000:
             raise ServiceError("CONTEXT_UNSATISFIABLE", "Evidence excerpt exceeds policy", 409)
-        items.append(_item(
-            "tool_receipt", f"baseline:{name}", run.base_commit, excerpt,
-            captured_at, "untrusted_tool_output", scope,
-        ))
+        items.append(
+            _item(
+                "tool_receipt",
+                f"baseline:{name}",
+                run.base_commit,
+                excerpt,
+                captured_at,
+                "untrusted_tool_output",
+                scope,
+            )
+        )
     return {
         "schema_version": "1.0",
         "task_id": task.id,
@@ -75,7 +103,7 @@ def fixture_context_bundle(
         "task_state": {"run_id": run.id, "state": run.state},
         "source_items": items,
         "selected_memory": [],
-        "concise_history": [],
+        "concise_history": (history or [])[-3:],
         "summary_ref": None,
         "tool_set_ref": _digest(b"no-tools"),
         "token_plan": {

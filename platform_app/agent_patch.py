@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from platform_app.context_bundle import fixture_context_bundle
 from platform_app.model_budget import reserve_model_call, settle_model_call
-from platform_app.models import BudgetEntry, ModelEntry, Run, Task, ToolAction
+from platform_app.models import BudgetEntry, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
 from platform_app.providers import (
     AnthropicMessages,
@@ -66,10 +66,17 @@ def _provider(model: ModelEntry) -> PatchProvider:
     return adapter(key)
 
 
-def _prompt(run: Run, task: Task, baseline_receipts: dict, server_source: str) -> str:
+def _prompt(
+    run: Run,
+    task: Task,
+    baseline_receipts: dict,
+    server_source: str,
+    history: list[dict],
+) -> str:
     return json.dumps(
-        fixture_context_bundle(run, task, baseline_receipts, server_source, INSTRUCTION),
-        ensure_ascii=False, separators=(",", ":"),
+        fixture_context_bundle(run, task, baseline_receipts, server_source, INSTRUCTION, history),
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
 
 
@@ -102,7 +109,27 @@ def request_fixture_patch(
         selected_provider = (
             None if prior and prior.status == "COMPLETED" else (provider or _provider(model))
         )
-        prompt = _prompt(run, task, baseline_receipts, server_source)
+        resume_events = db.scalars(
+            select(RunEvent)
+            .where(
+                RunEvent.tenant_id == run.tenant_id,
+                RunEvent.run_id == run.id,
+                RunEvent.event_type == "run.resumed",
+            )
+            .order_by(RunEvent.sequence.desc())
+            .limit(3)
+        ).all()
+        history = [
+            {
+                "event_id": event.id,
+                "sequence": event.sequence,
+                "actor": event.payload.get("actor"),
+                "input_text": event.payload.get("input_text"),
+                "trust_label": "authenticated_project_contributor_input",
+            }
+            for event in reversed(resume_events)
+        ]
+        prompt = _prompt(run, task, baseline_receipts, server_source, history)
         action, reservation, plan = reserve_model_call(
             db,
             run,

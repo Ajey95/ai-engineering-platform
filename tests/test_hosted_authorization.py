@@ -11,10 +11,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from platform_app import api, auth, service
+from platform_app import api, auth, run_ledger, service
 from platform_app.config import Settings
 from platform_app.db import Base
-from platform_app.models import Project, ProjectMembership, Task, Tenant, TenantMembership
+from platform_app.models import Project, ProjectMembership, Run, Task, Tenant, TenantMembership
 from platform_app.service import ServiceError
 
 
@@ -27,7 +27,7 @@ def hosted(monkeypatch):
         oidc_audience="aip-api",
         oidc_jwks_url="https://issuer.example.test/keys",
     )
-    for module in (api, auth, service):
+    for module in (api, auth, run_ledger, service):
         monkeypatch.setattr(module, "settings", lambda: config)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     monkeypatch.setattr(
@@ -101,6 +101,13 @@ def test_hosted_project_roles_and_tenant_selection(hosted):
                     actual_behavior="fail",
                     created_by="bob",
                 ),
+                Run(
+                    id="paused-run", tenant_id="tenant-a", project_id="project-a",
+                    task_id="task-a", created_by="bob", idempotency_key="initial-run-key",
+                    request_hash="r" * 64, base_commit="a" * 40, model_entry_id="model",
+                    state="PAUSED_INPUT", resume_target="PREPARING",
+                    config_snapshot={"policy_version": "1.0"},
+                ),
             ]
         )
         db.commit()
@@ -160,6 +167,13 @@ def test_hosted_project_roles_and_tenant_selection(hosted):
             )
             assert response.status_code == 503
             assert response.json()["code"] == "EXECUTION_UNAVAILABLE"
+            resume = client.post(
+                "/v1/runs/paused-run/resume",
+                headers={**bob, "Idempotency-Key": "resume-key-001"},
+                json={"input_text": "Use the valid form"},
+            )
+            assert resume.status_code == 503
+            assert resume.json()["code"] == "EXECUTION_UNAVAILABLE"
         finally:
             api.app.dependency_overrides.clear()
     engine.dispose()

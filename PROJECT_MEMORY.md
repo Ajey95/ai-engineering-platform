@@ -234,3 +234,25 @@ symlink skip; Ruff clean. Controlled worker run
 REVIEW_READY with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and both
 media READY. The provider response was predetermined and the packet correctly
 states `autonomous_repair=false`; no live provider qualification occurred.
+
+2026-10-02 paused-input continuation: migration `fb68543388d0` adds durable
+resume target/key/input hash to runs. `PAUSED_INPUT` releases the lease;
+authenticated project contributors can submit a bounded answer with an
+idempotency key. Resume rejects changed policy or unresolved effects, closes
+an older dispatch and queues one new dispatch. The fixture model ContextBundle
+receives the last three authenticated resume inputs as labelled history.
+`PAUSED_APPROVAL` and `PAUSED_BUDGET` cannot resume through this endpoint;
+hosted resume remains disabled pending VM isolation. Python tests 60 passed,
+1 Windows symlink skip; Ruff clean. Disposable PostgreSQL migration roundtrip
+and local upgrade reached `fb68543388d0` with no schema drift. Controlled
+Docker run `548f0098-b0c7-4524-a6a1-3e4d9a4cb1ff` at commit `8f28f50`
+resumed input and reached REVIEW_READY with PASS/FAIL/FAIL baseline,
+PASS/PASS/PASS candidate and both media READY; provider response controlled,
+`autonomous_repair=false`. Isolated browser QA at 5174/8099 showed the form
+on desktop/mobile, POST 202 to QUEUED, no page errors or mobile overflow.
+Temporary QA servers were stopped; the existing user dev servers were not
+changed.
+Controlled rerun `a5947e25-9a7e-4941-b6b5-e74e9bbfcfa8` additionally
+asserted that the resume answer and trust label reached the provider request.
+The disposable PostgreSQL verifier separately passed `postgres_resume=true`:
+the old dispatch was delivered and exactly one new dispatch was pending.

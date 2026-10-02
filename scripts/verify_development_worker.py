@@ -23,6 +23,7 @@ from platform_app.db import Base
 from platform_app.development_worker import DevelopmentWorker
 from platform_app.models import ModelEntry, OutboxEvent, Project, Run, Task, Tenant, ToolAction
 from platform_app.providers import OpenAIResponses
+from platform_app.run_ledger import claim_run, resume_input_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import admit_run
 
@@ -30,6 +31,7 @@ from platform_app.service import admit_run
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--controlled-provider", action="store_true")
+    parser.add_argument("--resume-probe", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     target = root / "artifacts" / "worker-verification" / uuid4().hex[:12]
@@ -96,6 +98,18 @@ def main() -> int:
         db.commit()
         run_id = run.id
 
+    if args.resume_probe:
+        with factory() as db:
+            paused, fence = claim_run(db, run_id, "preflight-worker")
+            transition(db, paused, "preflight-worker", fence, "PREPARING")
+            transition(db, paused, "preflight-worker", fence, "PAUSED_INPUT")
+            db.commit()
+            resume_input_run(
+                db, "fixture-tenant", run_id, "fixture-verifier",
+                "Use the valid form submission scenario", "resume-probe-key-001",
+            )
+            db.commit()
+
     adapter = None
     if args.controlled_provider:
         original = (root / "benchmarks/fixtures/form-submit/base/server.py").read_text(
@@ -112,6 +126,11 @@ def main() -> int:
         )
 
         def respond(_request: httpx.Request) -> httpx.Response:
+            if args.resume_probe and (
+                b"Use the valid form submission scenario" not in _request.content
+                or b"authenticated_project_contributor_input" not in _request.content
+            ):
+                raise RuntimeError("Resumed input is missing from the model context")
             return httpx.Response(
                 200,
                 json={
@@ -136,14 +155,20 @@ def main() -> int:
     processed = worker.process_next()
     with factory() as db:
         run = db.get(Run, run_id)
-        outbox = db.scalar(select(OutboxEvent).where(OutboxEvent.topic == "run.dispatch"))
+        outboxes = db.scalars(select(OutboxEvent).where(
+            OutboxEvent.topic == "run.dispatch"
+        )).all()
         actions = db.scalars(select(ToolAction).where(ToolAction.run_id == run_id)).all()
         packet = review_packet(run_id, ("fixture-tenant", "fixture-verifier"), db)
         result = {
             "run_id": run_id,
             "pinned_commit": commit,
             "processed_run_id": processed,
-            "outbox_status": outbox.status,
+            "outbox_status": "delivered" if all(
+                event.status == "delivered" for event in outboxes
+            ) else "incomplete",
+            "outbox_count": len(outboxes),
+            "resume_probe": args.resume_probe,
             "state": run.state,
             "verdict": run.verdict,
             "tool_actions": len(actions),
@@ -180,6 +205,7 @@ def main() -> int:
         if (
             processed == run_id
             and result["outbox_status"] == "delivered"
+            and result["outbox_count"] == (2 if args.resume_probe else 1)
             and result["state"] == ("REVIEW_READY" if args.controlled_provider else "INCONCLUSIVE")
             and result["verdict"] == ("PASSED" if args.controlled_provider else "INCONCLUSIVE")
             and result["tool_statuses"] == expected
