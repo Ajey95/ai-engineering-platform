@@ -31,6 +31,7 @@ class Tenant(Base):
     daily_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=50)
     monthly_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=500)
     max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
+    model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
 
 
 class TenantMembership(Base):
@@ -236,6 +237,34 @@ class ModelEntry(Base):
     price_per_m_input: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     price_per_m_output: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ModelRoutingEvidence(Base):
+    __tablename__ = "model_routing_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "model_entry_id", "registry_revision", "task_class", "suite_revision",
+            name="uq_model_routing_evidence_revision",
+        ),
+        CheckConstraint("sample_count >= 0", name="ck_model_routing_samples"),
+        CheckConstraint(
+            "success_rate >= 0 AND success_rate <= 1", name="ck_model_routing_success_rate"
+        ),
+        CheckConstraint("p95_latency_ms >= 0", name="ck_model_routing_latency"),
+        CheckConstraint("mean_cost_usd >= 0", name="ck_model_routing_cost"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_entry_id: Mapped[str] = mapped_column(ForeignKey("model_entries.id"), index=True)
+    registry_revision: Mapped[str] = mapped_column(String(100))
+    task_class: Mapped[str] = mapped_column(String(80))
+    suite_revision: Mapped[str] = mapped_column(String(100))
+    sample_count: Mapped[int] = mapped_column(Integer)
+    success_rate: Mapped[float] = mapped_column(Numeric(5, 4))
+    p95_latency_ms: Mapped[int] = mapped_column(Integer)
+    mean_cost_usd: Mapped[float] = mapped_column(Numeric(12, 6))
+    available: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditEvent(Base):

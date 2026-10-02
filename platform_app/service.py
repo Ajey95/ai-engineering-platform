@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from platform_app.config import settings
 from platform_app.db import utcnow
 from platform_app.model_qualification import qualification_current
+from platform_app.model_routing import RoutingError, select_qualified_model
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
@@ -127,7 +128,16 @@ def admit_run(
         if existing.request_hash != request_hash or existing.task_id != task_id:
             raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a different request", 409)
         return existing
-    model = db.get(ModelEntry, body.selected_model_entry)
+    project = require_project(db, tenant_id, task.project_id)
+    routing_decision = None
+    if body.selected_model_entry == "auto":
+        try:
+            routing_decision = select_qualified_model(db, tenant, project)
+        except RoutingError as error:
+            raise ServiceError(error.code, str(error), 409) from error
+        model = routing_decision.model
+    else:
+        model = db.get(ModelEntry, body.selected_model_entry)
     if model is None or model.state != "enabled":
         raise ServiceError("MODEL_UNAVAILABLE", "Selected model is not enabled", 409)
     if not all(
@@ -142,7 +152,6 @@ def admit_run(
         raise ServiceError(
             "MODEL_UNAVAILABLE", "Selected model has unverified limits or pricing", 409
         )
-    project = require_project(db, tenant_id, task.project_id)
     capabilities = model.capabilities or {}
     live_qualified = qualification_current(model)
     fixture_only = (
@@ -181,6 +190,15 @@ def admit_run(
         "test_url": project.test_url,
         "environment_manifest": project.environment_manifest,
     }
+    if routing_decision is not None:
+        policy["model_route"] = {
+            "mode": "automatic",
+            "policy_revision": routing_decision.policy_revision,
+            "evidence_id": routing_decision.evidence.id,
+            "suite_revision": routing_decision.evidence.suite_revision,
+            "source_sha256": routing_decision.evidence.source_sha256,
+            "score": str(routing_decision.score),
+        }
     run = Run(
         tenant_id=tenant_id,
         project_id=project.id,
@@ -204,6 +222,15 @@ def admit_run(
         )
     )
     append_event(db, run, "run.admitted", {"state": "QUEUED"})
+    if routing_decision is not None:
+        append_event(
+            db, run, "model.routed",
+            {
+                "model_entry_id": model.id,
+                "evidence_id": routing_decision.evidence.id,
+                "policy_revision": routing_decision.policy_revision,
+            },
+        )
     db.add(
         OutboxEvent(
             tenant_id=tenant_id,

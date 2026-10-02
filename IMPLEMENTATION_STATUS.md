@@ -95,7 +95,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 94 passing local tests and 2 skips (PostgreSQL checkpoint test needs
+- `tests/`: 98 passing local tests and 2 skips (PostgreSQL checkpoint test needs
   an explicit local URL; one Windows symlink privilege skip),
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
@@ -236,7 +236,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MOD-02 | Partial | Operator live probe code checks text/tool/continuation/usage and exact attested metadata; admission checks revision and adapter digest. No account has been probed live, and full registry metadata remains. |
 | FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
-| FR-MOD-05 | Missing | Qualified automatic routing absent. |
+| FR-MOD-05 | Partial | `selected_model_entry=auto` now filters by explicit tenant model/data-class policy, current live qualification and tool capability checks, context/output limits, availability and fresh 30-sample model routing evidence; deterministic scoring compares recorded utility, latency and cost. Policy changes are audited through an operator CLI. No real platform benchmark evidence or live provider health exists yet, so the route fails closed in ordinary use. |
 | FR-MOD-06 | Missing | Authorized cross-provider failover absent. |
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
@@ -271,7 +271,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Eight Alembic revisions applied through `4bc7f793d66a` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Nine Alembic revisions applied through `2d71e508a104` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
@@ -279,7 +279,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path now enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. Hosted broker and plugin authority absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
-| FR-SEC-03 | Missing | Prompt injection qualification absent. |
+| FR-SEC-03 | Partial | Provider keys are read only by the worker from its environment and are not returned by the frontend API; local tests exercise authorization boundaries. Hosted workload identity, encrypted secret references, rotation audit and the AC-24 injection challenge remain absent. |
 | FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. Hosted object/cache/independent restore propagation absent. |
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |

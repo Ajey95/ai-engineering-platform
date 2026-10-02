@@ -94,6 +94,30 @@ daily and monthly periods use UTC. Provider usage above its reservation posts a
 breach event and blocks subsequent reservations once the cap is spent. Other
 PRD resource quotas remain pending.
 
+Automatic model selection is available through `selected_model_entry: "auto"`
+only after a trusted operator records an explicit tenant allowlist.
+Put this JSON in a policy file, replacing IDs with registered models:
+
+```json
+{
+  "enabled": true,
+  "allowed_model_entry_ids": ["QUALIFIED_MODEL_ID"],
+  "allowed_data_classes": ["source_code"],
+  "weights": {"utility": 1, "latency": 0.02, "cost": 0.2}
+}
+```
+
+```powershell
+uv run python -m scripts.set_tenant_model_routing --tenant-id TENANT_ID --operator OPERATOR_ID --policy-file PATH_TO_POLICY_JSON
+```
+
+Selection also requires a current live qualification and recorded platform
+benchmark evidence for at least 30 cases. No such evidence or provider account
+is configured in this checkout, so `auto` currently returns
+`MODEL_ROUTE_UNAVAILABLE` instead of choosing an unqualified model. A file
+containing `{"enabled": false}` disables routing. Manual model selection is
+still available under its existing qualification checks.
+
 ```powershell
 uv sync --extra dev
 Copy-Item .env.example .env

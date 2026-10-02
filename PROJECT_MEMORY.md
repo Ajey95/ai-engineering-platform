@@ -571,3 +571,16 @@ persisted local demo run returned HTTP 200; the download was 5,175 bytes with
 an attachment filename. Vite 5176 returned HTTP 200. The PostgreSQL admission
 verifier also passed migration roundtrip at `4bc7f793d66a`, resume, quota
 races, recording deletion race and tenant scope probes.
+
+2026-10-02 automatic routing foundation: `platform_app/model_routing.py`
+implements `selected_model_entry=auto` in admission. The route requires an
+explicit tenant model/data-class allowlist, current live qualification and
+tool checks, enough context/output capacity, an available 30-sample evidence
+row for the exact model revision, and a recorded policy hash. It compares
+utility, latency and cost with tenant weights, pins the chosen model/evidence
+in the run snapshot and emits `model.routed`. A trusted operator CLI updates
+the policy with an audit event. No actual benchmark evidence or live provider
+account exists, so ordinary auto requests fail closed. Migration
+`2d71e508a104` applied on local PostgreSQL with no schema drift. The full
+Python suite passed 98 tests with two skips; Ruff passed. The disposable
+PostgreSQL verifier passed migration roundtrip and its existing race probes.
