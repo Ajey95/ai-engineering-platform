@@ -213,3 +213,45 @@ def test_tenant_inference_80_percent_warning(scope):
     assert Decimal(reservation.reserved_usd) <= Decimal("0.014")
     warnings = db.scalars(select(RunEvent).where(RunEvent.event_type == "budget.warning")).all()
     assert {event.payload["scope"] for event in warnings} == {"daily", "monthly"}
+
+
+def test_provider_overrun_records_tenant_cap_breach_and_blocks_next_reservation(scope):
+    db, run, model, fence = scope
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.daily_inference_cap_usd = Decimal("0.014")
+    tenant.monthly_inference_cap_usd = Decimal("0.014")
+    run.config_snapshot = {**run.config_snapshot, "max_model_calls": 2}
+    action, reservation, _ = reserve_model_call(
+        db, run, "worker-one", fence, model, "model-1", "Fix"
+    )
+    db.commit()
+    settle_model_call(
+        db, run, "worker-one", fence, action, reservation, model,
+        {"input_tokens": 20_000, "output_tokens": 10},
+        hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+    )
+    db.commit()
+    breaches = db.scalars(select(RunEvent).where(RunEvent.event_type == "budget.breached")).all()
+    assert reservation.status == "overrun"
+    assert {event.payload["scope"] for event in breaches} == {"daily", "monthly"}
+    with pytest.raises(ServiceError) as error:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-2", "Again")
+    assert error.value.code == "TENANT_BUDGET_EXHAUSTED"
+
+
+def test_disabled_tenant_can_still_settle_existing_provider_liability(scope):
+    db, run, model, fence = scope
+    action, reservation, _ = reserve_model_call(
+        db, run, "worker-one", fence, model, "model-1", "Fix"
+    )
+    db.commit()
+    db.get(Tenant, "tenant-a").status = "disabled"
+    db.commit()
+    actual = settle_model_call(
+        db, run, "worker-one", fence, action, reservation, model,
+        {"input_tokens": 10, "output_tokens": 20},
+        hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+    )
+    db.commit()
+    assert actual > 0
+    assert reservation.status == "settled"

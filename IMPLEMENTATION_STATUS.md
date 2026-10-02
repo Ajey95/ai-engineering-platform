@@ -244,7 +244,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CTX-03 | Missing | Compaction and replay absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Partial | Synthetic baseline test logs stay in artifact files; model context now carries SHA-256 verified, bounded head/tail excerpts and artifact references paired to completed tool action IDs. General DOM snapshot storage and provider tool-cycle compaction remain. |
-| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path; missing usage and unqualified cache pricing fail closed. Live account and outage reconciliation unverified. |
+| FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |
@@ -263,7 +263,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Six Alembic revisions applied through `c53718b2a844` on local PostgreSQL; disposable checks rejected cross-tenant inserts and duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Seven Alembic revisions applied through `eb8f0a7d36c4` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
@@ -282,7 +282,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-EVL-03 | Missing | Change-triggered regression gates absent. |
 | FR-NFR-01 | Missing | Hosted load, availability and recovery measurements absent. |
 | FR-NFR-02 | Missing | Full degraded-mode service behavior absent. |
-| FR-CST-01 | Partial | Per-run reservation plus tenant daily/monthly inference caps and concurrent run admission caps. PostgreSQL tenant row locking passed two-request admission and reservation races; operator changes are audited and 80% threshold events emit. Sandbox/media/artifact/export quotas and hosted billing qualification remain. |
+| FR-CST-01 | Partial | Per-run reservation plus tenant daily/monthly inference caps and concurrent run admission caps. PostgreSQL tenant row locking passed two-request admission and reservation races; settlement uses the same lock, operator changes are audited, 80% threshold and overrun breach events emit. Sandbox/media/artifact/export quotas and hosted billing qualification remain. |
 
 ## Acceptance scenarios
 

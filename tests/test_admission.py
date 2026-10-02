@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -20,7 +21,7 @@ from platform_app.models import (
 from platform_app.run_ledger import claim_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import ServiceError, admit_run, request_cancel
-from platform_app.tenant_quota import lock_tenant
+from platform_app.tenant_quota import QuotaError, check_admission_quota, lock_tenant
 
 
 @pytest.fixture
@@ -141,6 +142,23 @@ def test_locked_tenant_refreshes_cached_quota(db):
         {"amount": "0.015", "tenant_id": tenant.id},
     )
     assert Decimal(lock_tenant(db, tenant.id).daily_inference_cap_usd) == Decimal("0.015")
+
+
+def test_utc_inference_periods_do_not_charge_next_month(db):
+    run = admit_run(db, "tenant-a", "alice", "task-a", "first-key", run_body())
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.daily_inference_cap_usd = Decimal("0.01")
+    tenant.monthly_inference_cap_usd = Decimal("0.01")
+    db.flush()
+    db.add(BudgetEntry(
+        tenant_id=tenant.id, run_id=run.id, category="call:september",
+        reserved_usd=Decimal("0.015"), actual_usd=Decimal(0), status="reserved",
+        created_at=datetime(2026, 9, 30, 23, 59, tzinfo=UTC),
+    ))
+    db.commit()
+    with pytest.raises(QuotaError):
+        check_admission_quota(db, tenant, datetime(2026, 9, 30, 23, 59, tzinfo=UTC))
+    check_admission_quota(db, tenant, datetime(2026, 10, 1, 0, 0, tzinfo=UTC))
 
 
 def test_idempotency_key_cannot_be_reused_for_different_request(db):

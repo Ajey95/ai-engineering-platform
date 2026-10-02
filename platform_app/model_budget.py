@@ -14,7 +14,12 @@ from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import set_safe_attributes, tracer
-from platform_app.tenant_quota import QuotaError, check_inference_reservation, lock_tenant
+from platform_app.tenant_quota import (
+    QuotaError,
+    check_inference_reservation,
+    lock_tenant,
+    settlement_breaches,
+)
 from platform_app.token_budget import (
     BudgetError,
     PriceRule,
@@ -260,6 +265,11 @@ def settle_model_call(
     if len(output_sha256) != 64 or any(c not in "0123456789abcdef" for c in output_sha256):
         raise ServiceError("RECEIPT_INVALID", "Model output digest is invalid", 400)
     actual = _cost(inputs, outputs, _price(model))
+    try:
+        tenant = lock_tenant(db, run.tenant_id, require_active=False)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 403) from error
+    breaches = settlement_breaches(db, tenant, reservation, actual)
     reservation.actual_usd = actual
     reservation.status = "settled" if actual <= Decimal(reservation.reserved_usd) else "overrun"
     complete_tool_action(
@@ -297,4 +307,9 @@ def settle_model_call(
             "actual_usd": str(actual),
         },
     )
+    for scope in breaches:
+        append_event(
+            db, run, "budget.breached",
+            {"scope": scope, "step_id": action.step_id, "actual_usd": str(actual)},
+        )
     return actual

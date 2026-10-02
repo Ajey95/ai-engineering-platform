@@ -399,3 +399,10 @@ After these changes the full Python suite passed 80 tests with one Windows
 symlink privilege skip; Ruff passed the edited Python files. The disposable
 PostgreSQL verifier again passed schema roundtrip, quota races, deletion race,
 owner bootstrap and tenant constraints.
+
+2026-10-02 quota settlement hardening: settlement now takes the tenant row
+lock used by reservations, books actual usage into the reservation's UTC
+day/month, and emits `budget.breached` if an overrun crosses a cap. A disabled
+tenant can still settle an in-flight provider liability. Tests cover period
+reset, overrun and disabled-tenant settlement. Python suite: 83 passed, one
+Windows symlink privilege skip; Ruff and disposable PostgreSQL verifier passed.

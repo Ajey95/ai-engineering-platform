@@ -90,7 +90,9 @@ uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inferen
 
 The shown amounts are default examples, not a provider budget qualification.
 Inference caps count reserved upper-bound liability until usage is settled;
-daily and monthly periods use UTC. Other PRD resource quotas remain pending.
+daily and monthly periods use UTC. Provider usage above its reservation posts a
+breach event and blocks subsequent reservations once the cap is spent. Other
+PRD resource quotas remain pending.
 
 ```powershell
 uv sync --extra dev
