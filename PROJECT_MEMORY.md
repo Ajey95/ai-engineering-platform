@@ -860,3 +860,8 @@ need qualification.
 The full Python suite passed 149 tests, 3 skipped; Ruff and web build passed.
 The Operations snapshot treats a malformed pager destination as unconfigured;
 focused delivery/operations tests passed 11/11 after that refinement.
+Committed as `a250d8a`. API restarted on port 8101 from that revision; the
+existing 5173 proxy returned health 200 and a PostgreSQL-backed pager summary
+with configured=false, zero pending and zero delivered. Desktop and mobile
+Chromium rendered the new pager state with no JS error or horizontal overflow.
+The worktree was clean after the commit.
