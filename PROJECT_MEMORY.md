@@ -505,3 +505,16 @@ worker uses it to read the fixture's small `server.py` before model context
 assembly. A test archives the trusted fixture from Git, verifies search and
 symbol provenance, and proves the hidden oracle outside the base scope is
 unreachable. Graph traversal and broad language indexing remain pending.
+
+2026-10-02 navigation verification and runtime recovery: full Python suite
+passed 92 tests with one Windows symlink privilege skip; Ruff clean. Controlled
+WSL Docker run `79a81783-e06b-4976-baa5-393e4c55bc78` at pinned commit
+`5961dd9` reached REVIEW_READY/PASSED with ten effects and both media sides
+READY. The response was predetermined, so this is not live provider proof.
+The turn was interrupted just after verification, stopping WSL and the local
+API/worker/web sessions. `scripts/start_wsl_docker.ps1` restarted WSL Engine
+29.8.2; PostgreSQL Compose is healthy. Separate foreground sessions now run
+API 8101, worker with image `aip-dev-sandbox:0.1.1`, and Vite 5176. API and
+web returned 200; the persisted demo run still returns two diagnosis log
+references. Automatic approval review rejected a combined background relaunch
+command; the separate foreground sessions are the working recovery path.
