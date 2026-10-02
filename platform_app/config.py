@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     artifact_dir: str = "./artifacts"
     dev_evaluation_dir: str = "./artifacts/evaluation-v2"
+    otlp_traces_endpoint: str = ""
     max_run_spend_usd: float = Field(default=5.0, gt=0)
     max_model_calls: int = Field(default=40, ge=1)
     max_tool_calls: int = Field(default=80, ge=1)

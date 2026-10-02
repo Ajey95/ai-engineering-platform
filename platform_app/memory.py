@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from platform_app.db import utcnow
 from platform_app.models import MemoryFact, OutboxEvent
 from platform_app.service import ServiceError
+from platform_app.telemetry import tracer
 
 
 def propose_fact(
@@ -58,6 +59,7 @@ def verify_fact(
     )
 
 
+@tracer.start_as_current_span("memory.lookup")
 def scoped_lookup(
     db: Session, tenant_id: str, project_id: str, source_revision: str, query: str, limit: int = 10
 ) -> list[MemoryFact]:

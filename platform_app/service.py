@@ -21,6 +21,7 @@ from platform_app.models import (
     Tenant,
 )
 from platform_app.schemas import EventRead, RunCreate, RunRead
+from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
 
 TERMINAL_STATES = {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}
 
@@ -103,9 +104,11 @@ def run_read(run: Run) -> RunRead:
     )
 
 
+@tracer.start_as_current_span("run.admit")
 def admit_run(
     db: Session, tenant_id: str, actor: str, task_id: str, key: str, body: RunCreate
 ) -> Run:
+    set_safe_attributes(tenant_id=tenant_id, task_id=task_id)
     # The development Docker adapter is not a customer sandbox security boundary.
     if settings().environment != "development":
         raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
@@ -196,7 +199,13 @@ def admit_run(
         )
     )
     append_event(db, run, "run.admitted", {"state": "QUEUED"})
-    db.add(OutboxEvent(tenant_id=tenant_id, topic="run.dispatch", payload={"run_id": run.id}))
+    db.add(
+        OutboxEvent(
+            tenant_id=tenant_id,
+            topic="run.dispatch",
+            payload={"run_id": run.id, **inject_trace()},
+        )
+    )
     db.add(
         AuditEvent(
             tenant_id=tenant_id,

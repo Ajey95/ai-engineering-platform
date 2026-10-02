@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
+from platform_app.telemetry import tracer
 from platform_app.tool_broker import CompletedToolCall, ToolCallAssembler, ToolDefinition
 
 
@@ -56,6 +57,7 @@ def _require_continuation(previous: ProviderTurn, provider: str, model: str) -> 
         raise ValueError("Continuation requires pending tool calls")
 
 
+@tracer.start_as_current_span("provider.http")
 def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> dict:
     try:
         response = client.post(url, headers=headers, json=payload, timeout=120)

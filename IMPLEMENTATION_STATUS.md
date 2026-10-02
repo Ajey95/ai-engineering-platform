@@ -78,7 +78,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 66 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 72 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -141,6 +141,15 @@ After separating the controlled fixture flag from live qualification, run
 again reached `REVIEW_READY` with ten authorized effects, the same baseline
 and candidate statuses and media READY. The local PostgreSQL schema and a
 disposable migration roundtrip reached `b8c6d3259e41` with no drift.
+OpenTelemetry spans now cover API requests, admission/resume, durable dispatch,
+worker execution, context/memory lookup, tool authorization and execution,
+native provider HTTP, model budget and local media. A W3C traceparent is stored
+in the dispatch outbox and resumed by the worker; in-memory SDK tests verify
+the parent/child trace lineage without exporting content. OTLP export requires
+an operator endpoint and has not been exercised against a collector. A
+controlled Docker run `06f0cb22-46ba-4c8f-999e-926281da6a3a` at pinned
+commit `56261c0` retained the ten-effect PASS/FAIL/FAIL to PASS/PASS/PASS
+repair path and media READY under the tracing changes.
 
 ## Requirement traceability
 
@@ -199,7 +208,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SEC-03 | Missing | Prompt injection qualification absent. |
 | FR-SEC-04 | Partial | Canonical deletion tombstone/outbox; object/cache/restore propagation absent. |
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
-| FR-OBS-01 | Missing | OpenTelemetry instrumentation absent. |
+| FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Missing | Operational dashboards absent. |
 | FR-OPS-01 | Missing | Alert owner/runbooks and drills absent. |
 | FR-EVL-01 | Missing | Versioned 30+10 benchmark and held-out oracles absent. |

@@ -50,6 +50,12 @@ from platform_app.run_ledger import (
     transition,
 )
 from platform_app.service import ServiceError, append_event, request_cancel
+from platform_app.telemetry import (
+    configure_telemetry,
+    extract_trace,
+    set_safe_attributes,
+    tracer,
+)
 from platform_app.verifier import tree_hash
 
 FIXTURE_PATH = "benchmarks/fixtures/form-submit"
@@ -217,6 +223,7 @@ class DevelopmentWorker:
             transition(db, run, self.worker_id, fence, state, verdict)
             db.commit()
 
+    @tracer.start_as_current_span("tool.execute")
     def _action(
         self,
         run_id: str,
@@ -227,6 +234,7 @@ class DevelopmentWorker:
         target: Path,
         oracle: Path | None = None,
     ) -> dict:
+        set_safe_attributes(run_id=run_id, tool_step=step)
         if self._cancelled.is_set():
             raise ServiceError("RUN_CANCELLED", "Worker observed cancellation", 409)
         with self.session_factory() as db:
@@ -289,9 +297,11 @@ class DevelopmentWorker:
             db.commit()
         return receipt
 
+    @tracer.start_as_current_span("workspace.patch")
     def _materialize_patch(
         self, run_id: str, fence: int, source: Path, proposal: PatchProposal
     ) -> Path:
+        set_safe_attributes(run_id=run_id)
         destination = self.artifact_root / run_id / "candidate" / "workspace"
         with self.session_factory() as db:
             run = db.get(Run, run_id)
@@ -343,9 +353,11 @@ class DevelopmentWorker:
             db.commit()
         return destination
 
+    @tracer.start_as_current_span("media.publish")
     def _encode_media(
         self, run_id: str, fence: int, label: str, browser_receipt: dict, evidence: Path
     ) -> None:
+        set_safe_attributes(run_id=run_id, media_side=label)
         recording = browser_receipt.get("recording")
         if not isinstance(recording, str) or Path(recording).name != recording:
             with self.session_factory() as db:
@@ -467,7 +479,9 @@ class DevelopmentWorker:
             append_event(db, run, "artifact.ready", {"label": label, "kind": "hls"})
             db.commit()
 
+    @tracer.start_as_current_span("run.execute")
     def execute(self, run_id: str, fence: int | None = None) -> None:
+        set_safe_attributes(run_id=run_id)
         with self.session_factory() as db:
             if fence is None:
                 run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
@@ -753,11 +767,13 @@ class DevelopmentWorker:
             event.attempts += 1
             event_id = event.id
             db.commit()
-        try:
-            self.execute(run_id, fence)
-            final_status = "delivered"
-        except (ServiceError, SandboxError, OSError, ValueError):
-            final_status = "failed"
+        with tracer.start_as_current_span("dispatch.consume", context=extract_trace(event.payload)):
+            set_safe_attributes(run_id=run_id, dispatch_event_id=event_id)
+            try:
+                self.execute(run_id, fence)
+                final_status = "delivered"
+            except (ServiceError, SandboxError, OSError, ValueError):
+                final_status = "failed"
         with self.session_factory() as db:
             event = db.get(OutboxEvent, event_id)
             event.status = final_status
@@ -829,6 +845,7 @@ class DevelopmentWorker:
 
 
 def main() -> int:
+    configure_telemetry()
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--artifacts", type=Path, default=Path(settings().artifact_dir))

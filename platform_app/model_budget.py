@@ -13,6 +13,7 @@ from platform_app.model_qualification import qualification_current
 from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
+from platform_app.telemetry import set_safe_attributes, tracer
 from platform_app.token_budget import (
     BudgetError,
     PriceRule,
@@ -45,6 +46,7 @@ def _cost(input_tokens: int, output_tokens: int, price: PriceRule) -> Decimal:
     return value.quantize(Decimal("0.000001"), rounding=ROUND_UP)
 
 
+@tracer.start_as_current_span("model.reserve")
 def reserve_model_call(
     db: Session,
     run: Run,
@@ -56,6 +58,7 @@ def reserve_model_call(
     provider_overhead_tokens: int = 4096,
 ) -> tuple[ToolAction, BudgetEntry, TokenPlan]:
     """Caller commits this transaction before invoking the provider."""
+    set_safe_attributes(run_id=run.id, model_entry_id=model.id, model_step=step_id)
     assert_fence(run, worker_id, fence)
     if run.cancel_requested:
         raise ServiceError("RUN_CANCELLED", "Cancellation stops model calls", 409)
@@ -211,6 +214,7 @@ def reserve_model_call(
     return action, reservation, plan
 
 
+@tracer.start_as_current_span("model.settle")
 def settle_model_call(
     db: Session,
     run: Run,
@@ -224,6 +228,7 @@ def settle_model_call(
     artifact_ref: str,
 ) -> Decimal:
     """Persist provider usage and a receipt; never infer success from model prose."""
+    set_safe_attributes(run_id=run.id, model_entry_id=model.id)
     assert_fence(run, worker_id, fence)
     if action.run_id != run.id or reservation.run_id != run.id:
         raise ServiceError("LEDGER_SCOPE", "Model ledger scope mismatch", 409)

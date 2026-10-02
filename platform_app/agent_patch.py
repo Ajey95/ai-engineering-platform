@@ -22,6 +22,7 @@ from platform_app.providers import (
     ProviderTurn,
 )
 from platform_app.service import ServiceError
+from platform_app.telemetry import set_safe_attributes, tracer
 
 KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
@@ -80,6 +81,7 @@ def _prompt(
     )
 
 
+@tracer.start_as_current_span("model.generate")
 def request_fixture_patch(
     session_factory,
     run_id: str,
@@ -91,6 +93,7 @@ def request_fixture_patch(
     step_id: str = "model-1",
     provider: PatchProvider | None = None,
 ) -> AgentPatchResult:
+    set_safe_attributes(run_id=run_id, model_step=step_id)
     with session_factory() as db:
         run = db.get(Run, run_id)
         if run is None:

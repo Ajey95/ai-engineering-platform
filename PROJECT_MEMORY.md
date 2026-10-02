@@ -280,3 +280,13 @@ roundtrip and admission/resume checks passed. Controlled Docker run
 `09cbf973-dfb2-43ad-8c4c-64dd0b42c463` at `de8de42` reached REVIEW_READY
 with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and media READY after
 resume. The controlled provider flag is now distinct from live qualification.
+
+2026-10-02 tracing continuation: OpenTelemetry API/SDK and OTLP HTTP exporter
+were added. The API, admission/resume, context/memory lookup, durable outbox,
+worker, policy/tool effects, model budget/native provider HTTP and media have
+content-free spans. W3C traceparent is persisted in dispatch events and
+restored in the worker. In-memory SDK tests confirmed parent/child lineage;
+72 Python tests passed, 1 Windows symlink privilege skip. Controlled Docker
+run `06f0cb22-46ba-4c8f-999e-926281da6a3a` at `56261c0` reached
+REVIEW_READY with ten effects and media READY. No OTLP collector/export or
+hosted trace backend was tested; endpoint must be configured by an operator.

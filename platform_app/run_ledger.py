@@ -9,6 +9,7 @@ from platform_app.config import settings
 from platform_app.db import utcnow
 from platform_app.models import AuditEvent, OutboxEvent, Run, Tenant, ToolAction
 from platform_app.service import ServiceError, append_event, canonical_hash
+from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
 
 ACTIVE_STATES = {"PREPARING", "REPRODUCING", "INVESTIGATING", "PATCHING", "VERIFYING"}
 TERMINAL_STATES = {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}
@@ -109,6 +110,7 @@ def transition(
         run.lease_until = None
 
 
+@tracer.start_as_current_span("run.resume")
 def resume_input_run(
     db: Session,
     tenant_id: str,
@@ -118,6 +120,7 @@ def resume_input_run(
     idempotency_key: str,
 ) -> Run:
     """Requeue a paused input run only after checking policy and effect uncertainty."""
+    set_safe_attributes(run_id=run_id, tenant_id=tenant_id)
     if settings().environment != "development":
         raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
     run = db.scalar(
@@ -185,7 +188,7 @@ def resume_input_run(
         OutboxEvent(
             tenant_id=tenant_id,
             topic="run.dispatch",
-            payload={"run_id": run.id, "resume_key": idempotency_key},
+            payload={"run_id": run.id, "resume_key": idempotency_key, **inject_trace()},
         )
     )
     db.add(

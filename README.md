@@ -15,6 +15,9 @@ and release blockers.
 - Fenced lease, state transition and tool effect ledger primitives.
 - A deterministic development effect policy checks tenant/project/run scope,
   reviewed action and version, target and tool budget before execution.
+- OpenTelemetry spans cover the API, admission, durable dispatch, worker,
+  context lookup, tool policy, model calls and media work. Export requires
+  `AIP_OTLP_TRACES_ENDPOINT`.
 - JSON schema tool-call assembler that discards incomplete arguments.
 - Token envelope and spend preflight calculations.
 - A bounded, source-backed ContextBundle for the synthetic repair call, with
@@ -165,6 +168,13 @@ revision, adapter digest and model registry lifecycle events. A failed probe
 leaves the entry unavailable; changed model metadata or adapter code invalidates
 qualification. These commands have only been tested with controlled responses.
 No provider account or model has been qualified live on this machine.
+
+To export traces, set `AIP_OTLP_TRACES_ENDPOINT` to the OTLP HTTP traces URL
+of a collector. Hosted endpoints must use HTTPS; local development may use
+HTTP on loopback. The API and worker propagate W3C trace context through the
+durable dispatch outbox. Trace attributes contain identifiers and outcomes,
+not prompts, repository content or credentials. No collector or hosted trace
+backend has been qualified here.
 
 To exercise the admitted-run worker against the trusted synthetic baseline:
 

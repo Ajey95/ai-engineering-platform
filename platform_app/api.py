@@ -73,10 +73,12 @@ from platform_app.service import (
     require_task,
     run_read,
 )
+from platform_app.telemetry import configure_telemetry, extract_trace, set_safe_attributes, tracer
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_telemetry()
     # Development bootstrap is isolated from hosted migration and identity setup.
     if settings().environment == "development":
         Base.metadata.create_all(engine)
@@ -103,21 +105,24 @@ async def service_error_handler(request: Request, exc: ServiceError) -> JSONResp
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request.state.request_id = uuid4()
-    if settings().environment == "development" and not settings().dev_token:
-        client_host = request.client.host if request.client else ""
-        if client_host not in {"127.0.0.1", "::1", "testclient"}:
-            return JSONResponse(
-                status_code=403,
-                content=ErrorBody(
-                    code="LOCAL_ONLY",
-                    message="Unauthenticated development API is local only",
-                    request_id=str(request.state.request_id),
-                ).model_dump(),
-            )
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = str(request.state.request_id)
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    with tracer.start_as_current_span("http.server", context=extract_trace(dict(request.headers))):
+        set_safe_attributes(http_method=request.method)
+        if settings().environment == "development" and not settings().dev_token:
+            client_host = request.client.host if request.client else ""
+            if client_host not in {"127.0.0.1", "::1", "testclient"}:
+                return JSONResponse(
+                    status_code=403,
+                    content=ErrorBody(
+                        code="LOCAL_ONLY",
+                        message="Unauthenticated development API is local only",
+                        request_id=str(request.state.request_id),
+                    ).model_dump(),
+                )
+        response = await call_next(request)
+        set_safe_attributes(http_status=response.status_code)
+        response.headers["X-Request-ID"] = str(request.state.request_id)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 def db_session():

@@ -9,6 +9,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from platform_app.telemetry import tracer
+
 
 class MediaError(Exception):
     pass
@@ -80,6 +82,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+@tracer.start_as_current_span("media.encode")
 def encode_hls(
     source: Path,
     artifact_root: Path,

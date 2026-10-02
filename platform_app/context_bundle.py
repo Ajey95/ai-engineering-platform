@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from platform_app.models import Run, Task
 from platform_app.service import ServiceError
+from platform_app.telemetry import tracer
 
 
 def _digest(data: bytes) -> str:
@@ -39,6 +40,7 @@ def _item(
     }
 
 
+@tracer.start_as_current_span("context.build")
 def fixture_context_bundle(
     run: Run,
     task: Task,

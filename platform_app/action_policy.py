@@ -16,6 +16,7 @@ from platform_app.config import settings
 from platform_app.models import AuditEvent, Project, Run, Task, Tenant, ToolAction
 from platform_app.run_ledger import assert_fence, begin_tool_action
 from platform_app.service import ServiceError, canonical_hash
+from platform_app.telemetry import set_safe_attributes, tracer
 
 
 @dataclass(frozen=True)
@@ -128,10 +129,12 @@ def _denial_reason(db: Session, run: Run, intent: ActionIntent) -> str | None:
     return None
 
 
+@tracer.start_as_current_span("tool.authorize")
 def authorize_run_effect(
     db: Session, run: Run, worker_id: str, fence: int, intent: ActionIntent
 ) -> ToolAction:
     """Persist the decision before the caller can perform an external effect."""
+    set_safe_attributes(run_id=run.id, tool_name=intent.name, tool_step=intent.step_id)
     assert_fence(run, worker_id, fence)
     reason = _denial_reason(db, run, intent)
     existing = db.scalar(
@@ -142,6 +145,7 @@ def authorize_run_effect(
         )
     )
     if reason:
+        set_safe_attributes(policy_outcome="denied", policy_reason=reason)
         if existing is None and not run.cancel_requested:
             begin_tool_action(
                 db, run, worker_id, fence, intent.step_id, intent.name, intent.arguments, False
@@ -162,6 +166,7 @@ def authorize_run_effect(
     action = begin_tool_action(
         db, run, worker_id, fence, intent.step_id, intent.name, intent.arguments, True
     )
+    set_safe_attributes(policy_outcome="allowed")
     if existing is None:
         db.add(
             AuditEvent(
