@@ -831,3 +831,6 @@ schema without carrying vendor response text. OpenAI refusal retains usage;
 the fixture patch path settles usage before rejecting refusal or truncation.
 Focused provider/patch/worker tests passed 22/22. Full Python suite passed
 142 tests, 3 skipped; Ruff passed. Live provider accounts remain unavailable.
+The provider increment was committed as `85bfe32`; the local API was restarted
+from that revision on port 8101, and the existing 5173 proxy returned HTTP 200
+for health and the owner Operations snapshot. The worktree was clean at handoff.
