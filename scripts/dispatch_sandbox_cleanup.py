@@ -11,12 +11,13 @@ from sqlalchemy import select
 
 from platform_app.config import settings
 from platform_app.db import SessionLocal
-from platform_app.models import OutboxEvent
+from platform_app.models import OutboxEvent, SandboxLease
 from platform_app.sandbox_broker import (
     due_sandbox_lease_ids,
     revoke_sandbox,
     terminate_revoked_sandbox,
 )
+from platform_app.sandbox_transport import SandboxObjectKeys, fence_guest_outputs
 from platform_app.service import ServiceError
 
 
@@ -39,6 +40,8 @@ def main() -> int:
     if not settings().database_url.startswith("postgresql+psycopg://"):
         parser.error("AIP_DATABASE_URL must point to migrated PostgreSQL")
     ec2 = boto3.client("ec2")
+    artifact_bucket = settings().sandbox_artifact_bucket
+    s3 = boto3.client("s3") if artifact_bucket else None
     while True:
         incomplete = False
         with SessionLocal() as db:
@@ -66,6 +69,17 @@ def main() -> int:
                 if event is None:
                     continue
                 try:
+                    lease = db.get(SandboxLease, event.payload["sandbox_lease_id"])
+                    if lease is not None and lease.bootstrap_envelope is not None:
+                        if s3 is None:
+                            raise ServiceError(
+                                "SANDBOX_STORAGE_UNCONFIGURED",
+                                "Sandbox artifact bucket is required for cleanup", 503,
+                            )
+                        keys = SandboxObjectKeys.scoped(
+                            lease.tenant_id, lease.project_id, lease.run_id, lease.id
+                        )
+                        fence_guest_outputs(s3, artifact_bucket, keys)
                     complete = terminate_revoked_sandbox(
                         db, event.payload["sandbox_lease_id"], ec2
                     )

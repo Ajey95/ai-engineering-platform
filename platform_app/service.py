@@ -295,7 +295,7 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
         select(SandboxLease).where(
             SandboxLease.tenant_id == run.tenant_id,
             SandboxLease.run_id == run.id,
-            SandboxLease.state.in_(["intended", "provisioned"]),
+            SandboxLease.state.in_(["intended", "bootstrapping", "provisioned"]),
         ).with_for_update()
     ).all()
     for sandbox in active_sandboxes:

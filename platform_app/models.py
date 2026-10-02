@@ -326,7 +326,8 @@ class SandboxLease(Base):
         CheckConstraint("generation > 0", name="ck_sandbox_generation_positive"),
         CheckConstraint("disk_gib BETWEEN 8 AND 100", name="ck_sandbox_disk_bounds"),
         CheckConstraint(
-            "state IN ('intended', 'provisioned', 'revoked', 'terminating', 'terminated')",
+            "state IN ('intended', 'bootstrapping', 'provisioned', 'revoked', "
+            "'terminating', 'terminated')",
             name="ck_sandbox_state",
         ),
         Index("ix_sandbox_leases_expiry", "state", "expires_at"),
@@ -346,6 +347,10 @@ class SandboxLease(Base):
     security_group_id: Mapped[str] = mapped_column(String(32))
     root_device_name: Mapped[str] = mapped_column(String(32))
     disk_gib: Mapped[int] = mapped_column(Integer)
+    bootstrap_envelope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bootstrap_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

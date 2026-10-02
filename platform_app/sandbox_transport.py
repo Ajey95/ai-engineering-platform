@@ -35,6 +35,7 @@ class SandboxObjectKeys:
     ready: str
     go: str
     result: str
+    evidence: str
 
     @classmethod
     def scoped(
@@ -50,6 +51,7 @@ class SandboxObjectKeys:
             ready=f"sandbox/out/{suffix}/ready.json",
             go=f"sandbox/in/{suffix}/go.json",
             result=f"sandbox/out/{suffix}/result.json",
+            evidence=f"sandbox/out/{suffix}/evidence.tar",
         )
 
 
@@ -59,6 +61,67 @@ class GuestUrls:
     ready_put: str
     go_get: str
     result_put: str
+    evidence_put: str
+
+
+@dataclass(frozen=True)
+class GuestOutput:
+    result: dict
+    evidence_archive: bytes
+
+
+def _read_bounded_object(s3, bucket: str, key: str, limit: int) -> bytes | None:
+    try:
+        response = s3.get_object(Bucket=bucket, Key=key)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+            return None
+        raise
+    size = response.get("ContentLength")
+    if type(size) is not int or not 1 <= size <= limit:
+        raise SandboxTransportError("Guest output size is outside policy")
+    data = response["Body"].read(limit + 1)
+    if len(data) != size:
+        raise SandboxTransportError("Guest output length changed")
+    return data
+
+
+def fetch_guest_output(
+    s3, bucket: str, keys: SandboxObjectKeys, lease_id: str,
+    fence: int, source_sha256: str,
+) -> GuestOutput | None:
+    """Verify guest transport bytes; callers must also check the DB lease fence."""
+    raw = _read_bounded_object(s3, bucket, keys.result, 1_000_000)
+    if raw is None:
+        return None
+    try:
+        result = json.loads(raw)
+    except (UnicodeDecodeError, ValueError) as error:
+        raise SandboxTransportError("Guest result is malformed") from error
+    if (
+        not isinstance(result, dict)
+        or result.get("version") != 1
+        or result.get("lease_id") != lease_id
+        or result.get("fence") != fence
+        or result.get("source_sha256") != source_sha256
+        or type(result.get("evidence_bytes")) is not int
+        or not 1 <= result["evidence_bytes"] <= 50_000_000
+        or not isinstance(result.get("evidence_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", result["evidence_sha256"])
+        or (result.get("guest_exit_code") is not None
+            and type(result["guest_exit_code"]) is not int)
+        or (result.get("baseline") is not None
+            and not isinstance(result["baseline"], dict))
+    ):
+        raise SandboxTransportError("Guest result does not match its lease")
+    evidence = _read_bounded_object(s3, bucket, keys.evidence, 50_000_000)
+    if evidence is None:
+        return None
+    if len(evidence) != result["evidence_bytes"] or hashlib.sha256(
+        evidence
+    ).hexdigest() != result["evidence_sha256"]:
+        raise SandboxTransportError("Guest evidence checksum differs")
+    return GuestOutput(result=result, evidence_archive=evidence)
 
 
 def stage_source_archive(
@@ -85,12 +148,15 @@ def stage_source_archive(
     return digest
 
 
-def _presign(s3, method: str, bucket: str, key: str, ttl: int, *, put: bool) -> str:
+def _presign(
+    s3, method: str, bucket: str, key: str, ttl: int, *, put: bool,
+    content_type: str = "application/json",
+) -> str:
     params = {"Bucket": bucket, "Key": key}
     if put:
         params.update({
             "IfNoneMatch": "*", "ServerSideEncryption": "AES256",
-            "ContentType": "application/json",
+            "ContentType": content_type,
         })
     url = s3.generate_presigned_url(
         method, Params=params, ExpiresIn=ttl,
@@ -112,7 +178,7 @@ def _presign(s3, method: str, bucket: str, key: str, ttl: int, *, put: bool) -> 
 
 
 def issue_guest_urls(
-    s3, bucket: str, keys: SandboxObjectKeys, *, ttl_seconds: int = 900
+    s3, bucket: str, keys: SandboxObjectKeys, *, ttl_seconds: int = 1800
 ) -> GuestUrls:
     """URLs are bearer capabilities; callers must encrypt their bootstrap copy."""
     if not 60 <= ttl_seconds <= 1800:
@@ -122,6 +188,10 @@ def issue_guest_urls(
         ready_put=_presign(s3, "put_object", bucket, keys.ready, ttl_seconds, put=True),
         go_get=_presign(s3, "get_object", bucket, keys.go, ttl_seconds, put=False),
         result_put=_presign(s3, "put_object", bucket, keys.result, ttl_seconds, put=True),
+        evidence_put=_presign(
+            s3, "put_object", bucket, keys.evidence, ttl_seconds,
+            put=True, content_type="application/x-tar",
+        ),
     )
 
 
@@ -154,13 +224,43 @@ def publish_guest_go(
     return hashlib.sha256(body).hexdigest()
 
 
+def guest_ready(
+    s3, bucket: str, keys: SandboxObjectKeys, lease_id: str,
+    fence: int, source_sha256: str,
+) -> bool:
+    """Read only the bounded ready marker from this lease's private S3 key."""
+    try:
+        response = s3.get_object(Bucket=bucket, Key=keys.ready)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+            return False
+        raise
+    if not 1 <= response.get("ContentLength", 0) <= 1024:
+        raise SandboxTransportError("Guest ready marker is empty or oversized")
+    body = response["Body"].read(1025)
+    if len(body) != response["ContentLength"]:
+        raise SandboxTransportError("Guest ready marker length changed")
+    try:
+        marker = json.loads(body)
+    except (UnicodeDecodeError, ValueError) as error:
+        raise SandboxTransportError("Guest ready marker is malformed") from error
+    if marker != {
+        "version": 1, "lease_id": lease_id, "fence": fence,
+        "source_sha256": source_sha256,
+    }:
+        raise SandboxTransportError("Guest ready marker does not match its lease")
+    return True
+
+
 def fence_guest_outputs(s3, bucket: str, keys: SandboxObjectKeys) -> None:
     """Occupy unused conditional-PUT slots, making their signed URLs unusable."""
-    for key in (keys.ready, keys.result):
+    s3.delete_object(Bucket=bucket, Key=keys.go)
+    for key in (keys.ready, keys.result, keys.evidence):
         try:
             s3.put_object(
                 Bucket=bucket, Key=key, Body=b"", IfNoneMatch="*",
-                ServerSideEncryption="AES256", ContentType="application/json",
+                ServerSideEncryption="AES256",
+                ContentType=("application/x-tar" if key == keys.evidence else "application/json"),
             )
         except ClientError as error:
             if not _precondition_failed(error):

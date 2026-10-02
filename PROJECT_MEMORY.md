@@ -1092,3 +1092,20 @@ output slots with tombstones after revocation. Fake S3 and locally signed URL
 tests passed 5/5, scoped Ruff passed. No AWS bucket or VM has been exercised;
 EC2 bootstrap and metadata sealing are the next required integration.
 The full Python suite passed 208 tests with 4 skips after this increment.
+
+2026-10-03 guest bootstrap and evidence transport increment: migration
+`a2c9e7d54031` added encrypted user-data, source digest, `bootstrapping`
+and seal receipt to a sandbox lease; local PostgreSQL migrated with no drift.
+The broker now waits for a guest ready marker, disables EC2 IMDS, verifies
+the applied disabled state, then posts a signed-scope go marker. The guest
+stages a digest-pinned bundle, runs the baseline as uid 10001 after the seal,
+and uploads a bounded evidence tar before its result. Its runtime is bounded
+by both lease and signed URL expiry. The result reader checks lease/fence,
+source digest, evidence size and SHA-256. Terraform defines a private,
+versioned, encrypted sandbox artifact bucket; `init`, `fmt -check` and
+`validate` passed with provider 6.67.0. The full suite passed 220 tests with
+4 skips before evidence upload, then 222 tests with 4 skips afterward;
+focused broker/transport/bootstrap tests passed 19/19, and scoped Ruff passed.
+No AMI, AWS account run,
+customer repository path or independent hosted repair has been verified;
+hosted admission remains disabled.

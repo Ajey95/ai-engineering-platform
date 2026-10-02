@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     browser_session_secret: str = ""
     public_base_url: str = "http://localhost:8000"
     private_media_bucket: str = ""
+    sandbox_artifact_bucket: str = ""
     private_media_kms_key_id: str = ""
     cloudfront_key_pair_id: str = ""
     cloudfront_private_key_b64: str = ""
