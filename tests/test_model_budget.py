@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -9,9 +10,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from platform_app import agent_patch
 from platform_app.agent_patch import request_fixture_patch
 from platform_app.db import Base
 from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
+from platform_app.model_qualification import adapter_digest
 from platform_app.models import (
     BudgetEntry,
     ModelEntry,
@@ -22,7 +25,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
-from platform_app.providers import OpenAIResponses, ProviderError
+from platform_app.providers import OpenAIResponses, ProviderError, ProviderTurn
 from platform_app.run_ledger import claim_run
 from platform_app.service import ServiceError
 
@@ -175,6 +178,7 @@ def test_definitive_rejection_releases_reservation_but_unknown_outcome_stays_pen
 
 def test_fixture_request_records_http_rejection_and_does_not_repeat_it(scope, tmp_path):
     db, run, _, fence = scope
+    run.config_snapshot = {**run.config_snapshot, "max_model_calls": 2}
     calls = []
 
     def reject(request):
@@ -240,6 +244,92 @@ def test_fixture_timeout_remains_uncertain_and_cannot_reissue(scope, tmp_path):
         assert action.status == "INTENDED"
         assert reservation.status == "reserved"
     assert len(calls) == 1
+
+
+def test_rate_limit_switches_once_only_to_admission_and_current_authorized_provider(
+    scope, tmp_path, monkeypatch,
+):
+    db, run, _, fence = scope
+    route = {
+        "from_model_entry_id": "model-a", "to_model_entry_id": "model-b",
+        "data_classes": ["source_code"],
+    }
+    db.get(Tenant, "tenant-a").model_routing_policy = {
+        "enabled": False, "failover_routes": [route],
+    }
+    run.config_snapshot = {
+        **run.config_snapshot, "max_model_calls": 2, "model_failover_routes": [route],
+    }
+    db.add(ModelEntry(
+        id="model-b", provider="anthropic", model_id="anthropic-model",
+        registry_revision="revision-b", state="enabled", context_limit=32000,
+        output_limit=4000, price_revision="price-b",
+        price_per_m_input=Decimal("1"), price_per_m_output=Decimal("2"),
+        validated_at=datetime.now(UTC), capabilities={
+            "live_qualified": True,
+            "qualification": {
+                "status": "passed", "provider": "anthropic",
+                "requested_model": "anthropic-model", "registry_revision": "revision-b",
+                "context_limit": 32000, "output_limit": 4000,
+                "price_revision": "price-b", "price_per_m_input": "1.000000",
+                "price_per_m_output": "2.000000", "adapter_digest": adapter_digest(),
+                "checks": ["text", "schema_validated_tool", "continuation", "usage"],
+            },
+        },
+    ))
+    db.commit()
+    source_calls = []
+
+    def rate_limit(request):
+        source_calls.append(request)
+        return httpx.Response(429, json={"error": {"message": "rate limited"}})
+
+    source_adapter = OpenAIResponses(
+        "test-only-key", client=httpx.Client(transport=httpx.MockTransport(rate_limit))
+    )
+    source = Path(__file__).resolve().parents[1] / "benchmarks/fixtures/form-submit/base/server.py"
+    fixed = source.read_text(encoding="utf-8").replace(
+        "quantity: int | None = None", "quantity: int = 1"
+    )
+    target_calls = []
+
+    class Target:
+        def generate(self, model, instruction, prompt, tools, max_output_tokens):
+            target_calls.append((model, prompt))
+            return ProviderTurn(
+                "anthropic", model, json.dumps({
+                    "diagnosis": "Missing default quantity",
+                    "files": [{"path": "server.py", "content": fixed}],
+                }), (), "end_turn", {"input_tokens": 100, "output_tokens": 100}, {},
+            )
+
+    monkeypatch.setattr(agent_patch, "_provider", lambda model: Target())
+    def factory():
+        return Session(db.bind)
+    result = request_fixture_patch(
+        factory, run.id, "worker-one", fence, {},
+        source.read_text(encoding="utf-8"), tmp_path, provider=source_adapter,
+    )
+    assert result.proposal.files[0][0] == "server.py"
+    with Session(db.bind) as check:
+        saved_run = check.get(Run, run.id)
+        actions = check.scalars(select(ToolAction).where(
+            ToolAction.logical_action == "model.generate"
+        ).order_by(ToolAction.step_id)).all()
+        reservations = check.scalars(select(BudgetEntry).where(
+            BudgetEntry.category.like("call:%")
+        ).order_by(BudgetEntry.category)).all()
+        assert saved_run.model_entry_id == "model-b"
+        assert saved_run.config_snapshot["model_failover"]["reason"] == "PROVIDER_RATE_LIMITED"
+        assert [action.receipt["status"] for action in actions] == ["REJECTED", "COMPLETED"]
+        assert [item.status for item in reservations] == ["released", "settled"]
+        assert check.scalar(select(RunEvent).where(RunEvent.event_type == "model.failover"))
+    replay = request_fixture_patch(
+        factory, run.id, "worker-one", fence, {},
+        source.read_text(encoding="utf-8"), tmp_path, provider=source_adapter,
+    )
+    assert replay == result
+    assert len(source_calls) == len(target_calls) == 1
 
 
 def test_unqualified_model_and_uncertain_usage_fail_closed(scope):

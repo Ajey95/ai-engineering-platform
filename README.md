@@ -169,6 +169,32 @@ is configured in this checkout, so `auto` currently returns
 containing `{"enabled": false}` disables routing. Manual model selection is
 still available under its existing qualification checks.
 
+A tenant may separately authorize one cross-provider alternate per source model
+and data class in the same policy file, even with automatic selection disabled:
+
+```json
+{
+  "enabled": false,
+  "failover_routes": [
+    {
+      "from_model_entry_id": "SOURCE_MODEL_ID",
+      "to_model_entry_id": "ALTERNATE_MODEL_ID",
+      "data_classes": ["source_code"]
+    }
+  ]
+}
+```
+
+The route is pinned at run admission and checked again against current tenant
+policy. Only a definite HTTP 429 rejection can trigger this one-time switch;
+the original request receives a durable rejected receipt and its reservation is
+released. The alternate must be enabled, currently qualified, from another
+provider, and have at least the original context/output capacity. No pending
+tool effect may exist. A timeout or transport failure stays unresolved and
+cannot switch providers automatically. The fixture path rebuilds a portable
+context bundle for the alternate and records a separate model step and lineage
+event. No live provider failover has been qualified.
+
 Pinned plugin manifests can be registered, checked against an exact local
 artifact digest, enabled or disabled, and allowlisted for a tenant from the
 trusted operator shell. The manifest schema requires tool JSON schemas,

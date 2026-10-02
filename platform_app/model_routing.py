@@ -17,6 +17,7 @@ from platform_app.models import ModelEntry, ModelRoutingEvidence, Project, Tenan
 REQUIRED_CHECKS = {"text", "schema_validated_tool", "continuation", "usage"}
 EVIDENCE_MAX_AGE = timedelta(days=30)
 MIN_PLATFORM_SAMPLES = 30
+MAX_FAILOVER_ROUTES = 20
 
 
 class RoutingError(Exception):
@@ -31,6 +32,38 @@ class RoutingDecision:
     evidence: ModelRoutingEvidence
     score: Decimal
     policy_revision: str
+
+
+def validate_failover_routes(policy: dict) -> list[dict]:
+    """An exact tenant allowlist; each source and data class has one alternate."""
+    if not isinstance(policy, dict):
+        raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Model policy is invalid")
+    routes = policy.get("failover_routes", [])
+    if not isinstance(routes, list) or len(routes) > MAX_FAILOVER_ROUTES:
+        raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Failover routes are invalid")
+    covered: set[tuple[str, str]] = set()
+    for route in routes:
+        if not isinstance(route, dict) or set(route) != {
+            "from_model_entry_id", "to_model_entry_id", "data_classes"
+        }:
+            raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Failover route is invalid")
+        source, target, classes = (
+            route["from_model_entry_id"], route["to_model_entry_id"], route["data_classes"]
+        )
+        if (
+            not isinstance(source, str) or not 1 <= len(source) <= 36
+            or not isinstance(target, str) or not 1 <= len(target) <= 36
+            or source == target or not isinstance(classes, list) or not classes
+            or any(not isinstance(item, str) or not 1 <= len(item) <= 80 for item in classes)
+            or len(set(classes)) != len(classes)
+        ):
+            raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Failover route is invalid")
+        for data_class in classes:
+            key = source, data_class
+            if key in covered:
+                raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Failover route is ambiguous")
+            covered.add(key)
+    return routes
 
 
 def _positive_weight(value: object) -> Decimal:
@@ -49,10 +82,14 @@ def validate_routing_policy(policy: dict) -> tuple[set[str], set[str], dict, str
     allowed_ids = policy.get("allowed_model_entry_ids")
     allowed_classes = policy.get("allowed_data_classes")
     weights = policy.get("weights")
-    if set(policy) != {
+    if set(policy) not in ({
         "enabled", "allowed_model_entry_ids", "allowed_data_classes", "weights"
-    }:
+    }, {
+        "enabled", "allowed_model_entry_ids", "allowed_data_classes", "weights",
+        "failover_routes"
+    }):
         raise RoutingError("MODEL_ROUTING_POLICY_INVALID", "Routing policy is incomplete")
+    validate_failover_routes(policy)
     if (
         not isinstance(allowed_ids, list)
         or not allowed_ids

@@ -893,3 +893,21 @@ pending because outcome and billing are unknown; replay fails closed. Focused
 budget/agent/worker tests passed 17/17, then focused budget/agent tests passed
 11/11 after adding timeout coverage. Ruff passed. Live provider behavior is
 unqualified and automatic cross-provider failover remains absent.
+
+2026-10-03 tenant-authorized failover increment: routing policy now accepts an
+exact `failover_routes` list with one target per source/data class, including
+when automatic model selection is disabled. The trusted operator command
+validates registered model IDs and different providers; run admission pins
+the source routes. After a definite HTTP 429, the fixture worker receipts the
+rejected call, then checks current tenant policy, admission route, data class,
+active tenant/policy revision, no pending effects, target live qualification
+and context/output capacity. It switches at most once, records model lineage,
+and sends a fresh portable context bundle to the alternate. A restart follows
+the recorded target step without reissuing the source call. Controlled tests
+proved source 429, target completion, reservations, lineage and replay. A
+timeout remains INTENDED and cannot switch. No actual provider account or
+customer sandbox has been qualified, so this remains a fixture-path proof.
+Focused routing/budget/agent/worker tests passed 24/24, scoped Ruff passed,
+and the full Python suite passed 155 tests with 3 skips. The failover check
+locks the tenant policy row and denies a change in the project's data class
+from the admission snapshot.

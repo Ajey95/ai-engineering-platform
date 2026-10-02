@@ -11,6 +11,7 @@ from platform_app.model_qualification import adapter_digest
 from platform_app.model_routing import (
     RoutingError,
     select_qualified_model,
+    validate_failover_routes,
     validate_routing_policy,
 )
 from platform_app.models import (
@@ -102,6 +103,13 @@ def db():
 def test_auto_route_filters_then_scores_and_pins_evidence(db):
     tenant = db.get(Tenant, "tenant-a")
     project = db.get(Project, "project-a")
+    route = {
+        "from_model_entry_id": "model-b", "to_model_entry_id": "model-a",
+        "data_classes": ["source_code"],
+    }
+    tenant.model_routing_policy = {
+        **tenant.model_routing_policy, "failover_routes": [route],
+    }
     decision = select_qualified_model(db, tenant, project)
     assert decision.model.id == "model-b"
     run = admit_run(
@@ -114,6 +122,7 @@ def test_auto_route_filters_then_scores_and_pins_evidence(db):
     db.commit()
     assert run.model_entry_id == "model-b"
     assert run.config_snapshot["model_route"]["evidence_id"] == decision.evidence.id
+    assert run.config_snapshot["model_failover_routes"] == [route]
     assert db.scalar(select(RunEvent).where(RunEvent.event_type == "model.routed"))
 
 
@@ -167,3 +176,19 @@ def test_routing_policy_rejects_unreviewed_fields_and_invalid_weights():
             "utility": "NaN", "latency": 0, "cost": 0,
         }})
     assert invalid.value.code == "MODEL_ROUTING_POLICY_INVALID"
+
+
+def test_failover_policy_requires_one_exact_alternate_per_source_and_data_class():
+    route = {
+        "from_model_entry_id": "model-a", "to_model_entry_id": "model-b",
+        "data_classes": ["source_code"],
+    }
+    assert validate_failover_routes({"enabled": False, "failover_routes": [route]}) == [route]
+    for routes in (
+        [route, route],
+        [{**route, "to_model_entry_id": "model-a"}],
+        [{**route, "unreviewed": True}],
+    ):
+        with pytest.raises(RoutingError) as invalid:
+            validate_failover_routes({"enabled": False, "failover_routes": routes})
+        assert invalid.value.code == "MODEL_ROUTING_POLICY_INVALID"

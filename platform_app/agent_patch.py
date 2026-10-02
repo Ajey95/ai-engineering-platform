@@ -16,6 +16,7 @@ from platform_app.context_bundle import fixture_context_bundle
 from platform_app.context_compaction import compact_fixture_context
 from platform_app.memory import select_context_facts
 from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
+from platform_app.model_failover import authorize_rate_limit_failover
 from platform_app.models import BudgetEntry, MemoryFact, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
 from platform_app.providers import (
@@ -151,6 +152,23 @@ def request_fixture_patch(
     step_id: str = "model-1",
     provider: PatchProvider | None = None,
 ) -> AgentPatchResult:
+    if step_id == "model-1":
+        with session_factory() as db:
+            run = db.get(Run, run_id)
+            failover = (run.config_snapshot or {}).get("model_failover") if run else None
+            target_model_id = run.model_entry_id if run else None
+        if failover and (
+            failover.get("source_step_id") != step_id
+            or failover.get("target_step_id") != "model-2"
+            or failover.get("target_model_entry_id") != target_model_id
+        ):
+            raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Model failover lineage is invalid", 409)
+        if failover:
+            return request_fixture_patch(
+                session_factory, run_id, worker_id, fence, baseline_receipts,
+                server_source, artifact_root,
+                step_id=failover["target_step_id"], provider=None,
+            )
     set_safe_attributes(run_id=run_id, model_step=step_id)
     with session_factory() as db:
         run = db.get(Run, run_id)
@@ -239,6 +257,7 @@ def request_fixture_patch(
     try:
         turn = selected_provider.generate(model_id, INSTRUCTION, prompt, {}, plan.output_reserve)
     except ProviderError as error:
+        alternate_step = None
         if error.status_code in {400, 401, 403, 404, 429}:
             with session_factory() as db:
                 run = db.get(Run, run_id)
@@ -248,7 +267,16 @@ def request_fixture_patch(
                     db, run, worker_id, fence, action, reservation,
                     error.code, error.status_code,
                 )
+                if error.code == "PROVIDER_RATE_LIMITED":
+                    alternate_step = authorize_rate_limit_failover(
+                        db, run, worker_id, fence, action,
+                    )
                 db.commit()
+        if alternate_step:
+            return request_fixture_patch(
+                session_factory, run_id, worker_id, fence, baseline_receipts,
+                server_source, artifact_root, step_id=alternate_step, provider=None,
+            )
         raise
     if turn.provider != expected_provider:
         raise ServiceError("PROVIDER_MISMATCH", "Provider response source changed", 409)

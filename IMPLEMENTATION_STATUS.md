@@ -115,7 +115,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 153 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 155 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -258,7 +258,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
 | FR-MOD-05 | Partial | `selected_model_entry=auto` now filters by explicit tenant model/data-class policy, current live qualification and tool capability checks, context/output limits, availability and fresh 30-sample model routing evidence; deterministic scoring compares recorded utility, latency and cost. Policy changes are audited through an operator CLI. No real platform benchmark evidence or live provider health exists yet, so the route fails closed in ordinary use. |
-| FR-MOD-06 | Missing | Authorized cross-provider failover absent. |
+| FR-MOD-06 | Partial | A tenant policy may preapprove an exact cross-provider alternate per source model and data class. Admission freezes the route; the fixture worker locks and rechecks current policy, pinned/current data class, qualification, capacity, completed source rejection and absence of pending effects before one switch after a definite HTTP 429. It records lineage and uses a new portable context bundle/model step; replay does not resend the source call. Timeouts remain unresolved, and general tool-cycle reconciliation, other eligible failures and live provider qualification remain. |
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
 | FR-PLG-01 | Partial | Strict manifests now require identity/version, publisher, artifact digest, transport, reviewed JSON schemas, permission scopes, network destinations, credential types, runtime/output limits, side effect class and compatibility. Registry lifecycle records registration, artifact digest validation, enable/disable and events. External execution remains absent. |
 | FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
@@ -266,7 +266,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. General tasks and live autonomous repair remain absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
-| FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
+| FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
 | FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items plus up to five current verified project memory facts selected by report terms at the pinned revision. General evidence selection, full history and live token accounting remain. |
 | FR-CTX-02 | Partial | An isolated pinned-snapshot navigator now bounds file listing, UTF-8 text search, Python symbol lookup and excerpt reads with commit, SHA-256 and trust provenance. The fixture worker reads its source through this scoped path; the hidden oracle is outside the scope. General language symbol indexing and tenant-scoped graph traversal remain absent. |

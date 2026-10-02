@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 from platform_app.config import settings
 from platform_app.db import utcnow
 from platform_app.model_qualification import qualification_current
-from platform_app.model_routing import RoutingError, select_qualified_model
+from platform_app.model_routing import (
+    RoutingError,
+    select_qualified_model,
+    validate_failover_routes,
+)
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
@@ -190,6 +194,13 @@ def admit_run(
         "test_url": project.test_url,
         "environment_manifest": project.environment_manifest,
     }
+    try:
+        policy["model_failover_routes"] = [
+            route for route in validate_failover_routes(tenant.model_routing_policy or {})
+            if route["from_model_entry_id"] == model.id
+        ]
+    except RoutingError as error:
+        raise ServiceError(error.code, str(error), 409) from error
     if routing_decision is not None:
         policy["model_route"] = {
             "mode": "automatic",

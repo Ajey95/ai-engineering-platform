@@ -10,7 +10,11 @@ from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from platform_app.model_routing import RoutingError, validate_routing_policy
+from platform_app.model_routing import (
+    RoutingError,
+    validate_failover_routes,
+    validate_routing_policy,
+)
 from platform_app.models import AuditEvent, ModelEntry, Tenant
 from platform_app.service import canonical_hash
 
@@ -30,13 +34,21 @@ def main() -> int:
         policy = json.loads(args.policy_file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         parser.error(f"Policy file is unreadable: {type(error).__name__}")
-    if policy == {"enabled": False}:
-        allowed_ids: set[str] = set()
-    else:
-        try:
+    try:
+        routes = validate_failover_routes(policy)
+        if policy.get("enabled") is False and set(policy) in (
+            {"enabled"}, {"enabled", "failover_routes"}
+        ):
+            allowed_ids: set[str] = set()
+        else:
             allowed_ids, _, _, _ = validate_routing_policy(policy)
-        except RoutingError as error:
-            parser.error(f"Invalid routing policy: {error.code}")
+        allowed_ids.update(
+            model_id for route in routes for model_id in (
+                route["from_model_entry_id"], route["to_model_entry_id"]
+            )
+        )
+    except RoutingError as error:
+        parser.error(f"Invalid routing policy: {error.code}")
     engine = create_engine(url, pool_pre_ping=True)
     try:
         with Session(engine) as db, db.begin():
@@ -48,6 +60,11 @@ def main() -> int:
             found = set(db.scalars(select(ModelEntry.id).where(ModelEntry.id.in_(allowed_ids))))
             if found != allowed_ids:
                 parser.error("Policy references an unregistered model entry")
+            for route in routes:
+                source = db.get(ModelEntry, route["from_model_entry_id"])
+                target = db.get(ModelEntry, route["to_model_entry_id"])
+                if source.provider == target.provider:
+                    parser.error("Failover must switch providers")
             before = tenant.model_routing_policy or {}
             if before != policy:
                 tenant.model_routing_policy = policy
