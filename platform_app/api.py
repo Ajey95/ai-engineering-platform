@@ -5,6 +5,7 @@ import re
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -51,6 +52,7 @@ from platform_app.models import (
     AuditEvent,
     BudgetEntry,
     MemoryFact,
+    MemoryFactEvent,
     ModelEntry,
     Project,
     ProjectMembership,
@@ -1525,6 +1527,54 @@ def get_memory(
             for fact in facts
         ],
     }
+
+
+@app.get("/v1/projects/{project_id}/memory/records")
+def get_memory_records(
+    project_id: str,
+    status: Literal[
+        "proposed", "verified", "rejected", "superseded", "expired", "deleted"
+    ] | None = None,
+    source_revision: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_project_role(db, identity, project_id)
+    if not 1 <= limit <= 100 or not 0 <= offset <= 10000:
+        raise ServiceError("INVALID_PAGE", "Memory page is outside allowed bounds", 400)
+    query = select(MemoryFact).where(
+        MemoryFact.tenant_id == identity[0], MemoryFact.project_id == project_id,
+    )
+    if status:
+        query = query.where(MemoryFact.status == status)
+    if source_revision:
+        query = query.where(MemoryFact.source_revision == source_revision)
+    facts = db.scalars(query.order_by(MemoryFact.created_at.desc(), MemoryFact.id)
+                       .offset(offset).limit(limit)).all()
+    events = db.scalars(select(MemoryFactEvent).where(
+        MemoryFactEvent.tenant_id == identity[0],
+        MemoryFactEvent.project_id == project_id,
+        MemoryFactEvent.fact_id.in_([fact.id for fact in facts]),
+    ).order_by(MemoryFactEvent.created_at, MemoryFactEvent.id)).all() if facts else []
+    history: dict[str, list[dict]] = {fact.id: [] for fact in facts}
+    for event in events:
+        history[event.fact_id].append({
+            "status": event.status, "previous_status": event.previous_status,
+            "actor": event.actor, "reason": event.reason,
+            "evidence_ref": event.evidence_ref, "created_at": event.created_at,
+        })
+    return {"facts": [{
+        "id": fact.id, "fact_type": fact.fact_type,
+        "repository_ref": fact.repository_ref, "source_revision": fact.source_revision,
+        "subject": fact.subject, "statement": fact.statement,
+        "source_refs": fact.source_refs, "verification_scope": fact.verification_scope,
+        "status": fact.status, "created_at": fact.created_at,
+        "valid_from": fact.valid_from, "valid_until": fact.valid_until,
+        "history": history[fact.id],
+    } for fact in facts], "limit": limit, "offset": offset,
+            "has_more": len(facts) == limit}
 
 
 @app.post("/v1/projects/{project_id}/memory/{fact_id}/transition", status_code=202)

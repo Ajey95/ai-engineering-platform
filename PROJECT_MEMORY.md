@@ -702,3 +702,19 @@ current verified validity. Focused tests covered rejection, supersession,
 expiry, events and API role/tenant boundaries. Local PostgreSQL upgraded to
 `0f647b9382ae` with no Alembic drift; disposable migration/tenant/quota probes
 passed. Full Python suite: 119 passed, 3 skipped; Ruff and diff checks passed.
+
+2026-10-02 memory expiry and inspection: verification now gives
+`environment_observation` facts a 24-hour validity window. The Memgraph
+projection worker first expires due canonical facts in bounded batches, which
+records a transition and tombstone outbox event. A stale verified fact cannot
+supersede a current one. The project-scoped `/memory/records` API exposes
+paginated states and provenance; the Memory UI shows history and role-gated
+transition controls. Event timestamps are monotonic per fact even on Windows
+clock ticks. Focused tests covered expiry, idempotence, scope, history and stale
+replacement; full suite 121 passed, 3 skipped. Ruff, web build and Alembic
+check passed. Chromium rendered the inspection page at 1440x900 and 390x844
+with a synthetic intercepted record, no JS error or horizontal overflow;
+screenshots are under ignored `artifacts/ui-qa/`. The live local API restarted
+on 8101 and returned 200 for scoped records; the local project has zero facts.
+Independent corroboration, regression feedback and immutable-artifact pinning
+are not implemented. The graph worker restarted on current code.

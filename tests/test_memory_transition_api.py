@@ -58,6 +58,12 @@ def test_memory_transition_roles_and_scope(tmp_path, monkeypatch):
     try:
         client = TestClient(api.app)
         root = "/v1/projects/project-a/memory"
+        initial = client.get(f"{root}/records")
+        assert initial.status_code == 200, initial.text
+        assert {fact["status"] for fact in initial.json()["facts"]} == {
+            "proposed", "verified",
+        }
+        assert len(initial.json()["facts"][0]["history"]) >= 1
         rejected = client.post(f"{root}/{proposed_id}/transition", json={
             "action": "reject", "reason": "Independent evidence is missing",
         })
@@ -72,6 +78,14 @@ def test_memory_transition_roles_and_scope(tmp_path, monkeypatch):
         })
         assert expired.status_code == 202, expired.text
         assert expired.json()["status"] == "expired"
+        records = client.get(f"{root}/records?status=expired&source_revision={'a' * 40}")
+        assert records.status_code == 200, records.text
+        assert [fact["id"] for fact in records.json()["facts"]] == [verified_id]
+        assert [event["status"] for event in records.json()["facts"][0]["history"]] == [
+            "proposed", "verified", "expired",
+        ]
+        assert client.get(f"{root}/records?limit=101").status_code == 400
+        assert client.get("/v1/projects/project-b/memory/records").status_code == 404
         assert client.post(f"/v1/projects/project-b/memory/{verified_id}/transition", json={
             "action": "reject", "reason": "Wrong tenant record",
         }).status_code == 404

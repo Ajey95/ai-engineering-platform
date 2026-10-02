@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -6,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from platform_app.db import Base
 from platform_app.memory import (
     delete_fact,
+    expire_due_facts,
     expire_fact,
     propose_fact,
     reject_fact,
@@ -14,7 +17,7 @@ from platform_app.memory import (
     supersede_fact,
     verify_fact,
 )
-from platform_app.models import MemoryFactEvent, Project, Tenant
+from platform_app.models import MemoryFactEvent, OutboxEvent, Project, Tenant
 from platform_app.service import ServiceError
 
 
@@ -112,3 +115,42 @@ def test_rejection_supersession_and_expiry_revoke_retrieval(db):
     )
     with pytest.raises(ServiceError, match="Both facts"):
         supersede_fact(db, original, replacement, "reviewer", "Repeated stale claim")
+
+
+def test_environment_observation_expires_once_and_projects_tombstone(db):
+    fact = propose_fact(
+        db, "tenant-a", "project-a", "repo", "a" * 40,
+        "environment_observation", "staging upload", "Upload service is offline",
+        ["test:offline"],
+    )
+    verify_fact(db, fact, "test:offline", "staging probe only", "test tool")
+    db.commit()
+    assert fact.valid_until - fact.valid_from == timedelta(hours=24)
+    assert scoped_lookup(db, "tenant-a", "project-a", "a" * 40, "upload") == [fact]
+    expiry = fact.valid_until
+    assert expire_due_facts(db, now=expiry - timedelta(seconds=1)) == 0
+    assert expire_due_facts(db, now=expiry + timedelta(seconds=1)) == 1
+    assert fact.status == "expired"
+    assert fact.valid_until <= expiry
+    assert scoped_lookup(db, "tenant-a", "project-a", "a" * 40, "upload") == []
+    assert expire_due_facts(db, now=expiry + timedelta(days=1)) == 0
+    assert db.query(OutboxEvent).filter_by(topic="memory.project").count() == 2
+    events = db.query(MemoryFactEvent).filter_by(fact_id=fact.id).all()
+    assert [event.status for event in events] == ["proposed", "verified", "expired"]
+
+
+def test_cannot_supersede_with_stale_verified_replacement(db):
+    original = propose_fact(
+        db, "tenant-a", "project-a", "repo", "a" * 40,
+        "project_fact", "upload", "Limit is 5 MB", ["test:one"],
+    )
+    replacement = propose_fact(
+        db, "tenant-a", "project-a", "repo", "a" * 40,
+        "project_fact", "upload", "Limit is 10 MB", ["test:two"],
+    )
+    verify_fact(db, original, "test:one", "unit", "tool")
+    verify_fact(db, replacement, "test:two", "unit", "tool")
+    replacement.valid_until = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(ServiceError, match="not current"):
+        supersede_fact(db, original, replacement, "reviewer", "A new test changed the limit")
+    assert original.status == "verified"

@@ -17,6 +17,14 @@ type DevEvaluation = {
     screenshot_url: string | null; media_manifest_url: string | null
   }>
 }
+type MemoryStatus = 'proposed' | 'verified' | 'rejected' | 'superseded' | 'expired' | 'deleted'
+type MemoryRecord = {
+  id: string; fact_type: string; repository_ref: string; source_revision: string
+  subject: string; statement: string; source_refs: string[]; verification_scope: string | null
+  status: MemoryStatus; created_at: string; valid_from: string | null; valid_until: string | null
+  history: { status: MemoryStatus; previous_status: MemoryStatus | null; actor: string
+    reason: string; evidence_ref: string | null; created_at: string }[]
+}
 
 const nav: { id: Page; label: string; icon: typeof FolderGit2 }[] = [
   { id: 'projects', label: 'Projects', icon: FolderGit2 },
@@ -63,6 +71,9 @@ export default function App() {
   const [memoryRevision, setMemoryRevision] = useState('')
   const [memoryQuery, setMemoryQuery] = useState('')
   const [memoryFacts, setMemoryFacts] = useState<{ id: string; subject: string; statement: string; source_refs: string[]; verification_scope: string | null }[]>([])
+  const [memoryRecordStatus, setMemoryRecordStatus] = useState<MemoryStatus | 'all'>('all')
+  const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([])
+  const [memoryRecordsMore, setMemoryRecordsMore] = useState(false)
   const [devEvaluation, setDevEvaluation] = useState<DevEvaluation | null>(null)
   const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
 
@@ -102,6 +113,24 @@ export default function App() {
     }).catch(() => { if (active) setDevEvaluation(null) })
     return () => { active = false }
   }, [page])
+
+  const loadMemoryRecords = useCallback(async (offset = 0) => {
+    if (!selectedProject) { setMemoryRecords([]); return }
+    const params = new URLSearchParams({ limit: '50', offset: String(offset) })
+    if (memoryRecordStatus !== 'all') params.set('status', memoryRecordStatus)
+    const result = await api<{ facts: MemoryRecord[]; has_more: boolean }>(
+      `/projects/${selectedProject}/memory/records?${params}`,
+    )
+    setMemoryRecords(current => offset ? [...current, ...result.facts] : result.facts)
+    setMemoryRecordsMore(result.has_more)
+  }, [selectedProject, memoryRecordStatus])
+
+  useEffect(() => {
+    if (page !== 'memory') return
+    void loadMemoryRecords().catch(cause => setError(
+      cause instanceof Error ? cause.message : 'Memory records could not be loaded',
+    ))
+  }, [page, loadMemoryRecords])
 
   useEffect(() => {
     if (!selectedRun) { setEvents([]); setPacket(null); return }
@@ -273,6 +302,25 @@ export default function App() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Memory search failed') }
   }
 
+  async function transitionMemory(event: React.FormEvent<HTMLFormElement>, fact: MemoryRecord) {
+    event.preventDefault(); setBusy(true); setError('')
+    const form = new FormData(event.currentTarget)
+    const action = String(form.get('action'))
+    try {
+      if (action === 'delete') {
+        await api(`/projects/${selectedProject}/memory/${fact.id}`, { method: 'DELETE' })
+      } else {
+        await api(`/projects/${selectedProject}/memory/${fact.id}/transition`, {
+          method: 'POST', body: jsonBody({ action, reason: String(form.get('reason') || ''),
+            replacement_fact_id: action === 'supersede' ? String(form.get('replacement_fact_id') || '') : null }),
+        })
+      }
+      setMemoryFacts([])
+      await loadMemoryRecords()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Memory transition failed') }
+    finally { setBusy(false) }
+  }
+
   function navigate(target: Page) {
     setPage(target); setMenuOpen(false); setError('')
     if (target === 'review' && !selectedRun && runs[0]) setSelectedRun(runs[0].id)
@@ -335,7 +383,51 @@ export default function App() {
         {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
         {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
-        {page === 'memory' && <section className="page-section"><div className="page-heading"><div><h1>Memory</h1><p>Verified facts at an exact repository revision. Retrieval uses the canonical fallback.</p></div></div><form className="memory-search content-panel" onSubmit={searchMemory}><label>Commit SHA<input value={memoryRevision} onChange={event => setMemoryRevision(event.target.value)} pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label><label>Search text<input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder="File, symbol or incident" /></label><button className="secondary-button" disabled={!selectedProject}>Search memory</button></form><div className="content-panel"><h2>Source-backed facts</h2>{memoryFacts.length ? memoryFacts.map(fact => <div className="memory-fact" key={fact.id}><strong>{fact.subject}</strong><p>{fact.statement}</p><small>{fact.verification_scope || 'Scope not recorded'} · {fact.source_refs.join(', ')}</small></div>) : <p className="muted">No verified facts loaded for this revision.</p>}</div></section>}
+        {page === 'memory' && <section className="page-section">
+          <div className="page-heading"><div><h1>Memory</h1><p>Inspect source-backed facts and their decisions.</p></div></div>
+          <form className="memory-search content-panel" onSubmit={searchMemory}>
+            <label>Commit SHA<input value={memoryRevision} onChange={event => setMemoryRevision(event.target.value)} pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label>
+            <label>Search text<input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder="File, symbol or incident" /></label>
+            <button className="secondary-button" disabled={!selectedProject}>Search current facts</button>
+          </form>
+          <div className="content-panel"><h2>Current facts at this revision</h2>
+            {memoryFacts.length ? memoryFacts.map(fact => <div className="memory-fact" key={fact.id}>
+              <strong>{fact.subject}</strong><p>{fact.statement}</p>
+              <small>{fact.verification_scope || 'Scope not recorded'} · {fact.source_refs.join(', ')}</small>
+            </div>) : <p className="muted">Search an exact commit to see current verified facts.</p>}
+          </div>
+          <div className="content-panel"><div className="panel-heading"><h2>Lifecycle and provenance</h2>
+            <label className="memory-filter">Status <select value={memoryRecordStatus} onChange={event => setMemoryRecordStatus(event.target.value as MemoryStatus | 'all')}>
+              {(['all', 'proposed', 'verified', 'rejected', 'superseded', 'expired', 'deleted'] as const).map(value => <option key={value} value={value}>{value}</option>)}
+            </select></label></div>
+            {memoryRecords.length ? memoryRecords.map(fact => <article className="memory-record" key={fact.id}>
+              <div className="panel-heading"><strong>{fact.subject}</strong><Status value={fact.status.toUpperCase()} /></div>
+              <p>{fact.statement}</p>
+              <small>{fact.fact_type} · commit {shortId(fact.source_revision)} · {fact.verification_scope || 'Not verified'} · {date(fact.created_at)}</small>
+              {fact.valid_until && <small>Valid until {date(fact.valid_until)}</small>}
+              <details><summary>Sources and history</summary>
+                <p className="mono">{fact.source_refs.join(', ')}</p>
+                {fact.history.map((entry, index) => <p key={`${entry.status}-${index}`} className="memory-history">
+                  <strong>{entry.status}</strong> · {entry.actor} · {date(entry.created_at)} · {entry.reason}
+                  {entry.evidence_ref && <> · {entry.evidence_ref}</>}
+                </p>)}
+              </details>
+              {(fact.status === 'proposed' || fact.status === 'verified') && <details><summary>Change status</summary>
+                <form className="memory-action" onSubmit={event => transitionMemory(event, fact)}>
+                  <label>Action<select name="action" defaultValue="reject">
+                    <option value="reject">Reject</option>
+                    {fact.status === 'verified' && <><option value="expire">Expire</option><option value="supersede">Supersede</option></>}
+                    <option value="delete">Delete</option>
+                  </select></label>
+                  <label>Reason<input name="reason" minLength={5} placeholder="Evidence or policy reason" /></label>
+                  <label>Replacement fact ID<input name="replacement_fact_id" placeholder="Required for supersession" /></label>
+                  <button className="secondary-button" disabled={busy}>Apply</button>
+                </form>
+              </details>}
+            </article>) : <p className="muted">No memory records match this project and status.</p>}
+            {memoryRecordsMore && <button className="secondary-button" onClick={() => void loadMemoryRecords(memoryRecords.length)} disabled={busy}>Load more</button>}
+          </div>
+        </section>}
         {page === 'evaluations' && <section className="page-section"><div className="page-heading"><div><h1>Evaluations</h1><p>Recorded checks for a controlled local fixture.</p></div></div>{devEvaluation ? <>
           <div className="notice"><ShieldCheck size={19} /><span>This is a {devEvaluation.qualification_scope.replaceAll('_', ' ')} with a manually supplied candidate. It does not qualify an autonomous repair or hosted sandbox.</span></div>
           <div className="content-panel"><div className="panel-heading"><h2>{devEvaluation.case_id}</h2><Status value={devEvaluation.verdict} /></div><p className="muted">Scope: {devEvaluation.qualification_scope.replaceAll('_', ' ')} · Candidate: {devEvaluation.candidate_origin}</p></div>

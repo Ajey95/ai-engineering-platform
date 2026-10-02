@@ -278,6 +278,13 @@ for each project before restarting it. The opt-in live graph gate uses
 `AIP_TEST_MEMGRAPH_URI=bolt://127.0.0.1:7687` with
 `uv run pytest -q tests/test_graph_memory.py`. This is a local projection
 path; graph high availability and hosted restore have not been qualified.
+The projection worker also expires verified `environment_observation` facts
+after 24 hours and writes a canonical transition/outbox event before removing
+them from graph retrieval. Project members can inspect paginated fact history
+at `GET /v1/projects/{project_id}/memory/records`; reviewer and maintainer
+transitions remain role gated. The Memory page shows these records and their
+sources. This does not yet validate independent corroboration or later repair
+regressions automatically.
 
 The PostgreSQL verifier creates and drops a unique test database. It checks
 duplicate admission, resume, tenant constraints, migration roundtrip and

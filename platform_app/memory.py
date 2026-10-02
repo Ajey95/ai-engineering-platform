@@ -1,6 +1,7 @@
 """Canonical, source-backed project memory with a scoped lexical fallback."""
 
 import re
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -46,10 +47,19 @@ def _event(
     db: Session, fact: MemoryFact, previous: str | None, actor: str,
     reason: str, evidence_ref: str | None = None,
 ) -> None:
+    latest = db.scalar(select(MemoryFactEvent.created_at).where(
+        MemoryFactEvent.fact_id == fact.id,
+    ).order_by(MemoryFactEvent.created_at.desc()).limit(1))
+    created_at = utcnow()
+    if latest is not None:
+        if latest.tzinfo is None:
+            latest = latest.replace(tzinfo=UTC)
+        if created_at <= latest:
+            created_at = latest + timedelta(microseconds=1)
     db.add(MemoryFactEvent(
         tenant_id=fact.tenant_id, project_id=fact.project_id, fact_id=fact.id,
         previous_status=previous, status=fact.status, actor=actor,
-        reason=reason, evidence_ref=evidence_ref,
+        reason=reason, evidence_ref=evidence_ref, created_at=created_at,
     ))
 
 
@@ -69,9 +79,12 @@ def verify_fact(
         raise ServiceError("UNSUPPORTED_MEMORY", "Verification evidence must be linked", 400)
     if not verification_scope or not reviewer_or_tool:
         raise ServiceError("UNSUPPORTED_MEMORY", "Verification scope and actor are required", 400)
+    now = utcnow()
     fact.status = "verified"
     fact.verification_scope = verification_scope
-    fact.valid_from = utcnow()
+    fact.valid_from = now
+    if fact.fact_type == "environment_observation":
+        fact.valid_until = now + timedelta(hours=24)
     _event(db, fact, "proposed", reviewer_or_tool, verification_scope, evidence_ref)
     _project(db, fact)
 
@@ -160,6 +173,16 @@ def supersede_fact(
 ) -> None:
     if fact.status != "verified" or replacement.status != "verified":
         raise ServiceError("MEMORY_STATE", "Both facts must be verified", 409)
+    now = utcnow()
+    replacement_from = replacement.valid_from
+    if replacement_from is not None and replacement_from.tzinfo is None:
+        replacement_from = replacement_from.replace(tzinfo=UTC)
+    replacement_until = replacement.valid_until
+    if replacement_until is not None and replacement_until.tzinfo is None:
+        replacement_until = replacement_until.replace(tzinfo=UTC)
+    if (replacement_from is None or replacement_from > now
+            or (replacement_until is not None and replacement_until <= now)):
+        raise ServiceError("MEMORY_STATE", "Replacement fact is not current", 409)
     if (
         fact.id == replacement.id or fact.tenant_id != replacement.tenant_id
         or fact.project_id != replacement.project_id
@@ -170,7 +193,7 @@ def supersede_fact(
     if not actor.strip() or len(reason.strip()) < 5:
         raise ServiceError("MEMORY_REASON_REQUIRED", "Supersession needs a reason", 400)
     fact.status = "superseded"
-    fact.valid_until = utcnow()
+    fact.valid_until = now
     _event(db, fact, "verified", actor, reason.strip(), replacement.id)
     _project(db, fact)
 
@@ -181,9 +204,33 @@ def expire_fact(db: Session, fact: MemoryFact, actor: str, reason: str) -> None:
     if not actor.strip() or len(reason.strip()) < 5:
         raise ServiceError("MEMORY_REASON_REQUIRED", "Expiry needs an actor and reason", 400)
     fact.status = "expired"
-    fact.valid_until = utcnow()
+    now = utcnow()
+    previous_until = fact.valid_until
+    if previous_until is not None and previous_until.tzinfo is None:
+        previous_until = previous_until.replace(tzinfo=UTC)
+    fact.valid_until = min(previous_until, now) if previous_until else now
     _event(db, fact, "verified", actor, reason.strip())
     _project(db, fact)
+
+
+def expire_due_facts(db: Session, *, now: datetime | None = None, limit: int = 100) -> int:
+    """Tombstone due observations in bounded transactions before graph projection."""
+    if not 1 <= limit <= 1000:
+        raise ValueError("Expiry batch limit must be between 1 and 1000")
+    now = now or utcnow()
+    due = db.scalars(
+        select(MemoryFact).where(
+            MemoryFact.status == "verified",
+            MemoryFact.valid_until.is_not(None),
+            MemoryFact.valid_until <= now,
+        ).order_by(MemoryFact.valid_until, MemoryFact.id)
+        .with_for_update(skip_locked=True).limit(limit)
+    ).all()
+    for fact in due:
+        expire_fact(db, fact, "memory-expiry-worker", "Validity window ended")
+    if due:
+        db.commit()
+    return len(due)
 
 
 def delete_fact(

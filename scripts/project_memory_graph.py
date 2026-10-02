@@ -13,6 +13,7 @@ from platform_app.graph_memory import (
     project_next,
     rebuild_scope,
 )
+from platform_app.memory import expire_due_facts
 
 
 def main() -> int:
@@ -35,6 +36,8 @@ def main() -> int:
     try:
         while True:
             try:
+                with SessionLocal() as db:
+                    expired = expire_due_facts(db)
                 if graph is None:
                     graph = MemgraphProjection(
                         config.memgraph_uri, config.memgraph_user, config.memgraph_password
@@ -47,9 +50,9 @@ def main() -> int:
                         print(f"Rebuilt {count} verified facts")
                         return 0
                     projected = project_next(db, graph)
-                if projected is None and not args.serve:
+                if projected is None and not args.serve and expired == 0:
                     return 0
-                if projected is None:
+                if projected is None and expired == 0:
                     time.sleep(args.poll_seconds)
             except GraphUnavailable:
                 if graph is not None:
