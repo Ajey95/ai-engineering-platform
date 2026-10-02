@@ -969,3 +969,14 @@ invalidation. The private signing key stays outside Terraform state. Terraform
 AWS provider v6.67.0 initialized, `terraform fmt -check` passed and
 `terraform validate` passed. No account, region, DNS, certificate, load balancer
 or remote state backend is chosen, so no plan/apply or live edge proof exists.
+
+2026-10-03 web publication increment: the edge module now emits a separate
+web-deployer IAM policy and routes hashed `/assets/*` through an optimized
+cache while HTML stays uncached. `platform_app/web_publish.py` validates the
+Vite output, bounds files, uploads checksum-verified immutable assets and a
+release snapshot, then conditionally swaps `index.html` last. Fake-S3 tests
+covered ordering, missing references, immutable conflict and concurrent index
+changes (3 passed). The actual Node 24.19 Vite build succeeded; local build
+inspection found one 408-byte index and three assets totalling 883,413 bytes.
+Ruff and Terraform validation passed. No AWS account or deployed web origin is
+available for a live publish/playback test.

@@ -102,6 +102,12 @@ The paid pilot release gate in PRD §27.2 has not been run.
   separate bucket policies and scoped publisher/deletion IAM policies. It has
   not been planned or applied to an AWS account and cannot establish edge
   authorization without a live deployment.
+- `platform_app/web_publish.py` and `scripts/publish_web_assets.py`: a
+  controlled static-web publisher checks the compiled index references and
+  file scope, verifies S3 checksums, writes immutable assets and a release
+  snapshot, then conditionally replaces the uncached index. Three fake-S3
+  tests passed, and the actual Vite build passed using Node 24. No real S3
+  publication, DNS switch or browser test of a deployed build exists.
 - `platform_app/recording_deletion.py` and migration `c53718b2a844`:
   a closed run can revoke one recording, remove its local raw WebM and HLS
   directory, keep transcript/screenshot, and retain a scoped deletion/audit
@@ -311,7 +317,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. Projects now list/add/disable scoped GitHub connections and show credential/verification readiness. Hosted browser sign-in has controlled OIDC code-flow tests and server-side sessions; desktop/mobile development QA passed. Full workspace/admin and live identity qualification remain absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. Projects now list/add/disable scoped GitHub connections and show credential/verification readiness. Hosted browser sign-in has controlled OIDC code-flow tests and server-side sessions; desktop/mobile development QA passed. A verified static web publisher exists but has not deployed to S3. Full workspace/admin and live identity qualification remain absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. A plugin resolver also checks exact tenant allowlist, enabled version/digest, schema and granted scopes. Hosted broker execution remains absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |

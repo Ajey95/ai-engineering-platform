@@ -416,6 +416,12 @@ distribution, bucket policies, cache behaviors and scoped workload policies.
 It has only passed local provider-schema validation. DNS, TLS, IAM role
 attachments, a selected AWS account/region and live upload/playback/deletion
 checks remain. This code path does not enable customer run admission by itself.
+The static web deployment command validates the compiled assets and publishes
+`index.html` last:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.publish_web_assets --bucket WEB_BUCKET --dist apps/web/dist
+```
 
 ## Provider model qualification
 

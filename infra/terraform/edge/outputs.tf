@@ -29,3 +29,7 @@ output "media_publisher_policy_arn" {
 output "media_deletion_policy_arn" {
   value = aws_iam_policy.media_deletion.arn
 }
+
+output "web_deployer_policy_arn" {
+  value = aws_iam_policy.web_deployer.arn
+}

@@ -110,6 +110,13 @@ resource "aws_cloudfront_distribution" "app" {
   comment         = "AI Engineering Platform application and private recordings"
   tags            = local.tags
 
+  lifecycle {
+    precondition {
+      condition     = var.api_origin_domain != var.app_domain
+      error_message = "The API origin must differ from the public CloudFront hostname."
+    }
+  }
+
   origin {
     domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
     origin_id                = "web"
@@ -282,5 +289,37 @@ data "aws_iam_policy_document" "media_deletion" {
 resource "aws_iam_policy" "media_deletion" {
   name   = "${var.name}-media-deletion"
   policy = data.aws_iam_policy_document.media_deletion.json
+  tags   = local.tags
+}
+
+data "aws_iam_policy_document" "web_deployer" {
+  statement {
+    sid     = "WriteWebBuild"
+    actions = ["s3:PutObject"]
+    resources = [
+      "${aws_s3_bucket.web.arn}/index.html",
+      "${aws_s3_bucket.web.arn}/assets/*",
+      "${aws_s3_bucket.web.arn}/releases/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["AES256"]
+    }
+  }
+  statement {
+    sid     = "VerifyWebBuild"
+    actions = ["s3:GetObject"]
+    resources = [
+      "${aws_s3_bucket.web.arn}/index.html",
+      "${aws_s3_bucket.web.arn}/assets/*",
+      "${aws_s3_bucket.web.arn}/releases/*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "web_deployer" {
+  name   = "${var.name}-web-deployer"
+  policy = data.aws_iam_policy_document.web_deployer.json
   tags   = local.tags
 }

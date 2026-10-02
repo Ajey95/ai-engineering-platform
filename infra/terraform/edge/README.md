@@ -22,7 +22,10 @@ identify an issued certificate in `us-east-1` for that hostname.
 `api_origin_domain` must already resolve to the API load balancer and present a
 valid HTTPS certificate for its own hostname. The application should use
 `AIP_PUBLIC_BASE_URL=https://<app_domain>` and set its OIDC redirect URI to that
-origin's `/v1/auth/callback` route.
+origin's `/v1/auth/callback` route. Restrict direct access to the API load
+balancer to CloudFront origin traffic, and verify the direct origin cannot be
+used to bypass the public edge controls. The API origin hostname must differ
+from the public CloudFront hostname to prevent an origin loop.
 
 Generate an RSA 2048 or stronger key pair outside Terraform. Supply only the
 public PEM path as `cloudfront_public_key_pem_path`. Keep the private key in a
@@ -34,6 +37,13 @@ separate scoped S3 and CloudFront IAM permissions. The module emits publisher
 and deletion policy ARNs for attachment to separate workload roles; the API
 signer only needs its private key and no media bucket write permission. Do not
 put the private key in Terraform variables, state, or a checked-in tfvars file.
+
+The `web_deployer_policy_arn` output is for a separate deployment role. Build
+the frontend with Node 22.12+ and run
+`python -m scripts.publish_web_assets --bucket <web_bucket> --dist apps/web/dist`.
+The publisher validates the build references, uploads immutable assets and a
+revision snapshot first, then conditionally swaps `index.html`. It has only
+been exercised with a controlled S3 client; AWS deployment remains unverified.
 
 The media bucket intentionally has no S3 object versioning. Current deletion
 uses scoped object deletion and checks the live prefix; enabling versioning
