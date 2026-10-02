@@ -49,7 +49,8 @@ def safe_url(origin: str, path: str) -> str:
 
 
 async def wait_healthy(
-    url: str, process: subprocess.Popen, deadline: float, instance_id: str
+    url: str, process: subprocess.Popen, deadline: float, instance_id: str,
+    require_instance_header: bool = True,
 ) -> None:
     async with httpx.AsyncClient(follow_redirects=False, timeout=1.0) as client:
         while time.monotonic() < deadline:
@@ -61,7 +62,10 @@ async def wait_healthy(
                 response = await client.get(url)
                 if (
                     response.status_code == 200
-                    and response.headers.get("x-aip-fixture-instance") == instance_id
+                    and (
+                        not require_instance_header
+                        or response.headers.get("x-aip-fixture-instance") == instance_id
+                    )
                 ):
                     return
             except httpx.HTTPError:
@@ -99,6 +103,9 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
     command = manifest["start_command"]
     if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
         raise ValueError("Fixture start command must be an argument list")
+    startup_timeout = manifest.get("startup_timeout_seconds", 20)
+    if not isinstance(startup_timeout, int) or not 1 <= startup_timeout <= 300:
+        raise ValueError("Startup timeout is outside policy")
     instance_id = secrets.token_hex(16)
     process = subprocess.Popen(
         command,
@@ -108,7 +115,10 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
         stderr=subprocess.STDOUT,
     )
     try:
-        await wait_healthy(manifest["health_url"], process, time.monotonic() + 20, instance_id)
+        await wait_healthy(
+            manifest["health_url"], process, time.monotonic() + startup_timeout, instance_id,
+            require_instance_header=manifest.get("require_instance_header", True),
+        )
         async with async_playwright() as playwright:
             executable = os.environ.get("AIP_BROWSER_EXECUTABLE")
             browser = await playwright.chromium.launch(

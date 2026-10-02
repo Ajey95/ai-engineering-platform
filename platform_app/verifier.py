@@ -56,14 +56,16 @@ def run_named_test(
     name: str,
     workspace: Path,
     artifacts: Path,
-    timeout_seconds: int = 120,
+    timeout_seconds: int | None = None,
 ) -> dict:
     if not name or not all(c.isalnum() or c in "-_" for c in name):
         raise ValueError("Invalid named test identifier")
     command = manifest.get("named_tests", {}).get(name)
     if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
         raise ValueError("Named test does not resolve to an approved command")
-    if timeout_seconds < 1 or timeout_seconds > 300:
+    if timeout_seconds is None:
+        timeout_seconds = manifest.get("named_test_timeouts", {}).get(name, 120)
+    if not isinstance(timeout_seconds, int) or timeout_seconds < 1 or timeout_seconds > 300:
         raise ValueError("Test timeout is outside policy")
     artifacts.mkdir(parents=True, exist_ok=True)
     tested_tree_hash = tree_hash(workspace)

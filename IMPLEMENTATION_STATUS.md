@@ -123,6 +123,14 @@ not a live provider, customer repository, AWS or GitHub qualification.
   rejection, case-insensitive collision checks and portable path rules. The
   pinned development fixture uses this extractor. Controlled archive tests
   passed; arbitrary customer archive ingestion in a hosted guest remains.
+- `platform_app/environment_manifest.py` validates a versioned Python/Node
+  application contract with bounded argument-list install/build/service/test
+  commands, unique local ports, a local browser scenario, optional PostgreSQL
+  fixture flag and explicit HTTPS destinations requiring policy approval. It
+  translates an approved manifest into the existing browser/test runners.
+  A real local HTTP service without the fixture-specific health header and a
+  named test both passed through the translated contract. Installation/build,
+  customer checkout, guest transport and network proxy enforcement remain.
 - `platform_app/token_budget.py`: call envelope and conservative liability planning.
 - `platform_app/context_bundle.py`: the controlled repair call now serializes
   a bounded ContextBundle with task constraints, permission boundaries, source
@@ -348,7 +356,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; its pinned source archive now uses a bounded regular-file extractor. Hosted hostile-repository isolation remains unverified. |
 | FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request and response isolation checks exist. Terraform defines a private no-NAT guest VPC and S3-only endpoint policy. No guest image, applied network proof, authenticated guest transport or live launch exists; hosted admission stays disabled. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
-| FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
+| FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. Hosted authorized-origin and network policy qualification remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |

@@ -1060,3 +1060,22 @@ skip, then archive edge tests passed 10 with one skip; scoped Ruff passed.
 The single skip is a Windows directory-symlink privilege limitation. Hosted
 customer source ingestion and guest execution remain unqualified.
 The full Python suite then passed 187 tests with 4 skips.
+At commit `afa427585c0d83723f10d18f80b7e7ef441731a7`, the WSL Docker
+controlled-provider verifier again passed: run
+`9b5b8ace-3a11-4fa8-9d8c-a49cccaa950a` reached REVIEW_READY/PASSED with
+10 tool effects, delivered outbox, baseline PASS/FAIL/FAIL, candidate
+PASS/PASS/PASS and both recordings READY. `autonomous_repair=false` remains.
+
+2026-10-03 general environment contract increment:
+`platform_app/environment_manifest.py` validates version 1.0 Python/Node
+runtime declarations, bounded command argument arrays and timeouts, local
+service names/ports/health paths, named tests, a typed Playwright scenario,
+optional PostgreSQL fixture, reserved environment keys and explicit HTTPS
+network destinations. `authorize_environment_destinations` requires an exact
+approved origin set; DNS/private-address enforcement must occur in the hosted
+proxy, which is still absent. The adapter translates the approved manifest to
+the current browser and named-test runners. A real local HTTP service lacking
+the fixture-only instance header passed the browser scenario and produced a
+screenshot; a generic named test passed at an exact tree hash. The full Python
+suite passed 203 tests with 4 skips and scoped Ruff passed. Install/build
+orchestration, customer checkout and hosted VM transport remain unfinished.
