@@ -1079,3 +1079,16 @@ the fixture-only instance header passed the browser scenario and produced a
 screenshot; a generic named test passed at an exact tree hash. The full Python
 suite passed 203 tests with 4 skips and scoped Ruff passed. Install/build
 orchestration, customer checkout and hosted VM transport remain unfinished.
+
+2026-10-03 repository/S3 handoff increment: `repository_archive.py` verifies
+an exact 40/64-character Git commit, streams `git archive` under a 50 MB cap,
+rejects unsafe tar entries through the bounded extractor, and excludes dirty
+or untracked checkout files. A temporary Git repository test passed after
+disabling Windows Git newline conversion in the fixture. `sandbox_transport.py`
+stages one immutable S3 source object with SHA-256 checksum, issues SigV4
+HTTPS presigned URLs for exact source/ready/go/result keys, signs conditional
+PUT and encryption headers, checks the idempotent go marker, and fills unused
+output slots with tombstones after revocation. Fake S3 and locally signed URL
+tests passed 5/5, scoped Ruff passed. No AWS bucket or VM has been exercised;
+EC2 bootstrap and metadata sealing are the next required integration.
+The full Python suite passed 208 tests with 4 skips after this increment.

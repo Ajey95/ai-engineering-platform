@@ -54,7 +54,16 @@ not a live provider, customer repository, AWS or GitHub qualification.
   rule, HTTPS egress only to the regional S3 prefix list, and an S3 endpoint
   policy scoped to sandbox input/output prefixes. Terraform provider 6.67.0
   initialized, format and validate passed. It has not been planned or applied
-  in a selected account, and no guest image or S3 capability transport exists.
+  in a selected account, and no guest image or live S3 transport exists.
+- `platform_app/repository_archive.py` packages one exact Git commit into a
+  bounded tar after verifying the resolved commit and rejecting unsafe
+  entries; a controlled test proved dirty/untracked files are excluded.
+  `platform_app/sandbox_transport.py` stages that archive in a private S3
+  object with SHA-256 checksum and no-overwrite precondition, and issues
+  short-lived exact-object SigV4 GET/conditional PUT capabilities for source,
+  ready, go and result objects. An idempotent go marker and output tombstones
+  are tested with a fake S3 client. This transport is not yet connected to an
+  EC2 guest or live bucket.
 - `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
   code as a non-root image separate from the synthetic fixture runner. The
   WSL Docker build produced local image digest
