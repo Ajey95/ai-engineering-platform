@@ -13,8 +13,8 @@ case suites; no complete benchmark has run yet.
 - FastAPI project, task, model registry, run, event, cancellation, review packet,
   usage and scoped canonical memory endpoints.
 - Project scoped GitHub connection registration with opaque secret references,
-  maintainer authorization and explicit unverified readiness. No GitHub account
-  has been connected or probed.
+  maintainer authorization and explicit unverified readiness, visible on the
+  Projects screen. No GitHub account has been connected or probed.
 - A distinct draft PR approval endpoint binds a reviewed run to its repository,
   base commit, patch and passing test receipts for 24 hours. Publication remains
   unavailable in ordinary use until a repository connection and live provider

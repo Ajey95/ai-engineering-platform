@@ -4,7 +4,7 @@ import {
   ClipboardList, Code2, FolderGit2, Gauge, Layers3, Menu, Play, Plus,
   RefreshCw, Settings2, ShieldCheck, Square, Trash2, XCircle,
 } from 'lucide-react'
-import { api, jsonBody, type CheckReceipt, type ModelEntry, type Project, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
+import { api, jsonBody, type CheckReceipt, type ModelEntry, type Project, type RepositoryConnection, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
 const MediaPlayer = lazy(() => import('./MediaPlayer'))
 
 type Page = 'projects' | 'runs' | 'review' | 'memory' | 'evaluations' | 'usage' | 'settings'
@@ -45,6 +45,7 @@ function Empty({ title, description }: { title: string; description: string }) {
 export default function App() {
   const [page, setPage] = useState<Page>('projects')
   const [projects, setProjects] = useState<Project[]>([])
+  const [repositoryConnections, setRepositoryConnections] = useState<RepositoryConnection[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [runs, setRuns] = useState<Run[]>([])
   const [models, setModels] = useState<ModelEntry[]>([])
@@ -56,6 +57,7 @@ export default function App() {
   const [tab, setTab] = useState<'evidence' | 'changes' | 'logs' | 'environment'>('evidence')
   const [dialog, setDialog] = useState<'project' | 'task' | 'run' | null>(null)
   const [busy, setBusy] = useState(false)
+  const [connectionBusy, setConnectionBusy] = useState(false)
   const [error, setError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [memoryRevision, setMemoryRevision] = useState('')
@@ -76,6 +78,16 @@ export default function App() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  useEffect(() => {
+    if (!selectedProject) { setRepositoryConnections([]); return }
+    let active = true
+    setRepositoryConnections([])
+    void api<RepositoryConnection[]>(`/projects/${selectedProject}/repository-connections`)
+      .then(rows => { if (active) setRepositoryConnections(rows) })
+      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load repositories') })
+    return () => { active = false }
+  }, [selectedProject])
 
   useEffect(() => {
     void api<{ case_id: string; base_commit: string }>('/dev/fixture-info')
@@ -139,6 +151,32 @@ export default function App() {
       setSelectedProject(created.id); setDialog(null); await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Project creation failed') }
     finally { setBusy(false) }
+  }
+
+  async function submitRepositoryConnection(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setConnectionBusy(true); setError('')
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    try {
+      await api<RepositoryConnection>(`/projects/${selectedProject}/repository-connections`, {
+        method: 'POST', body: jsonBody({
+          repository_url: String(form.get('repository_url')).trim(),
+          credential_ref: String(form.get('credential_ref') || '').trim() || null,
+        }),
+      })
+      setRepositoryConnections(await api<RepositoryConnection[]>(`/projects/${selectedProject}/repository-connections`))
+      formElement.reset()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Repository connection failed') }
+    finally { setConnectionBusy(false) }
+  }
+
+  async function disableRepositoryConnection(connectionId: string) {
+    setConnectionBusy(true); setError('')
+    try {
+      await api(`/projects/${selectedProject}/repository-connections/${connectionId}`, { method: 'DELETE' })
+      setRepositoryConnections(await api<RepositoryConnection[]>(`/projects/${selectedProject}/repository-connections`))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not disable repository') }
+    finally { setConnectionBusy(false) }
   }
 
   async function submitTask(event: React.FormEvent<HTMLFormElement>) {
@@ -269,7 +307,24 @@ export default function App() {
         {page === 'projects' && <section className="page-section">
           <div className="page-heading"><div><h1>Projects</h1><p>Connect an authorized repository and a reproducible test environment.</p></div><button className="primary-button" onClick={() => setDialog('project')}><Plus size={17} /> New project</button></div>
           {projects.length === 0 ? <Empty title="No projects yet" description="Create a project to register its repository and test URL." /> : <div className="project-list">{projects.map(item => <button key={item.id} className={`project-row ${selectedProject === item.id ? 'selected' : ''}`} onClick={() => setSelectedProject(item.id)}><FolderGit2 size={20} /><span><strong>{item.name}</strong><small>{item.repository_url || 'Repository not configured'}</small></span><span className="project-meta">{date(item.created_at)}</span></button>)}</div>}
-          {project && <div className="content-panel"><div className="panel-heading"><h2>{project.name}</h2><button className="secondary-button" onClick={() => setDialog('task')}><Plus size={16} /> New report</button></div><div className="field-grid"><div><label>Repository</label><p>{project.repository_url || 'Not configured'}</p></div><div><label>Test URL</label><p>{project.test_url || 'Not configured'}</p></div></div><h3>Recent reports</h3>{scopedTasks.length ? scopedTasks.slice(0, 5).map(item => <div className="list-row" key={item.id}><span>{item.report}</span><small>{date(item.created_at)}</small></div>) : <p className="muted">No reports submitted.</p>}</div>}
+          {project && <>
+            <div className="content-panel"><div className="panel-heading"><h2>{project.name}</h2><button className="secondary-button" onClick={() => setDialog('task')}><Plus size={16} /> New report</button></div><div className="field-grid"><div><label>Repository</label><p>{project.repository_url || 'Not configured'}</p></div><div><label>Test URL</label><p>{project.test_url || 'Not configured'}</p></div></div><h3>Recent reports</h3>{scopedTasks.length ? scopedTasks.slice(0, 5).map(item => <div className="list-row" key={item.id}><span>{item.report}</span><small>{date(item.created_at)}</small></div>) : <p className="muted">No reports submitted.</p>}</div>
+            <div className="content-panel repository-panel">
+              <div className="panel-heading"><div><h2>Repository connections</h2><p className="muted">Choose the repository for future runs.</p></div></div>
+              {repositoryConnections.length ? repositoryConnections.map(connection =>
+                <div className="list-row repository-row" key={connection.id}>
+                  <span><strong>{connection.repository_ref}</strong><small>{connection.readiness === 'credential_required' ? 'Credential needed' : connection.readiness === 'verification_required' ? 'Check required' : connection.readiness === 'ready' ? 'Ready' : 'Disabled'}</small></span>
+                  {connection.status !== 'disabled' && <button type="button" className="secondary-button" disabled={connectionBusy} onClick={() => void disableRepositoryConnection(connection.id)}>Disable</button>}
+                </div>
+              ) : <p className="muted">No repository connected.</p>}
+              <form className="repository-form" onSubmit={submitRepositoryConnection} key={project.id}>
+                <label>GitHub repository URL<input name="repository_url" type="url" required placeholder="https://github.com/team/repo" defaultValue={project.repository_url?.startsWith('https://github.com/') ? project.repository_url : ''} /></label>
+                <label>Secret reference <span className="optional">Optional</span><input name="credential_ref" placeholder="secret://env/AIP_GITHUB_TOKEN" autoComplete="off" /></label>
+                <button className="secondary-button" type="submit" disabled={connectionBusy}>Add repository</button>
+              </form>
+              <p className="muted repository-note">Add a secret reference when one is available. A connection needs a successful check before publication.</p>
+            </div>
+          </>}
         </section>}
         {page === 'runs' && <section className="page-section">
           <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !runnableModels.length} title={!runnableModels.length ? 'No executable model is available' : undefined}><Play size={16} /> Start run</button></div>

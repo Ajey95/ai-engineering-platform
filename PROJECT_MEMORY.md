@@ -667,3 +667,14 @@ normal retry and a server error after PR creation; dispatcher tests covered
 uncertain outcome and immutable request arguments. No live GitHub account was
 used, no connection was marked ready, and no real PR exists. Python suite:
 117 passed, 3 skipped; Ruff and diff checks passed.
+
+2026-10-02 repository connection UI: Projects now fetches scoped connection
+records, adds a GitHub URL with an optional opaque secret reference, disables
+records, and shows credential/verification readiness without displaying secret
+references. `apps/web` TypeScript/Vite build passed (Node 21 emits an upstream
+version warning despite successful build). Playwright Chromium checked the
+Projects -> Add repository -> Credential needed flow at 1440x900 with the
+repository API intercepted, so no placeholder connection was persisted.
+No page errors were observed. A settled 390x844 mobile screenshot showed the
+form and project content without clipping; screenshots are under ignored
+`artifacts/ui-qa/`. Browser plugin was unavailable; local Playwright was used.

@@ -7,6 +7,17 @@ export interface Project {
   fixture_case_id: string | null
 }
 
+export interface RepositoryConnection {
+  id: string
+  project_id: string
+  provider: 'github'
+  repository_ref: string
+  status: 'unverified' | 'ready' | 'disabled'
+  readiness: 'credential_required' | 'verification_required' | 'ready' | 'disabled'
+  created_at: string
+  checked_at: string | null
+}
+
 export interface Task {
   id: string
   project_id: string
