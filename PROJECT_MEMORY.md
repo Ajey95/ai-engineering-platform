@@ -1120,3 +1120,19 @@ project metadata. Packer 1.15.4 `init`, `fmt -check` and `validate` passed
 using a local plugin cache on D: after C: lacked space; `bash -n` and seven
 focused Python tests passed. No AMI build or EC2 guest run occurred because
 the region, account, source AMI and build subnet are not selected.
+
+2026-10-03 trusted source and hosted baseline orchestration increment:
+`repository_fetch.py` resolves a run-pinned GitHub identity through a ready
+tenant/project connection and environment secret reference, uses Git process
+environment for Basic authorization, verifies exact `FETCH_HEAD`, and archives
+only committed files; a local Git integration test excludes dirty/untracked
+files. `hosted_baseline.py` joins the pinned source, manifest, S3 stage,
+encrypted bootstrap, replay-safe EC2 launch, metadata seal and scoped result
+read. Migration `d4c05e73b28a` stores a one-time guest result receipt without
+setting a repair verdict; local PostgreSQL upgraded with no drift.
+`sandbox_evidence.py` moves artifact tree traversal into uid 10001 and lets
+root read only one bounded, no-follow evidence tar descriptor. Fake EC2/S3/DB
+replay and source-scope tests passed. No deployed hosted worker, live GitHub
+fetch, AMI build, provider repair, or real AWS end-to-end proof exists.
+The full Python suite passed 229 tests with 4 skips; scoped Ruff and local
+Alembic drift checks passed after the migration.

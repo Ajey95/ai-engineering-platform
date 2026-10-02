@@ -4,8 +4,8 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 222 tests with 4 skips after the evidence-upload addition;
-its focused transport/bootstrap/broker suite passed 19 tests.
+Python suite passed 229 tests with 4 skips after the hosted baseline and
+repository fetch additions; scoped lint and local Alembic drift check passed.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider
@@ -96,6 +96,20 @@ not a live provider, customer repository, AWS or GitHub qualification.
   or disable them; readers can list readiness without seeing the secret reference.
   Every new connection stays unverified until an authenticated integration probe
   exists. No customer checkout or publication is enabled by this record alone.
+- `platform_app/repository_fetch.py` resolves a run-pinned GitHub identity
+  only through a ready, tenant/project scoped connection and environment secret
+  reference. It fetches the exact commit in a trusted temporary Git directory,
+  passes authorization through the Git process environment, verifies
+  `FETCH_HEAD`, and archives committed bytes only. A local Git fixture
+  confirmed dirty/untracked files are excluded. No private GitHub repository
+  has been fetched with a live credential.
+- `platform_app/hosted_baseline.py`, migration `d4c05e73b28a` and
+  `platform_app/sandbox_evidence.py` join the pinned source, approved manifest,
+  S3 stage, encrypted bootstrap, idempotent EC2 launch, ready/seal/go handshake
+  and scoped evidence/result receipt. The guest packages output as uid 10001;
+  root reads one bounded no-follow file. PostgreSQL records one baseline
+  receipt without changing the repair verdict. A controlled fake EC2/S3/DB
+  replay test passed. This is not a deployed worker or autonomous repair.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
@@ -383,7 +397,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; its pinned source archive now uses a bounded regular-file extractor. Hosted hostile-repository isolation remains unverified. |
-| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy and private artifact bucket. Signed per-object guest transport, bounded evidence upload and exact-result verification have controlled tests. No guest AMI, applied network proof or live launch exists; hosted admission stays disabled. |
+| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy and private artifact bucket. A Packer AMI template validates, and a replay-safe baseline handoff stages signed transport with bounded evidence upload and exact-result verification in controlled tests. No AMI build, applied network proof or live launch exists; hosted admission stays disabled. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. Hosted authorized-origin and network policy qualification remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
@@ -396,7 +410,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Twenty-two Alembic revisions applied through `a2c9e7d54031` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Twenty-three Alembic revisions applied through `d4c05e73b28a` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

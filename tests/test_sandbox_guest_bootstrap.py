@@ -17,6 +17,7 @@ import platform_app.sandbox_guest_bootstrap as guest_bootstrap
 from platform_app.environment_manifest import EnvironmentManifest
 from platform_app.repository_archive import SourceArchive
 from platform_app.sandbox_bundle import build_guest_bundle
+from platform_app.sandbox_evidence import package_guest_evidence
 from platform_app.sandbox_guest_bootstrap import (
     GuestBootstrapConfig,
     GuestBootstrapError,
@@ -127,6 +128,7 @@ def test_root_supervisor_waits_for_go_and_seal_before_guest_process(tmp_path, mo
         assert 60 <= kwargs["timeout"] <= 1800
         artifacts = Path(command[command.index("--artifacts") + 1])
         (artifacts / "result.json").write_text('{"status":"BASELINE_RECORDED"}')
+        package_guest_evidence(artifacts)
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(guest_bootstrap, "os", SimpleNamespace(

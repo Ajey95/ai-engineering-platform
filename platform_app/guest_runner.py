@@ -14,6 +14,7 @@ from pathlib import Path
 
 from platform_app.browser_runner import run_scenario
 from platform_app.environment_manifest import Command, EnvironmentManifest
+from platform_app.sandbox_evidence import package_guest_evidence
 from platform_app.verifier import run_named_test, tree_hash
 
 
@@ -141,7 +142,7 @@ def main() -> int:
         parser.error("Guest runner must execute as an unprivileged Linux user")
     import resource
 
-    resource.setrlimit(resource.RLIMIT_FSIZE, (8_000_000, 8_000_000))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (20_000_000, 20_000_000))
     resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
     manifest = EnvironmentManifest.model_validate_json(args.manifest.read_bytes())
     result = run_environment(
@@ -150,6 +151,7 @@ def main() -> int:
     (args.artifacts / "result.json").write_text(
         json.dumps(result, sort_keys=True), encoding="utf-8"
     )
+    package_guest_evidence(args.artifacts)
     return 0 if result["status"] == "BASELINE_RECORDED" else 2
 
 

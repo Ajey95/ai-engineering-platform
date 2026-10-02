@@ -1,15 +1,22 @@
+import hashlib
 import io
 import json
+import tarfile
 from datetime import timedelta
 
+import boto3
 import pytest
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base, utcnow
-from platform_app.models import OutboxEvent, Project, Run, SandboxLease, Task, Tenant
+from platform_app.environment_manifest import EnvironmentManifest
+from platform_app.hosted_baseline import seal_and_collect_baseline, stage_and_launch_baseline
+from platform_app.models import OutboxEvent, Project, Run, RunEvent, SandboxLease, Task, Tenant
+from platform_app.repository_archive import SourceArchive
 from platform_app.run_ledger import claim_run, transition
 from platform_app.sandbox_bootstrap_crypto import (
     SandboxBootstrapError,
@@ -101,6 +108,14 @@ class PendingSealEC2(FakeEC2):
 class ReadyS3:
     def __init__(self):
         self.objects = {}
+        self.signer = boto3.client(
+            "s3", region_name="us-east-1", aws_access_key_id="fixture-key",
+            aws_secret_access_key="fixture-secret",
+            config=Config(signature_version="s3v4"),
+        )
+
+    def generate_presigned_url(self, *args, **kwargs):
+        return self.signer.generate_presigned_url(*args, **kwargs)
 
     def get_object(self, **kwargs):
         data = self.objects.get(kwargs["Key"])
@@ -288,6 +303,9 @@ def test_sandbox_spec_rejects_public_or_unbounded_inputs():
                     "sg-12345678", "/dev/xvda", ttl_seconds=3600)
     with pytest.raises(ValueError):
         SandboxSpec("ami-12345678", "m6i.large", "subnet-12345678",
+                    "sg-12345678", "/dev/xvda", ttl_seconds=60)
+    with pytest.raises(ValueError):
+        SandboxSpec("ami-12345678", "m6i.large", "subnet-12345678",
                     "sg-12345678", "/dev/xvda", disk_gib=101)
 
 
@@ -381,3 +399,79 @@ def test_wrong_ready_marker_revokes_vm_and_queues_cleanup(scoped_db):
     assert db.scalar(select(OutboxEvent).where(
         OutboxEvent.topic == "sandbox.cleanup"
     )) is not None
+
+
+def test_hosted_baseline_handoff_is_replay_safe_and_records_guest_evidence(scoped_db):
+    db, run, fence = scoped_db
+    manifest = EnvironmentManifest.model_validate({
+        "schema_version": "1.0", "language": "python", "python_version": "3.12",
+        "services": [{
+            "name": "app", "port": 8001, "health_path": "/health",
+            "command": {"argv": ["python", "app.py"], "timeout_seconds": 30},
+        }],
+        "named_tests": {"baseline": {
+            "argv": ["python", "-c", "print('ok')"], "timeout_seconds": 30,
+        }},
+        "browser_scenario": {"steps": [{"action": "goto", "path": "/"}]},
+    })
+    run.config_snapshot = {"environment_manifest": manifest.model_dump(mode="json")}
+    db.commit()
+    archive_file = io.BytesIO()
+    with tarfile.open(fileobj=archive_file, mode="w") as archive:
+        data = b"print('app')\n"
+        entry = tarfile.TarInfo("app.py")
+        entry.size = len(data)
+        archive.addfile(entry, io.BytesIO(data))
+    archive_bytes = archive_file.getvalue()
+    source = SourceArchive(
+        run.base_commit, hashlib.sha256(archive_bytes).hexdigest(), archive_bytes, 1
+    )
+    ec2, s3 = FakeEC2(), ReadyS3()
+    lease = stage_and_launch_baseline(
+        db, run.id, "worker-a", fence, source, _spec(), ec2, s3,
+        "private-bucket", _ENVELOPE_KEY,
+    )
+    assert lease.state == "bootstrapping" and len(ec2.calls) == 1
+    assert stage_and_launch_baseline(
+        db, run.id, "worker-a", fence, source, _spec(), ec2, s3,
+        "private-bucket", _ENVELOPE_KEY,
+    ).id == lease.id
+    assert len(ec2.calls) == 1
+    keys = SandboxObjectKeys.scoped(
+        lease.tenant_id, lease.project_id, lease.run_id, lease.id
+    )
+    s3.objects[keys.ready] = json.dumps({
+        "version": 1, "lease_id": lease.id, "fence": fence,
+        "source_sha256": lease.source_sha256,
+    }).encode()
+    assert seal_and_collect_baseline(
+        db, lease.id, "worker-a", fence, ec2, s3, "private-bucket"
+    ) is None
+    assert keys.go in s3.objects and lease.state == "provisioned"
+    evidence = b"guest output"
+    guest_result = {
+        "version": 1, "lease_id": lease.id, "fence": fence,
+        "source_sha256": lease.source_sha256,
+        "guest_exit_code": 0, "baseline": {"status": "BASELINE_RECORDED"},
+        "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
+        "evidence_bytes": len(evidence),
+    }
+    s3.objects[keys.evidence] = evidence
+    s3.objects[keys.result] = json.dumps(guest_result).encode()
+    result = seal_and_collect_baseline(
+        db, lease.id, "worker-a", fence, ec2, s3, "private-bucket"
+    )
+    assert result.evidence_archive == evidence
+    assert lease.result_summary == guest_result
+    assert lease.result_sha256 is not None
+    assert seal_and_collect_baseline(
+        db, lease.id, "worker-a", fence, ec2, s3, "private-bucket"
+    ).result == guest_result
+    assert len(db.scalars(select(RunEvent).where(
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "sandbox.baseline_recorded",
+    )).all()) == 1
+    events = db.scalars(select(OutboxEvent).where(
+        OutboxEvent.topic == "sandbox.cleanup"
+    )).all()
+    assert events == []

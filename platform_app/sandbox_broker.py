@@ -48,7 +48,7 @@ class SandboxSpec:
             or self.instance_type not in _INSTANCE_TYPES
             or self.root_device_name not in {"/dev/xvda", "/dev/sda1"}
             or not 8 <= self.disk_gib <= 100
-            or not 60 <= self.ttl_seconds <= 1800
+            or not 600 <= self.ttl_seconds <= 1800
         ):
             raise ValueError("Sandbox launch spec is outside the reviewed bounds")
 

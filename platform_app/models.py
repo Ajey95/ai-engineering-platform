@@ -351,6 +351,11 @@ class SandboxLease(Base):
     bootstrap_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_summary: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    result_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

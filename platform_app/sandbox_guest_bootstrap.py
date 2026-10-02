@@ -5,12 +5,10 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
-import io
 import json
 import os
 import re
 import subprocess
-import tarfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,6 +19,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from platform_app.environment_manifest import EnvironmentManifest
 from platform_app.safe_archive import UnsafeArchive, extract_regular_tar
+from platform_app.sandbox_evidence import read_guest_evidence
 from platform_app.sandbox_transport import GuestUrls
 
 
@@ -251,36 +250,6 @@ def _capability_expiry(url: str) -> int:
     return int(signed_at.replace(tzinfo=timezone.utc).timestamp()) + ttl
 
 
-def _evidence_archive(artifacts: Path) -> bytes:
-    """Package only bounded regular guest outputs for the broker to verify."""
-    output = io.BytesIO()
-    total = 0
-    count = 0
-    with tarfile.open(fileobj=output, mode="w") as archive:
-        for path in sorted(artifacts.rglob("*")):
-            if path.is_symlink():
-                raise GuestBootstrapError("Guest evidence contains a link")
-            if path.is_dir():
-                continue
-            if not path.is_file():
-                raise GuestBootstrapError("Guest evidence contains a special file")
-            count += 1
-            size = path.stat().st_size
-            total += size
-            if count > 1000 or size > 20_000_000 or total > 45_000_000:
-                raise GuestBootstrapError("Guest evidence exceeds policy")
-            entry = tarfile.TarInfo(path.relative_to(artifacts).as_posix())
-            entry.size = size
-            entry.mode = 0o644
-            entry.mtime = 0
-            with path.open("rb") as stream:
-                archive.addfile(entry, stream)
-    raw = output.getvalue()
-    if len(raw) > 50_000_000:
-        raise GuestBootstrapError("Guest evidence archive exceeds policy")
-    return raw
-
-
 def run_guest_bootstrap(config: GuestBootstrapConfig, root: Path) -> dict:
     """Run only on a fresh hardened AMI as root, before tenant code starts."""
     if os.name != "posix" or os.geteuid() != 0:
@@ -345,7 +314,7 @@ def run_guest_bootstrap(config: GuestBootstrapConfig, root: Path) -> dict:
         "source_sha256": config.bundle_sha256,
         "guest_exit_code": exit_code, "baseline": guest_result,
     }
-    evidence = _evidence_archive(artifacts)
+    evidence = read_guest_evidence(artifacts)
     output["evidence_sha256"] = hashlib.sha256(evidence).hexdigest()
     output["evidence_bytes"] = len(evidence)
     _put(
