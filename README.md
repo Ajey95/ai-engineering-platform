@@ -17,7 +17,10 @@ case suites; no complete benchmark has run yet.
   has been connected or probed.
 - A distinct draft PR approval endpoint binds a reviewed run to its repository,
   base commit, patch and passing test receipts for 24 hours. Publication remains
-  disabled until the GitHub integration and credential probe are implemented.
+  unavailable in ordinary use until a repository connection and live provider
+  are qualified. The controlled GitHub REST adapter and operator command can
+  create a draft PR only after that approval and a process secret are present;
+  they have not been exercised against a live GitHub account.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
 - Tenant daily/monthly inference caps and concurrent run admission limits,

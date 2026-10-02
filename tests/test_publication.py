@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from platform_app import api, auth
 from platform_app.config import Settings
 from platform_app.db import Base
+from platform_app.github_publication import DraftPR, GitHubPublicationError
 from platform_app.models import (
     Project,
     ProjectMembership,
@@ -21,7 +22,8 @@ from platform_app.models import (
     ToolAction,
 )
 from platform_app.publication import approve_draft_pr, verify_draft_pr_approval
-from platform_app.service import ServiceError
+from platform_app.publication_dispatch import publish_approved_run
+from platform_app.service import ServiceError, canonical_hash
 
 
 def _db(tmp_path):
@@ -48,6 +50,7 @@ def _seed(db: Session, *, provider_mode: str = "native_api") -> Run:
         base_commit="b" * 40, model_entry_id="model", state="COMPLETED",
         verdict="PASSED", config_snapshot={
             "policy_version": "1.0", "repository_connection_id": connection.id,
+            "reproduction": {"fixture_case_id": "form-submit-001"},
         },
     )
     db.add_all([tenant, project, task, connection, run])
@@ -61,13 +64,22 @@ def _seed(db: Session, *, provider_mode: str = "native_api") -> Run:
             {
                 "status": "COMPLETED", "provider_mode": provider_mode,
                 "patch_sha256": "c" * 64, "changed_files": ["server.py"],
+                "candidate_tree_sha256": "d" * 64,
             }
-            if step == "candidate_patch" else {"status": "PASSED", "tree_sha256": "d" * 64}
+            if step == "candidate_patch" else {
+                "status": "PASSED", "tested_tree_sha256": "d" * 64,
+            }
+        )
+        argument_hash = (
+            canonical_hash({
+                "fixture_case_id": "form-submit-001", "base_commit": run.base_commit,
+                "workspace_tree_sha256": "d" * 64, "step": step,
+            }) if step != "candidate_patch" else "e" * 64
         )
         db.add(ToolAction(
             tenant_id=tenant.id, run_id=run.id, step_id=step,
             logical_action="fixture.patch" if step == "candidate_patch" else "fixture.check",
-            effect_key=step, arguments_hash="e" * 64, policy_result="allowed",
+            effect_key=step, arguments_hash=argument_hash, policy_result="allowed",
             status="COMPLETED", receipt=receipt,
         ))
     db.commit()
@@ -172,3 +184,52 @@ def test_publication_approval_api_requires_maintainer_and_revokes(tmp_path, monk
     finally:
         api.app.dependency_overrides.clear()
         engine.dispose()
+
+
+def test_publication_intent_survives_uncertain_write_and_reconciles(tmp_path):
+    engine = _db(tmp_path)
+    with Session(engine) as db:
+        run = _seed(db)
+        approval = approve_draft_pr(
+            db, tenant_id=run.tenant_id, run_id=run.id,
+            connection_id="connection", base_branch="main", actor="maintainer",
+        )
+        db.commit()
+        approval_id = approval.id
+
+    class Publisher:
+        calls = 0
+
+        def publish(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise GitHubPublicationError("GitHub request outcome is uncertain")
+            return DraftPR(7, "https://github.com/team/repo/pull/7", "aip/run1", "a" * 40, True)
+
+    def session():
+        return Session(engine)
+
+    publisher = Publisher()
+    with pytest.raises(GitHubPublicationError, match="uncertain"):
+        publish_approved_run(
+            session, approval_id, tmp_path, publisher, title="Fix form", body="Proof"
+        )
+    with Session(engine) as db:
+        action = db.query(ToolAction).filter(ToolAction.step_id == "draft_pr_publication").one()
+        assert action.status == "INTENDED"
+    with pytest.raises(ServiceError, match="Publication request changed"):
+        publish_approved_run(
+            session, approval_id, tmp_path, publisher, title="Changed title", body="Proof"
+        )
+    assert publisher.calls == 1
+    result = publish_approved_run(
+        session, approval_id, tmp_path, publisher, title="Fix form", body="Proof"
+    )
+    assert result.url == "https://github.com/team/repo/pull/7"
+    again = publish_approved_run(
+        session, approval_id, tmp_path, publisher, title="Fix form", body="Proof"
+    )
+    assert again.reconciled is True and publisher.calls == 2
+    with Session(engine) as db:
+        assert db.get(PublicationApproval, approval_id).status == "consumed"
+    engine.dispose()

@@ -653,3 +653,17 @@ service tests passed; full Python suite 113 passed, 3 skipped; Ruff passed.
 PostgreSQL upgraded to `cbd675bb9a11`, Alembic detected no drift, and the
 disposable migration/race verifier passed. No actual GitHub push or PR creation
 has occurred.
+
+2026-10-02 controlled GitHub publication adapter: tightened approval binding
+so named/browser/oracle candidate effects match the patch's candidate tree.
+Added `platform_app/github_publication.py`, `publication_dispatch.py` and the
+operator command `scripts/publish_approved_draft.py`. The adapter validates
+workspace tree and patch hash, confirms the approved base commit, builds blobs,
+tree and commit through GitHub REST, creates a deterministic run branch and a
+draft PR with a unique marker, and reconciles branch/PR on retry. A durable
+ToolAction intent is committed before the HTTP write; a receipt and consumed
+approval are committed after a matching PR. Controlled HTTP tests covered
+normal retry and a server error after PR creation; dispatcher tests covered
+uncertain outcome and immutable request arguments. No live GitHub account was
+used, no connection was marked ready, and no real PR exists. Python suite:
+117 passed, 3 skipped; Ruff and diff checks passed.

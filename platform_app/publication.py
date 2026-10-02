@@ -43,14 +43,28 @@ def _binding(db: Session, run: Run) -> tuple[str, str]:
             raise ServiceError("PUBLICATION_NOT_READY", "Verification evidence is incomplete", 409)
     patch = by_step["candidate_patch"].receipt
     patch_hash = patch.get("patch_sha256")
+    candidate_tree = patch.get("candidate_tree_sha256")
+    case_id = (run.config_snapshot.get("reproduction") or {}).get("fixture_case_id")
     if (
         patch.get("status") != "COMPLETED" or patch.get("provider_mode") != "native_api"
         or not isinstance(patch_hash, str) or not DIGEST.fullmatch(patch_hash)
+        or not isinstance(candidate_tree, str) or not DIGEST.fullmatch(candidate_tree)
+        or not isinstance(case_id, str) or not case_id
         or not patch.get("changed_files")
     ):
         raise ServiceError("PUBLICATION_NOT_READY", "Verified live patch is required", 409)
     for step in REQUIRED_STEPS[1:]:
-        if by_step[step].receipt.get("status") != "PASSED":
+        action = by_step[step]
+        expected_arguments = canonical_hash({
+            "fixture_case_id": case_id, "base_commit": run.base_commit,
+            "workspace_tree_sha256": candidate_tree, "step": step,
+        })
+        if action.arguments_hash != expected_arguments or (
+            step != "candidate_browser"
+            and action.receipt.get("tested_tree_sha256") != candidate_tree
+        ):
+            raise ServiceError("PUBLICATION_NOT_READY", "Tests do not match the patch tree", 409)
+        if action.receipt.get("status") != "PASSED":
             raise ServiceError("PUBLICATION_NOT_READY", "Candidate checks did not pass", 409)
     evidence = {
         step: {

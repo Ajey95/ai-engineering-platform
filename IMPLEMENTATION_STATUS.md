@@ -102,7 +102,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 113 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 117 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -273,7 +273,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis log downloads. An authorized no-store JSON download exports these packet fields; alternatives and a self-contained evidence bundle remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
-| FR-REP-04 | Partial | Review acceptance/rejection is separate from a new explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and exact candidate test receipts; it is auditable, revocable and rechecked before use. No GitHub push, draft PR or external reconciliation exists. |
+| FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. A GitHub REST publisher writes a deterministic branch/draft PR through a durable intent, reconciles uncertain retries and records a receipt; controlled HTTP tests passed. No live GitHub account, credential readiness probe, general repository workflow or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; object store absent. |
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
