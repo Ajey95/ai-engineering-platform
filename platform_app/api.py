@@ -42,11 +42,17 @@ from platform_app.browser_auth import (
     finish_login,
     start_login,
 )
+from platform_app.code_index import code_files_for_revision
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
 from platform_app.export_quota import reserve_export
-from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
+from platform_app.graph_memory import (
+    GraphUnavailable,
+    MemgraphProjection,
+    connected_code_lookup,
+    connected_lookup,
+)
 from platform_app.hosted_evidence import verified_guest_evidence
 from platform_app.hosted_reporting import hosted_review_packet, verified_hosted_artifact
 from platform_app.memory import (
@@ -1860,6 +1866,55 @@ def get_memory(
             }
             for fact in facts
         ],
+    }
+
+
+@app.get("/v1/projects/{project_id}/code-index")
+def get_code_index(
+    project_id: str,
+    source_revision: str,
+    query: str,
+    limit: int = 20,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    project = require_project_role(db, identity, project_id)
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source_revision):
+        raise ServiceError("CODE_QUERY_INVALID", "Pinned revision is invalid", 400)
+    if not project.repository_url:
+        return {"retrieval_mode": "not_indexed", "files": [], "truncated": False}
+    repository_ref = github_repository_ref(project.repository_url)
+    graph = None
+    try:
+        if settings().memgraph_uri:
+            graph = MemgraphProjection(
+                settings().memgraph_uri,
+                settings().memgraph_user,
+                settings().memgraph_password,
+            )
+        mode, snapshot, files = connected_code_lookup(
+            db, graph, identity[0], project_id, repository_ref,
+            source_revision, query, limit,
+        )
+    except GraphUnavailable:
+        snapshot, files = code_files_for_revision(
+            db, identity[0], project_id, repository_ref,
+            source_revision, query, limit,
+        )
+        mode = "canonical_degraded" if snapshot else "not_indexed"
+    finally:
+        if graph is not None:
+            graph.close()
+    return {
+        "retrieval_mode": mode,
+        "source_revision": source_revision,
+        "repository_ref": repository_ref,
+        "truncated": snapshot.truncated if snapshot else False,
+        "files": [{
+            "path": file.path, "sha256": file.sha256,
+            "language": file.language, "symbols": file.symbols,
+            "imports": file.imports,
+        } for file in files],
     }
 
 

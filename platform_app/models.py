@@ -261,6 +261,56 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class CodeIndexSnapshot(Base):
+    __tablename__ = "code_index_snapshots"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "project_id", "id", name="uq_code_index_scope_id"),
+        UniqueConstraint(
+            "tenant_id", "project_id", "repository_ref", "commit",
+            name="uq_code_index_revision",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"],
+            ["projects.tenant_id", "projects.id"],
+            name="fk_code_index_project_scope",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    repository_ref: Mapped[str] = mapped_column(String(300))
+    commit: Mapped[str] = mapped_column(String(64))
+    archive_sha256: Mapped[str] = mapped_column(String(64))
+    total_files: Mapped[int] = mapped_column(Integer)
+    indexed_files: Mapped[int] = mapped_column(Integer)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CodeFileVersion(Base):
+    __tablename__ = "code_file_versions"
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "path", name="uq_code_file_snapshot_path"),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "snapshot_id"],
+            ["code_index_snapshots.tenant_id", "code_index_snapshots.project_id",
+             "code_index_snapshots.id"],
+            name="fk_code_file_snapshot_scope",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(36), index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    path: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str] = mapped_column(String(64))
+    language: Mapped[str] = mapped_column(String(20))
+    symbols: Mapped[list] = mapped_column(JsonType, default=list)
+    imports: Mapped[list] = mapped_column(JsonType, default=list)
+
+
 class RecordingDeletion(Base):
     __tablename__ = "recording_deletions"
     __table_args__ = (

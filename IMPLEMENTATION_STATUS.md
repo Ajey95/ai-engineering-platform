@@ -4,9 +4,9 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 242 tests with 4 skips after the hosted media job path;
+Python suite passed 243 tests with 4 skips after the revision-pinned code index;
 scoped lint and the web production build passed. Local
-PostgreSQL is at migration `e71d5a4b8c20` with no Alembic drift.
+PostgreSQL is at migration `5b8f3d4e1a70` with no Alembic drift.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider
@@ -152,6 +152,14 @@ not a live provider, customer repository, AWS or GitHub qualification.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
+- `platform_app/code_index.py`, `graph_memory.py` and migration
+  `5b8f3d4e1a70` store bounded file hashes, Python symbols/imports and lexical
+  JavaScript/TypeScript symbols/imports from an exact authorized Git archive.
+  Canonical rows and graph projection carry tenant, project, repository and
+  commit scope. Hosted source fetch indexes before VM work; the API exposes
+  revision-pinned lookup and canonical fallback. Controlled two-revision,
+  dependency, outbox and tenant-isolation tests passed. Live graph and customer
+  repository scale qualification remain.
 - `platform_app/queue_dispatch.py`, `queue_consumer.py`, migration
   `b6714d7c2a09` and `infra/terraform/queues` add a separate SQS transport
   receipt for run outbox events, encrypted standard queues/DLQs, bounded
@@ -426,15 +434,15 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
 | FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items plus up to five current verified project memory facts selected by report terms at the pinned revision. General evidence selection, full history and live token accounting remain. |
-| FR-CTX-02 | Partial | An isolated pinned-snapshot navigator now bounds file listing, UTF-8 text search, Python symbol lookup and excerpt reads with commit, SHA-256 and trust provenance. The fixture worker reads its source through this scoped path; the hidden oracle is outside the scope. General language symbol indexing and tenant-scoped graph traversal remain absent. |
+| FR-CTX-02 | Partial | A pinned-snapshot navigator bounds file listing, text search, Python symbols and excerpt reads with commit, hash and trust provenance. A new hosted index records bounded Python and lexical JS/TS symbols and imports per commit. Tenant-scoped graph traversal and agent context selection remain absent. |
 | FR-CTX-03 | Partial | Fixture model input compacts at 80% of its conservative byte budget or before overflow. It preserves immutable constraints, tool call/result IDs, source commit and user decisions; writes content-addressed source/summary artifacts and one durable event. Scoped retrieval verifies both digests and decision equivalence. Controlled provider integration replays the same completed call without a second request. General transcript/session compaction, authorized agent retrieval and provider tool-cycle continuation remain absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Partial | Synthetic named-test and oracle output streams directly to complete artifact files with byte count and SHA-256 receipts; model context carries bounded, verified head/tail excerpts and references paired to completed tool action IDs. General DOM snapshot storage and provider tool-cycle compaction remain. |
 | FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Definitive HTTP rejections release liability with a persisted receipt, while timeouts remain unresolved and cannot be replayed blindly. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Verified/deleted canonical facts now project idempotently to Memgraph from PostgreSQL outbox events. API graph lookup rechecks canonical tenant/project/revision/status and falls back to PostgreSQL on outage, lag or mismatch. A scope rebuild command exists; hosted graph recovery/load qualification remains. |
-| FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
+| FR-MEM-02 | Partial | Canonical file hashes, symbols and imports plus FileVersion/SymbolVersion/DEPENDS_ON graph projection are scoped to repository and exact commit, with outbox replay and canonical fallback. Controlled two-revision test passed; live Memgraph code roundtrip and graph capacity remain. |
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
-| FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
+| FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph and revision-pinned code symbol/path lookup recheck canonical rows. Bounded multi-hop traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; its pinned source archive now uses a bounded regular-file extractor. Hosted hostile-repository isolation remains unverified. |
 | FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy, private artifact bucket, and a separate trusted ECS VPC. A Packer AMI template validates; the hosted coordinator records distinct guest generations and requires confirmed termination between them. No AMI build, applied network proof or live launch exists; hosted admission is disabled by default. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
@@ -449,7 +457,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Alembic migrations applied through `e71d5a4b8c20` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. Draft publication outbox rows now carry processing leases. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Alembic migrations applied through `5b8f3d4e1a70` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. Draft publication outbox rows now carry processing leases. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

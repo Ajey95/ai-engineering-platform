@@ -18,6 +18,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from platform_app.code_index import index_source_archive
 from platform_app.config import settings
 from platform_app.db import SessionLocal, utcnow
 from platform_app.environment_manifest import EnvironmentManifest
@@ -154,6 +155,8 @@ class HostedWorker:
             ):
                 raise ServiceError("REPAIR_SCOPE_INVALID", "Repair scope is invalid", 409)
             source = fetch_authorized_run_source(db, run_id, self.work_root)
+            index_source_archive(db, run, source, self.work_root)
+            db.commit()
         return source, manifest, frozenset(paths)
 
     def execute(self, run_id: str) -> str:

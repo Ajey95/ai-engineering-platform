@@ -1220,3 +1220,13 @@ hosted review receipts, patch diff and scoped S3 evidence tar with digest
 checks. Controlled coordinator/admission/evidence tests passed; the full
 Python suite passed 238 tests with 4 skips, Ruff and web build passed. This is
 still not a deployed/live-provider/live-VM qualification or 100% product.
+
+2026-10-03 code index milestone: exact hosted source archives create canonical,
+revision-pinned file, symbol and import rows plus a Memgraph projection outbox
+event. The scoped API rechecks graph hints against canonical rows and reports
+degraded retrieval on lag or outage. Composite foreign keys bind each file to
+a snapshot in the same tenant and project. Local PostgreSQL migrated to
+`5b8f3d4e1a70`; Alembic found no drift. Full Python suite: 243 passed,
+4 skipped; scoped Ruff passed. Controlled two-revision, dependency, tenant
+isolation and hosted worker tests passed. Live graph and customer repository
+qualification remain.

@@ -231,6 +231,7 @@ def test_hosted_pipeline_replays_full_control_path(tmp_path, monkeypatch, retry)
             model_entry_id="model-a", state="QUEUED",
             config_snapshot={
                 "policy_version": "1.0", "execution_profile": "hosted_vm_v1",
+                "repository_url": "https://github.com/example/repo",
                 "repair_paths": ["app.py"], "environment_manifest": manifest,
                 "model_registry_revision": "rev-a", "model_price_revision": "price-a",
                 "model_context_limit": 18000, "model_output_limit": 4000,

@@ -72,9 +72,10 @@ def test_hosted_worker_joins_two_guest_generations_and_review_receipt(
             task_id="task-a", created_by="alice", idempotency_key="k",
             request_hash="b" * 64, base_commit=source.commit,
             model_entry_id="model-a", state="QUEUED",
-            config_snapshot={
-                "execution_profile": "hosted_vm_v1", "repair_paths": ["app.py"],
-                "environment_manifest": manifest.model_dump(mode="json"),
+                config_snapshot={
+                    "execution_profile": "hosted_vm_v1", "repair_paths": ["app.py"],
+                    "repository_url": "https://github.com/example/repo",
+                    "environment_manifest": manifest.model_dump(mode="json"),
             },
         ))
         db.add(OutboxEvent(
