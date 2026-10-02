@@ -330,3 +330,27 @@ errors or horizontal overflow. Prior active cancellation probe
 container. SSE reconnect replayed event IDs 4–6 after a cursor of 3. Hosted
 CDN/object/backup deletion propagation is still absent; do not claim FR-SEC-04
 or AC-25 complete.
+
+Development API startup now reapplies every recording deletion tombstone to
+local files before serving traffic. A focused test restored the deleted HLS
+and WebM files, ran reconciliation, and confirmed they were removed again
+while the screenshot and single `artifact.deleted` event remained. This does
+not provide an independent off-database ledger or hosted object/CDN replay.
+
+The React SSE handler now refreshes the review packet after verification,
+media, deletion, review and close events. A live Playwright form admission of
+run `61c2837c-45e7-410a-bf76-e40c10216372` on web 5175 kept the run
+selected and saw its Browser recordings panel appear without reselecting or
+reloading the page; no page error occurred.
+
+2026-10-02 PostgreSQL end-to-end continuation: seeded the reviewed synthetic
+project/report/fixture model into local PostgreSQL 17.11 at migrated revision
+`c53718b2a844`; `alembic check` reported no drift. API 8101 and a separate
+`DevelopmentWorker --serve --runtime wsl` ran against PostgreSQL. Run
+`e53fe64f-9a5a-4885-9966-81a8c915fc50` at pinned commit `b3f502c` reached
+INCONCLUSIVE with one delivered outbox dispatch, four tool effects, contiguous
+events 1–17, PASS/FAIL/FAIL baseline and media READY/HLS HTTP 200. No live
+model call occurred. Web 5176 proxies to this API and is the current demo URL.
+Desktop/mobile Playwright opened that run, decoded HLS and loaded its screenshot;
+desktop played past time zero; neither had failed requests, page errors or
+horizontal overflow. This is a synthetic local proof, not hosted release.

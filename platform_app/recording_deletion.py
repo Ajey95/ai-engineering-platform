@@ -2,11 +2,14 @@
 
 import shutil
 from pathlib import Path
+from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from platform_app.model_base import utcnow
 from platform_app.models import RecordingDeletion, Run, ToolAction
+from platform_app.service import append_event
 
 
 def deletion_for(db: Session, run: Run, label: str) -> RecordingDeletion | None:
@@ -65,3 +68,35 @@ def purge_local_recording(db: Session, run: Run, label: str, artifact_dir: str) 
             if not raw.is_file() or raw.is_symlink():
                 raise ValueError("Raw recording target is not a regular file")
             raw.unlink()
+
+
+def reconcile_local_recording_deletions(
+    session_factory: Callable[[], Session], artifact_dir: str
+) -> dict[str, int]:
+    """Reapply durable tombstones before a restored development API serves media."""
+    result = {"checked": 0, "cleaned": 0, "failed": 0}
+    with session_factory() as db:
+        deletions = db.scalars(
+            select(RecordingDeletion).order_by(RecordingDeletion.created_at)
+        ).all()
+        for deletion in deletions:
+            result["checked"] += 1
+            run = db.get(Run, deletion.run_id)
+            if run is None or run.tenant_id != deletion.tenant_id:
+                deletion.status = "failed"
+                result["failed"] += 1
+                db.commit()
+                continue
+            try:
+                purge_local_recording(db, run, deletion.label, artifact_dir)
+            except (OSError, ValueError):
+                deletion.status = "failed"
+                result["failed"] += 1
+            else:
+                if deletion.status != "complete":
+                    append_event(db, run, "artifact.deleted", {"label": deletion.label})
+                deletion.status = "complete"
+                deletion.completed_at = utcnow()
+                result["cleaned"] += 1
+            db.commit()
+    return result

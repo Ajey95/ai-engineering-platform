@@ -105,9 +105,14 @@ export default function App() {
         const event = JSON.parse(message.data) as RunEvent
         setEvents(current => current.some(item => item.event_id === event.event_id) ? current : [...current, event].sort((a, b) => a.sequence - b.sequence))
         void refresh()
+        if (['verification.completed', 'artifact.ready', 'artifact.failed', 'artifact.deleted', 'review.decision', 'run.closed'].includes(event.event_type)) {
+          void api<ReviewPacket>(`/runs/${selectedRun}/review-packet`)
+            .then(review => { if (active) setPacket(review) })
+            .catch(() => { /* durable history and the next event can retry */ })
+        }
       } catch { /* malformed event is ignored; durable history remains source of truth */ }
     }
-    for (const name of ['run.admitted', 'run.resumed', 'run.state_changed', 'model.started', 'model.completed', 'tool.authorized', 'tool.completed', 'verification.completed', 'artifact.ready', 'review.decision', 'run.closed']) stream.addEventListener(name, receive)
+    for (const name of ['run.admitted', 'run.resumed', 'run.state_changed', 'model.started', 'model.completed', 'tool.authorized', 'tool.completed', 'verification.completed', 'artifact.ready', 'artifact.failed', 'artifact.deletion_requested', 'artifact.deleted', 'review.decision', 'run.closed']) stream.addEventListener(name, receive)
     return () => { active = false; stream.close() }
   }, [selectedRun, refresh])
 

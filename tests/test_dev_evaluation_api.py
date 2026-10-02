@@ -6,11 +6,19 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 import platform_app.api as api_module
 from platform_app.db import Base
-from platform_app.models import AuditEvent, Project, RecordingDeletion, Run, ToolAction
+from platform_app.models import (
+    AuditEvent,
+    Project,
+    RecordingDeletion,
+    Run,
+    RunEvent,
+    ToolAction,
+)
+from platform_app.recording_deletion import reconcile_local_recording_deletions
 from platform_app.service import ServiceError
 
 
@@ -198,3 +206,10 @@ def test_recording_deletion_revokes_access_and_preserves_transcript(tmp_path, mo
         with pytest.raises(ServiceError) as foreign:
             api_module.delete_run_recording(run_id, "baseline", ("tenant-b", "actor"), db)
         assert foreign.value.status == 404
+        playlist.parent.mkdir(parents=True)
+        playlist.write_text("#EXTM3U\n")
+        raw.write_bytes(b"restored recording")
+        result = reconcile_local_recording_deletions(sessionmaker(bind=engine), str(root))
+        assert result == {"checked": 1, "cleaned": 1, "failed": 0}
+        assert not playlist.exists() and not raw.exists() and screenshot.is_file()
+        assert db.query(RunEvent).filter_by(event_type="artifact.deleted").count() == 1

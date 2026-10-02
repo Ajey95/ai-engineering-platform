@@ -48,7 +48,11 @@ from platform_app.models import (
     TenantMembership,
     ToolAction,
 )
-from platform_app.recording_deletion import deletion_for, purge_local_recording
+from platform_app.recording_deletion import (
+    deletion_for,
+    purge_local_recording,
+    reconcile_local_recording_deletions,
+)
 from platform_app.review_patch import verified_fixture_diff
 from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
@@ -92,6 +96,7 @@ async def lifespan(_: FastAPI):
             if db.get(Tenant, settings().dev_tenant) is None:
                 db.add(Tenant(id=settings().dev_tenant, name="Local development"))
                 db.commit()
+        reconcile_local_recording_deletions(SessionLocal, settings().artifact_dir)
     yield
 
 

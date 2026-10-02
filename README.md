@@ -94,14 +94,17 @@ Open `http://127.0.0.1:5173`. The frontend proxy targets port 8098 by default.
 For a SQLite development smoke test, omit `.env` and the API uses a local
 SQLite file. This mode is for synthetic data only.
 
-For the current verified local session, use `http://127.0.0.1:5175/`. Its API
-is on port 8100 and the polling development worker uses the WSL Docker Engine.
-The older 5173/5174 sessions may serve earlier code. The Review screen can
+For the current verified local session, use `http://127.0.0.1:5176/`. Its API
+is on port 8101, backed by local PostgreSQL, and the polling development worker
+uses the WSL Docker Engine. The older 5173–5175 sessions may serve earlier
+code or a separate SQLite database. The Review screen can
 delete one closed run's baseline or candidate recording independently of the
 run transcript. `DELETE /v1/runs/{run_id}/recordings/{label}` is idempotent;
 `GET /v1/runs/{run_id}/review-packet` reports `deleted_recording_labels`.
-This is local origin cleanup. Hosted object/CDN propagation, backup replay and
-retention automation still need implementation and qualification.
+On development API startup, deletion records are reapplied to local files so
+restored recordings remain inaccessible and are cleaned again. Hosted
+object/CDN propagation, independent backup-ledger replay and retention
+automation still need implementation and qualification.
 
 The current controlled fixture packet is at
 `artifacts/evaluation-v2/review-packet.json` and is intentionally ignored by
