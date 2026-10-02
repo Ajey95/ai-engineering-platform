@@ -39,6 +39,7 @@ def hosted_review_packet(
     run: Run, task: Task, leases: list[SandboxLease],
     verification: RunEvent | None, review: RunEvent | None,
     artifact_root: Path, model_completed: bool, spend_usd: str,
+    publication_status: str = "DISABLED", publication_url: str | None = None,
 ) -> dict:
     latest = {}
     for lease in sorted(leases, key=lambda item: item.generation):
@@ -90,7 +91,7 @@ def hosted_review_packet(
         "verification_status": run.verdict,
         "review_decision": (review.payload or {}).get("decision") if review else None,
         "review_reason": (review.payload or {}).get("reason") if review else None,
-        "publication_status": "DISABLED", "publication_url": None,
+        "publication_status": publication_status, "publication_url": publication_url,
         "limitations": [
             "The verdict covers declared guest checks only; no independent hidden oracle was run."
         ] if verification else ["Candidate verification has not finished."],

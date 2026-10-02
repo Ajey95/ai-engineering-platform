@@ -127,12 +127,19 @@ def _log_excerpts(output: GuestOutput, observation: dict) -> list[dict]:
 def build_general_prompt(
     run: Run, task: Task, source: SourceArchive,
     baseline: GuestOutput, allowed_paths: frozenset[str],
+    feedback: tuple[dict, ...] = (),
 ) -> str:
     if source.commit != run.base_commit or baseline.result.get("phase") != "baseline":
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Pinned inputs differ", 409)
     observation = baseline.result.get("baseline")
     if not isinstance(observation, dict):
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Baseline observation is missing", 409)
+    if len(feedback) > 2 or any(
+        not isinstance(item, dict) or set(item) != {
+            "status", "reason", "candidate_checks", "patch_sha256", "candidate_tree_sha256"
+        } for item in feedback
+    ):
+        raise ServiceError("CONTEXT_UNSATISFIABLE", "Prior attempt feedback is invalid", 409)
     browser = observation.get("browser") or {}
     prompt = {
         "schema_version": "1.0",
@@ -144,6 +151,7 @@ def build_general_prompt(
         "source_archive_sha256": source.sha256,
         "allowed_paths": sorted(allowed_paths),
         "source_items": _source_items(source, allowed_paths),
+        "prior_attempts": feedback,
         "baseline": {
             "manifest_sha256": observation.get("manifest_sha256"),
             "named_tests": {
@@ -168,13 +176,13 @@ def build_general_prompt(
 
 def _replay(
     action: ToolAction, artifact_root: Path, run_id: str,
-    allowed_paths: frozenset[str],
+    allowed_paths: frozenset[str], step_id: str,
 ) -> GeneralPatchResult:
     receipt = action.receipt or {}
     if receipt.get("status") == "REJECTED":
         raise ServiceError(receipt.get("error_code", "PROVIDER_REJECTED"),
                            "Provider rejected the model request", 409)
-    relative = f"{run_id}/model/general-model-1.json"
+    relative = f"{run_id}/model/{step_id}.json"
     if receipt.get("artifact_ref") != relative:
         raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Model artifact reference changed", 409)
     try:
@@ -193,7 +201,11 @@ def request_general_patch(
     session_factory, run_id: str, worker_id: str, fence: int,
     source: SourceArchive, baseline: GuestOutput, allowed_paths: frozenset[str],
     artifact_root: Path, *, provider: GeneralPatchProvider | None = None,
+    attempt: int = 1, feedback: tuple[dict, ...] = (),
 ) -> GeneralPatchResult:
+    if not 1 <= attempt <= 3 or len(feedback) != attempt - 1:
+        raise ServiceError("PATCH_ATTEMPT_INVALID", "Repair attempt exceeds policy", 409)
+    step_id = f"general-model-{attempt}"
     with session_factory() as db:
         run = db.get(Run, run_id)
         if run is None:
@@ -215,10 +227,10 @@ def request_general_patch(
             or recorded.result_sha256 is None or recorded.result_received_at is None
         ):
             raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Baseline receipt is not recorded", 409)
-        prompt = build_general_prompt(run, task, source, baseline, allowed_paths)
+        prompt = build_general_prompt(run, task, source, baseline, allowed_paths, feedback)
         prior = db.scalar(select(ToolAction).where(
             ToolAction.run_id == run.id,
-            ToolAction.step_id == "general-model-1",
+            ToolAction.step_id == step_id,
             ToolAction.logical_action == "model.generate",
         ))
         if prior is not None and prior.status == "COMPLETED":
@@ -227,16 +239,16 @@ def request_general_patch(
                 RunEvent.event_type == "model.started",
             )).all()
             matching = [event for event in starts if (
-                event.payload.get("step_id") == "general-model-1"
+                event.payload.get("step_id") == step_id
             )]
             if len(matching) != 1 or matching[0].payload.get("context_sha256") != (
                 canonical_hash(INSTRUCTION + "\n" + prompt)
             ):
                 raise ServiceError("EFFECT_CONFLICT", "Model context changed on replay", 409)
-            return _replay(prior, artifact_root, run_id, allowed_paths)
+            return _replay(prior, artifact_root, run_id, allowed_paths, step_id)
         selected_provider = provider or _provider(model)
         action, reservation, plan = reserve_model_call(
-            db, run, worker_id, fence, model, "general-model-1",
+            db, run, worker_id, fence, model, step_id,
             INSTRUCTION + "\n" + prompt,
         )
         db.commit()
@@ -262,8 +274,8 @@ def request_general_patch(
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     target = artifact_root / run_id / "model"
     target.mkdir(parents=True, exist_ok=True)
-    artifact = target / "general-model-1.json"
-    temporary = target / ".general-model-1.tmp"
+    artifact = target / f"{step_id}.json"
+    temporary = target / f".{step_id}.tmp"
     temporary.write_text(json.dumps({
         "provider": turn.provider, "model": turn.model,
         "text": raw, "usage": turn.usage, "output_sha256": digest,
@@ -273,7 +285,7 @@ def request_general_patch(
         os.chmod(artifact, 0o600)
     except OSError:
         pass
-    relative = f"{run_id}/model/general-model-1.json"
+    relative = f"{run_id}/model/{step_id}.json"
     with session_factory() as db:
         run = db.get(Run, run_id)
         settle_model_call(

@@ -178,7 +178,10 @@ def admit_run(
         raise ServiceError("ENVIRONMENT_UNAVAILABLE", "Project setup is incomplete", 409)
     repair_paths = None
     if hosted_requested:
-        from platform_app.repository_connections import github_repository_ref
+        from platform_app.repository_connections import (
+            environment_secret_name,
+            github_repository_ref,
+        )
 
         try:
             manifest = EnvironmentManifest.model_validate(project.environment_manifest)
@@ -214,6 +217,12 @@ def admit_run(
             raise ServiceError(
                 "REPOSITORY_UNAVAILABLE", "Ready repository connection is required", 409
             )
+        try:
+            environment_secret_name(connection.credential_ref)
+        except ServiceError as error:
+            raise ServiceError(
+                "REPOSITORY_UNAVAILABLE", "Repository secret reference is unsupported", 409
+            ) from error
     try:
         check_admission_quota(db, tenant)
     except QuotaError as error:
@@ -243,6 +252,7 @@ def admit_run(
     if hosted_requested:
         policy["execution_profile"] = "hosted_vm_v1"
         policy["repair_paths"] = repair_paths
+        policy["repository_connection_id"] = connection.id
     try:
         policy["model_failover_routes"] = [
             route for route in validate_failover_routes(tenant.model_routing_policy or {})

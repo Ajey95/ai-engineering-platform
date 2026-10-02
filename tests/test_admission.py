@@ -223,7 +223,7 @@ def test_hosted_admission_requires_gate_scope_and_ready_connection(db, monkeypat
     assert missing.value.code == "REPOSITORY_UNAVAILABLE"
     db.add(RepositoryConnection(
         tenant_id="tenant-a", project_id="project-a", provider="github",
-        repository_ref="example/repo", credential_ref="env:AIP_TEST_GITHUB_TOKEN",
+        repository_ref="example/repo", credential_ref="secret://env/AIP_TEST_GITHUB_TOKEN",
         status="ready", created_by="alice",
     ))
     db.commit()
@@ -236,6 +236,7 @@ def test_hosted_admission_requires_gate_scope_and_ready_connection(db, monkeypat
     run = admit_run(db, "tenant-a", "alice", "task-a", "hosted-key", body)
     assert run.config_snapshot["execution_profile"] == "hosted_vm_v1"
     assert run.config_snapshot["repair_paths"] == ["app.py"]
+    assert run.config_snapshot["repository_connection_id"] is not None
 
 
 def test_fixture_model_cannot_admit_unrelated_project(db):

@@ -4,10 +4,9 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 238 tests with 4 skips after the hosted coordinator,
-guarded admission and evidence download additions; scoped lint and the web
-production build passed. Local Alembic drift check passed at the previous
-migration milestone; these additions did not change schema.
+Python suite passed 241 tests with 4 skips after bounded hosted retries and
+draft PR dispatch; scoped lint and the web production build passed. Local
+PostgreSQL is at migration `e71d5a4b8c20` with no Alembic drift.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider
@@ -40,9 +39,9 @@ not a live provider, customer repository, AWS or GitHub qualification.
   records with tenant/project scoped constraints. Disposable PostgreSQL probes
   rejected cross-tenant project membership, task and run-event inserts; local
   PostgreSQL upgraded to the new head with no detected schema drift.
-- Hosted run admission returns `EXECUTION_UNAVAILABLE` until a customer VM
-  sandbox is implemented; the development Docker adapter remains isolated to
-  synthetic fixtures.
+- Hosted run admission is disabled by default until the VM boundary is live
+  qualified; the development Docker adapter remains isolated to synthetic
+  fixtures.
 - `platform_app/sandbox_broker.py`, migrations `ef86c2bb703d` and
   `a2c9e7d54031`, and
   `scripts/dispatch_sandbox_cleanup.py` now persist a run-scoped EC2 launch
@@ -120,7 +119,18 @@ not a live provider, customer repository, AWS or GitHub qualification.
   the first. `platform_app/guest_comparison.py` compares manifest, candidate
   tree, separate lease identity and declared check receipts, returning
   SUPPORTED/FAILED/INCONCLUSIVE rather than an independent correctness verdict.
-  A native model call and hosted worker do not yet consume this path.
+  The bounded hosted worker now consumes this path, with controlled fake EC2/S3
+  evidence only.
+- `platform_app/hosted_worker.py`: a fenced coordinator fetches a run-pinned
+  source, launches a baseline guest, makes up to three bounded native model
+  proposals, verifies each distinct candidate in a separate guest, and records
+  declared-check evidence. A controlled fake EC2/S3/provider replay passed
+  one- and two-attempt paths. Active execution has a bounded deadline.
+- `platform_app/publication_queue.py`: accepted hosted review can receive a
+  separate draft PR approval. The API writes a publication outbox event in the
+  approval transaction; a worker leases it and reconciles uncertain GitHub
+  writes. Controlled publication and expiry tests passed. No live GitHub write
+  has been attempted.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
@@ -393,7 +403,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
 | FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with PostgreSQL checkpoints. A hosted coordinator now joins pinned Git fetch, separate baseline/candidate VM phases, one metered native proposal and a recorded declared-check review packet under a fenced run; an SQS consumer and stale-attempt closure are wired and controlled tests pass. No live queue, VM, repository or provider run has occurred. |
-| FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. The run ledger detects three consecutive same-signature, same-result completed actions and fails visibly. Active-time and hosted scope need qualification. |
+| FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation and usage settlement are wired. Hosted coordinator now bounds active time and makes at most three distinct model/VM patch attempts, passes failed declared-check feedback to the next call, and stops repeated candidate trees. A controlled two-attempt replay passed. Hosted quota and live timeout qualification remain. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
@@ -415,13 +425,13 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. The hosted coordinator records baseline and candidate guest phases in separate fake EC2 VMs, compares declared checks with exact tree/manifest pins, and exposes a hash-verified review diff and scoped S3 evidence tar. The declared checks are explicitly labelled without an independent hidden oracle. No live VM, live model or customer repository has been verified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
-| FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. A read-only GitHub probe checks identity, reported push permission, default branch and pull read access; its scoped operator command records readiness and the publication command rechecks it. The REST publisher writes a deterministic branch/draft PR through a durable intent and reconciles uncertain retries. Controlled HTTP tests passed; no live GitHub account, PR write qualification, general repository workflow or customer PR publication exists. |
+| FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. The hosted path rechecks the model artifact, guest receipts and candidate built from the pinned commit. A durable publication outbox leases work and retries/reconciles uncertain writes; the UI exposes approval and published URL. Controlled HTTP and hosted replay tests passed; no live GitHub account or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; controlled S3 publisher uploads verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Twenty-four Alembic revisions applied through `f6092c41a8e5` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Alembic migrations applied through `e71d5a4b8c20` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. Draft publication outbox rows now carry processing leases. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

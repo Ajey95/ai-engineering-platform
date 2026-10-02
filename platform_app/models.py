@@ -381,6 +381,10 @@ class OutboxEvent(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     queue_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    processing_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class BudgetEntry(Base):

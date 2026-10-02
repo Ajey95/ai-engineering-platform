@@ -56,6 +56,7 @@ class HostedWorker:
         self.poll_seconds = poll_seconds
         self._stop = threading.Event()
         self._lost = threading.Event()
+        self._deadline: float | None = None
 
     def _heartbeat(self, run_id: str, fence: int) -> None:
         while not self._stop.wait(10):
@@ -71,6 +72,8 @@ class HostedWorker:
                 return
 
     def _check(self, run_id: str, fence: int) -> None:
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise ServiceError("RUN_ACTIVE_TIMEOUT", "Active run time exceeded policy", 409)
         if self._lost.is_set():
             raise ServiceError("LEASE_LOST", "Hosted worker lost its lease", 409)
         with self.session_factory() as db:
@@ -80,6 +83,7 @@ class HostedWorker:
                 raise ServiceError("RUN_CANCELLED", "Run was cancelled", 409)
 
     def _state(self, run_id: str, fence: int, next_state: str, verdict=None) -> None:
+        self._check(run_id, fence)
         with self.session_factory() as db:
             run = db.get(Run, run_id)
             if run.state != next_state:
@@ -94,7 +98,10 @@ class HostedWorker:
                 self.ec2, self.s3, self.bucket, self.envelope_key, phase=phase,
             )
             lease_id = lease.id
-        deadline = time.monotonic() + self.spec.ttl_seconds
+        deadline = min(
+            time.monotonic() + self.spec.ttl_seconds,
+            self._deadline or float("inf"),
+        )
         try:
             while time.monotonic() < deadline:
                 self._check(run_id, fence)
@@ -153,10 +160,18 @@ class HostedWorker:
             run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
             if run.state != "QUEUED":
                 raise ServiceError("RUN_NOT_EXECUTABLE", "Hosted dispatch must start queued", 409)
+            requested_timeout = (run.config_snapshot or {}).get(
+                "active_timeout_seconds", settings().active_timeout_seconds
+            )
+            if type(requested_timeout) is not int or requested_timeout < 30:
+                raise ServiceError("RUN_TIMEOUT_INVALID", "Run active timeout is invalid", 409)
             transition(db, run, self.worker_id, fence, "PREPARING")
             db.commit()
         self._stop.clear()
         self._lost.clear()
+        self._deadline = time.monotonic() + min(
+            requested_timeout, settings().active_timeout_seconds
+        )
         watcher = threading.Thread(target=self._heartbeat, args=(run_id, fence), daemon=True)
         watcher.start()
         try:
@@ -168,32 +183,72 @@ class HostedWorker:
                 self._state(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
                 return "INCONCLUSIVE"
             self._state(run_id, fence, "INVESTIGATING")
-            proposal = request_general_patch(
-                self.session_factory, run_id, self.worker_id, fence,
-                source, baseline, paths, self.artifact_root, provider=self.provider,
-            ).proposal
-            if not proposal.files:
-                self._state(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
-                return "INCONCLUSIVE"
-            self._state(run_id, fence, "PATCHING")
-            candidate = build_candidate_tree(source, proposal, self.work_root)
-            self._state(run_id, fence, "VERIFYING")
-            observed = self._guest(run_id, fence, candidate.source, "candidate")
-            comparison = compare_guest_observations(
-                baseline, observed,
-                manifest_sha256=build_guest_bundle(source, manifest).manifest_sha256,
-                candidate_tree_sha256=candidate.tree_sha256,
-            )
-            packet = {
-                "scope": "declared_guest_checks", "status": comparison.status,
-                "reason": comparison.reason, "baseline_checks": comparison.baseline_checks,
-                "candidate_checks": comparison.candidate_checks,
-                "patch_sha256": proposal.patch_sha256,
-                "candidate_tree_sha256": candidate.tree_sha256,
-                "candidate_source_sha256": candidate.source.sha256,
-                "baseline_lease_id": baseline.result["lease_id"],
-                "candidate_lease_id": observed.result["lease_id"],
-            }
+            with self.session_factory() as db:
+                snapshot = db.get(Run, run_id).config_snapshot
+                max_attempts = snapshot.get("max_patch_attempts", 1)
+            if type(max_attempts) is not int or not 1 <= max_attempts <= 3:
+                raise ServiceError("PATCH_ATTEMPT_INVALID", "Repair attempt cap is invalid", 409)
+            feedback: tuple[dict, ...] = ()
+            seen_trees: set[str] = set()
+            manifest_sha = build_guest_bundle(source, manifest).manifest_sha256
+            for attempt in range(1, max_attempts + 1):
+                proposal = request_general_patch(
+                    self.session_factory, run_id, self.worker_id, fence,
+                    source, baseline, paths, self.artifact_root,
+                    provider=self.provider, attempt=attempt, feedback=feedback,
+                ).proposal
+                if not proposal.files:
+                    stop = "INCONCLUSIVE" if attempt == 1 else "FAILED"
+                    self._state(run_id, fence, stop, "INCONCLUSIVE")
+                    return "INCONCLUSIVE"
+                if attempt == 1:
+                    self._state(run_id, fence, "PATCHING")
+                candidate = build_candidate_tree(source, proposal, self.work_root)
+                if candidate.tree_sha256 in seen_trees:
+                    with self.session_factory() as db:
+                        run = db.get(Run, run_id)
+                        assert_fence(run, self.worker_id, fence)
+                        append_event(db, run, "run.loop_detected", {
+                            "attempt": attempt,
+                            "candidate_tree_sha256": candidate.tree_sha256,
+                        })
+                        db.commit()
+                    self._state(run_id, fence, "FAILED", "INCONCLUSIVE")
+                    return "INCONCLUSIVE"
+                seen_trees.add(candidate.tree_sha256)
+                self._state(run_id, fence, "VERIFYING")
+                observed = self._guest(run_id, fence, candidate.source, "candidate")
+                comparison = compare_guest_observations(
+                    baseline, observed,
+                    manifest_sha256=manifest_sha,
+                    candidate_tree_sha256=candidate.tree_sha256,
+                )
+                packet = {
+                    "scope": "declared_guest_checks", "attempt": attempt,
+                    "status": comparison.status, "reason": comparison.reason,
+                    "baseline_checks": comparison.baseline_checks,
+                    "candidate_checks": comparison.candidate_checks,
+                    "patch_sha256": proposal.patch_sha256,
+                    "candidate_tree_sha256": candidate.tree_sha256,
+                    "candidate_source_sha256": candidate.source.sha256,
+                    "baseline_lease_id": baseline.result["lease_id"],
+                    "candidate_lease_id": observed.result["lease_id"],
+                }
+                with self.session_factory() as db:
+                    run = db.get(Run, run_id)
+                    assert_fence(run, self.worker_id, fence)
+                    append_event(db, run, "verification.attempt", packet)
+                    db.commit()
+                if comparison.status == "FAILED" and attempt < max_attempts:
+                    feedback += ({
+                        "status": comparison.status, "reason": comparison.reason,
+                        "candidate_checks": comparison.candidate_checks,
+                        "patch_sha256": proposal.patch_sha256,
+                        "candidate_tree_sha256": candidate.tree_sha256,
+                    },)
+                    self._state(run_id, fence, "PATCHING")
+                    continue
+                break
             target = self.artifact_root / run_id / "candidate"
             target.mkdir(parents=True, exist_ok=True)
             raw = json.dumps({**packet, "diagnosis": proposal.diagnosis,
@@ -249,6 +304,7 @@ class HostedWorker:
         finally:
             self._stop.set()
             watcher.join(timeout=2)
+            self._deadline = None
 
     def process_event(self, event_id: str) -> str | None:
         """Bind one SQS wakeup to its canonical outbox and scoped run."""

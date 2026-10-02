@@ -1110,6 +1110,22 @@ No AMI, AWS account run,
 customer repository path or independent hosted repair has been verified;
 hosted admission remains disabled.
 
+2026-10-03 hosted retry and publication increment: the general native-model
+proposal now accepts bounded feedback for up to three distinct attempts,
+with each attempt tied to its own durable model action. The fenced hosted
+coordinator executes a new candidate VM for each distinct candidate tree,
+records each declared-check comparison, stops repeated trees and enforces an
+active timeout. A controlled fake EC2/S3 and native-provider replay reached
+REVIEW_READY after one and two attempts. Explicit accepted-review approval
+now binds the hosted patch, model artifact and guest evidence, and the
+publisher rebuilds the candidate from the pinned Git source before creating
+a draft PR. Approval enqueues a durable, leased publication event; an expired
+lease can reconcile a previous write. The Runs UI offers this separate
+approval and reports the PR URL. Local PostgreSQL migrated to
+`e71d5a4b8c20` with no drift. Full Python suite: 241 passed, 4 skipped;
+Ruff and Vite build passed. This is controlled local proof, not a live
+GitHub/provider/AWS qualification; hosted admission remains off by default.
+
 2026-10-03 guest AMI definition increment: `infra/sandbox-ami` pins a
 source Ubuntu 24.04 AMI input, Amazon Packer plugin 1.8.1, Node 24.21.0
 archive SHA-256, Python `uv.lock`, Playwright Chromium and uid 10001. The

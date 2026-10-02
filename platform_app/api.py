@@ -88,6 +88,7 @@ from platform_app.operational_alerts import alert_read, resolve_alert
 from platform_app.operations import operations_snapshot
 from platform_app.private_media import media_prefix, sign_recording_grant
 from platform_app.publication import approve_draft_pr
+from platform_app.publication_queue import enqueue_approved_draft
 from platform_app.recording_deletion import (
     deletion_for,
     purge_local_recording,
@@ -1211,6 +1212,7 @@ def approve_publication(
         connection_id=body.connection_id, base_branch=body.base_branch,
         actor=identity[1],
     )
+    enqueue_approved_draft(db, row)
     db.commit()
     db.refresh(row)
     return _publication_approval_read(row)
@@ -1374,10 +1376,25 @@ def review_packet(
             BudgetEntry.tenant_id == identity[0], BudgetEntry.run_id == run.id,
             BudgetEntry.category.like("call:%"),
         )).all()
+        approval = db.scalar(select(PublicationApproval).where(
+            PublicationApproval.tenant_id == identity[0],
+            PublicationApproval.run_id == run.id,
+        ))
+        published = db.scalar(select(ToolAction).where(
+            ToolAction.tenant_id == identity[0], ToolAction.run_id == run.id,
+            ToolAction.step_id == "draft_pr_publication",
+            ToolAction.status == "COMPLETED",
+        ))
+        published_receipt = (published.receipt or {}) if published else {}
+        publication_status = (
+            "PUBLISHED" if published_receipt.get("status") == "PUBLISHED" else
+            approval.status.upper() if approval else "DISABLED"
+        )
         return hosted_review_packet(
             run, task, leases, verification, review, Path(settings().artifact_dir),
             model_completed,
             str(sum((entry.actual_usd for entry in spend_entries), start=0)),
+            publication_status, published_receipt.get("pr_url"),
         )
     actions = db.scalars(
         select(ToolAction)

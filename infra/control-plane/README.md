@@ -31,3 +31,10 @@ persists model and review artifacts there. The API must use the same volume to
 serve verified review diffs. `AIP_HOSTED_EXECUTION_ENABLED` defaults to false
 and must only be enabled after the account's AMI, network, role, queue, model,
 identity and recovery qualification gates pass. No such gate has passed yet.
+
+Run `python -m scripts.dispatch_publications --serve` as a separate trusted
+worker against the same migrated PostgreSQL database and private durable
+`AIP_ARTIFACT_DIR`. The API commits an outbox event only after exact draft PR
+approval. The worker reads a GitHub credential from the approved connection's
+`secret://env/AIP_*` reference and reconciles a deterministic branch and draft
+PR after an uncertain write. Approval never merges or deploys the patch.

@@ -321,6 +321,19 @@ export default function App({ identity, onSignOut }: {
     finally { setBusy(false) }
   }
 
+  async function approveDraft(connectionId: string, baseBranch: string) {
+    if (!run) return
+    setBusy(true); setError('')
+    try {
+      await api(`/runs/${run.id}/publication-approval`, {
+        method: 'POST', body: jsonBody({ connection_id: connectionId, base_branch: baseBranch }),
+      })
+      setPacket(await api<ReviewPacket>(`/runs/${run.id}/review-packet`))
+      await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Draft PR approval failed') }
+    finally { setBusy(false) }
+  }
+
   async function deleteRecording(label: 'baseline' | 'candidate') {
     if (!run || !window.confirm(`Delete the ${label} recording? The run transcript and screenshots will remain.`)) return
     setBusy(true); setError('')
@@ -435,9 +448,9 @@ export default function App({ identity, onSignOut }: {
           <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !runnableModels.length} title={!runnableModels.length ? 'No executable model is available' : undefined}><Play size={16} /> Start run</button></div>
           {!runnableModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
           {runnableModels.some(item => item.fixture_only) && <div className="notice"><CircleHelp size={18} /> The fixture model only reproduces the reviewed synthetic form bug. It is not a live provider or customer repository run.</div>}
-          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
+          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
-        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
+        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'operations' && <section className="page-section">
           <div className="page-heading"><div><h1>Operations</h1><p>Owner-only snapshot of persisted control-plane activity.</p></div></div>
           {operationsError && <div className="notice">{operationsError}</div>}
@@ -530,18 +543,21 @@ export default function App({ identity, onSignOut }: {
   </div>
 }
 
-function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, decideReview, deleteRecording, busy }: {
+function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, decideReview, approveDraft, repositoryConnections, deleteRecording, busy }: {
   run: Run; task?: Task; packet: ReviewPacket | null; events: RunEvent[]
   tab: 'evidence' | 'changes' | 'logs' | 'environment'
   setTab: (tab: 'evidence' | 'changes' | 'logs' | 'environment') => void
   cancel: () => void
   resumeInput: (inputText: string, idempotencyKey: string) => Promise<void>
   decideReview: (decision: 'accepted' | 'rejected', reason: string) => Promise<void>
+  approveDraft: (connectionId: string, baseBranch: string) => Promise<void>
+  repositoryConnections: RepositoryConnection[]
   deleteRecording: (label: 'baseline' | 'candidate') => Promise<void>
   busy: boolean
 }) {
   const [rejectionReason, setRejectionReason] = useState('')
   const [answer, setAnswer] = useState('')
+  const readyConnections = repositoryConnections.filter(connection => connection.status === 'ready')
   const [resumeKey, setResumeKey] = useState('')
   useEffect(() => { setAnswer(''); setResumeKey('') }, [run.id, run.state])
   return <div className="review-layout">
@@ -572,11 +588,23 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
         </form>}
         {['PAUSED_BUDGET', 'PAUSED_APPROVAL'].includes(run.state) && <p className="muted">This pause needs an approved policy or action before the run can continue.</p>}
         {run.state === 'REVIEW_READY' && <div className="review-actions">
-          <p className="muted">Accepting this packet records a review decision. Draft PR publication requires separate approval and is unavailable.</p>
+          <p className="muted">Accepting this packet records a review decision. Draft PR publication requires separate approval.</p>
           <button className="primary-button" disabled={busy} onClick={() => void decideReview('accepted', '')}>Accept packet</button>
           <label>Reason to reject<textarea value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} maxLength={2000} rows={2} /></label>
           <button className="secondary-button" disabled={busy || rejectionReason.trim().length < 5} onClick={() => void decideReview('rejected', rejectionReason)}>Reject packet</button>
         </div>}
+        {run.state === 'COMPLETED' && packet?.review_decision === 'accepted' && packet.qualification_scope === 'declared_guest_checks' && packet.publication_status === 'DISABLED' && (readyConnections.length ?
+          <form className="review-actions" onSubmit={event => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            void approveDraft(String(form.get('connection_id')), String(form.get('base_branch')))
+          }}>
+            <p className="muted">Approve one draft PR for this exact patch and recorded test evidence. Approval expires after 24 hours. Merge and deployment remain separate.</p>
+            <label>Repository<select name="connection_id" required>{readyConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.repository_ref}</option>)}</select></label>
+            <label>Base branch<input name="base_branch" defaultValue="main" required /></label>
+            <button className="secondary-button" disabled={busy}>Approve draft PR</button>
+          </form> : <p className="muted">A ready GitHub connection is required before draft PR approval.</p>)}
+        {packet?.publication_status === 'APPROVED' && <p className="muted">Draft PR approval is recorded. A configured publication worker can now create the draft.</p>}
         {!['COMPLETED', 'FAILED', 'CANCELLED', 'INCONCLUSIVE', 'REVIEW_READY'].includes(run.state) && <button className="secondary-button" onClick={cancel}><Square size={14} /> Cancel run</button>}
       </div>
     </div>

@@ -12,6 +12,7 @@ from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
 
+from platform_app.general_patch import GeneralPatchError, parse_general_patch
 from platform_app.models import PublicationApproval
 from platform_app.patch_workspace import PatchError, parse_patch_response
 from platform_app.publication import BRANCH, verify_draft_pr_approval
@@ -134,17 +135,32 @@ class GitHubDraftPublisher:
                 raise GitHubPublicationError("Changed file exceeds patch policy")
             files[name] = raw
         try:
-            proposal = parse_patch_response(
-                json.dumps({
-                    "diagnosis": "Approved publication",
-                    "files": [
-                        {"path": name, "content": raw.decode("utf-8")}
-                        for name, raw in files.items()
-                    ],
-                }, ensure_ascii=False),
-                frozenset(names),
-            )
-        except (PatchError, UnicodeDecodeError) as error:
+            if patch_receipt.get("scope") == "declared_guest_checks":
+                bases = patch_receipt.get("base_sha256_by_path")
+                if not isinstance(bases, dict) or set(bases) != set(names):
+                    raise GitHubPublicationError("General patch bases are invalid")
+                proposal = parse_general_patch(
+                    json.dumps({
+                        "diagnosis": "Approved publication",
+                        "files": [
+                            {"path": name, "base_sha256": bases[name],
+                             "content": raw.decode("utf-8")}
+                            for name, raw in files.items()
+                        ],
+                    }, ensure_ascii=False), frozenset(names),
+                )
+            else:
+                proposal = parse_patch_response(
+                    json.dumps({
+                        "diagnosis": "Approved publication",
+                        "files": [
+                            {"path": name, "content": raw.decode("utf-8")}
+                            for name, raw in files.items()
+                        ],
+                    }, ensure_ascii=False),
+                    frozenset(names),
+                )
+        except (PatchError, GeneralPatchError, UnicodeDecodeError) as error:
             raise GitHubPublicationError("Candidate patch is invalid") from error
         if proposal.patch_sha256 != approval.patch_sha256:
             raise GitHubPublicationError("Candidate patch differs from approval")
@@ -184,7 +200,9 @@ class GitHubDraftPublisher:
                 "content": base64.b64encode(raw).decode("ascii"), "encoding": "base64",
             })
             tree_items.append({
-                "path": path, "mode": "100644", "type": "blob", "sha": self._sha(blob, "sha"),
+                "path": path,
+                "mode": "100755" if (workspace / path).stat().st_mode & 0o111 else "100644",
+                "type": "blob", "sha": self._sha(blob, "sha"),
             })
         tree = self._request("POST", f"{root}/git/trees", payload={
             "base_tree": base_tree, "tree": tree_items,

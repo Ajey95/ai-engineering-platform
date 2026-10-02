@@ -142,6 +142,19 @@ def test_general_model_patch_reserves_settles_and_replays(tmp_path):
         frozenset({"app.py"}), tmp_path, provider=adapter,
     )
     assert replay == result and len(calls) == 1
+    feedback = ({
+        "status": "FAILED", "reason": "candidate_declared_check_failed",
+        "candidate_checks": {"browser": "FAILED"},
+        "patch_sha256": result.proposal.patch_sha256,
+        "candidate_tree_sha256": "c" * 64,
+    },)
+    second = request_general_patch(
+        factory, "run-a", "worker-a", fence, source, baseline,
+        frozenset({"app.py"}), tmp_path, provider=adapter,
+        attempt=2, feedback=feedback,
+    )
+    assert second.artifact_ref.endswith("general-model-2.json")
+    assert len(calls) == 2 and b"candidate_declared_check_failed" in calls[1].content
     with factory() as db:
         db.get(Task, "task-a").report = "Changed report after model call"
         db.commit()

@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from platform_app.config import settings
+from platform_app.hosted_reporting import verified_hosted_artifact
 from platform_app.models import (
     AuditEvent,
     PublicationApproval,
     RepositoryConnection,
     Run,
     RunEvent,
+    SandboxLease,
     ToolAction,
 )
 from platform_app.service import ServiceError, canonical_hash
@@ -31,6 +35,8 @@ def _binding(db: Session, run: Run) -> tuple[str, str]:
     ).order_by(RunEvent.sequence.desc()).limit(1))
     if decision is None or (decision.payload or {}).get("decision") != "accepted":
         raise ServiceError("PUBLICATION_NOT_READY", "Reviewer acceptance is required", 409)
+    if (run.config_snapshot or {}).get("execution_profile") == "hosted_vm_v1":
+        return _hosted_binding(db, run)
     actions = db.scalars(select(ToolAction).where(
         ToolAction.tenant_id == run.tenant_id, ToolAction.run_id == run.id,
         ToolAction.step_id.in_(REQUIRED_STEPS),
@@ -75,6 +81,61 @@ def _binding(db: Session, run: Run) -> tuple[str, str]:
         for step in REQUIRED_STEPS
     }
     return patch_hash, canonical_hash(evidence)
+
+
+def _hosted_binding(db: Session, run: Run) -> tuple[str, str]:
+    events = db.scalars(select(RunEvent).where(
+        RunEvent.tenant_id == run.tenant_id,
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "verification.completed",
+    ).order_by(RunEvent.sequence.desc())).all()
+    event = next((item for item in events if (
+        item.payload or {}).get("scope") == "declared_guest_checks"
+    ), None)
+    payload = event.payload if event else {}
+    patch_hash = payload.get("patch_sha256")
+    tree_hash = payload.get("candidate_tree_sha256")
+    attempt = payload.get("attempt")
+    if (
+        payload.get("status") != "SUPPORTED"
+        or not isinstance(patch_hash, str) or not DIGEST.fullmatch(patch_hash)
+        or not isinstance(tree_hash, str) or not DIGEST.fullmatch(tree_hash)
+        or type(attempt) is not int or not 1 <= attempt <= 3
+    ):
+        raise ServiceError("PUBLICATION_NOT_READY", "Hosted verification is incomplete", 409)
+    verified_hosted_artifact(run, event, Path(settings().artifact_dir))
+    model = db.scalar(select(ToolAction).where(
+        ToolAction.tenant_id == run.tenant_id,
+        ToolAction.run_id == run.id,
+        ToolAction.step_id == f"general-model-{attempt}",
+        ToolAction.logical_action == "model.generate",
+        ToolAction.status == "COMPLETED",
+    ))
+    if model is None or not isinstance(model.receipt, dict):
+        raise ServiceError("PUBLICATION_NOT_READY", "Model proposal is unavailable", 409)
+    if not isinstance(model.receipt.get("output_sha256"), str) or not DIGEST.fullmatch(
+        model.receipt["output_sha256"]
+    ):
+        raise ServiceError("PUBLICATION_NOT_READY", "Model proposal digest is invalid", 409)
+    receipts = {}
+    for phase in ("baseline", "candidate"):
+        lease_id = payload.get(f"{phase}_lease_id")
+        lease = db.get(SandboxLease, lease_id) if isinstance(lease_id, str) else None
+        if (
+            lease is None or lease.tenant_id != run.tenant_id
+            or lease.project_id != run.project_id or lease.run_id != run.id
+            or lease.phase != phase or lease.result_received_at is None
+            or not isinstance(lease.result_sha256, str)
+            or not DIGEST.fullmatch(lease.result_sha256)
+        ):
+            raise ServiceError("PUBLICATION_NOT_READY", "Guest evidence is unavailable", 409)
+        receipts[phase] = lease.result_sha256
+    return patch_hash, canonical_hash({
+        "verification": payload,
+        "guest_result_sha256": receipts,
+        "model_effect_key": model.effect_key,
+        "model_output_sha256": model.receipt["output_sha256"],
+    })
 
 
 def _now(value: datetime | None) -> datetime:
@@ -122,6 +183,8 @@ def approve_draft_pr(
         PublicationApproval.run_id == run_id,
         PublicationApproval.action == "draft_pr",
     ).with_for_update())
+    if row is not None and row.status == "consumed":
+        raise ServiceError("PUBLICATION_ALREADY_PUBLISHED", "Draft PR was already published", 409)
     if row is not None and _active(row, now):
         if (
             row.connection_id == connection_id and row.destination == destination
