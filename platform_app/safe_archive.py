@@ -98,6 +98,7 @@ def extract_regular_tar(
                     shutil.copyfileobj(stream, output)
                 if target.stat().st_size != member.size:
                     raise UnsafeArchive("Archive file size changed during extraction")
+                target.chmod(0o755 if member.mode & 0o111 else 0o644)
     except (tarfile.TarError, OSError, EOFError) as error:
         raise UnsafeArchive("Archive is invalid or incomplete") from error
     return [path.as_posix() for _, path in members]

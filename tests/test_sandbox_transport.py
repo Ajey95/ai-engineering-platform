@@ -136,7 +136,7 @@ def test_guest_output_requires_scoped_result_and_exact_evidence_bytes():
     evidence = b"bounded evidence archive"
     result = {
         "version": 1, "lease_id": "lease-a", "fence": 3,
-        "source_sha256": source_sha, "guest_exit_code": 0,
+        "source_sha256": source_sha, "guest_exit_code": 0, "phase": "baseline",
         "baseline": {"status": "BASELINE_RECORDED"},
         "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
         "evidence_bytes": len(evidence),

@@ -325,6 +325,7 @@ class SandboxLease(Base):
         UniqueConstraint("instance_id", name="uq_sandbox_instance_id"),
         CheckConstraint("generation > 0", name="ck_sandbox_generation_positive"),
         CheckConstraint("disk_gib BETWEEN 8 AND 100", name="ck_sandbox_disk_bounds"),
+        CheckConstraint("phase IN ('baseline', 'candidate')", name="ck_sandbox_phase"),
         CheckConstraint(
             "state IN ('intended', 'bootstrapping', 'provisioned', 'revoked', "
             "'terminating', 'terminated')",
@@ -337,6 +338,7 @@ class SandboxLease(Base):
     project_id: Mapped[str] = mapped_column(String(36))
     run_id: Mapped[str] = mapped_column(String(36), index=True)
     generation: Mapped[int] = mapped_column(Integer)
+    phase: Mapped[str] = mapped_column(String(16), default="baseline")
     lease_fence: Mapped[int] = mapped_column(Integer)
     client_token: Mapped[str] = mapped_column(String(64))
     instance_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

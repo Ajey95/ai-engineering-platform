@@ -37,6 +37,7 @@ def stage_and_launch_baseline(
     db: Session, run_id: str, worker_id: str, fence: int,
     source: SourceArchive, spec: SandboxSpec, ec2, s3,
     bucket: str, envelope_key: bytes,
+    *, phase: str = "baseline",
 ) -> SandboxLease:
     """Replay preserves a committed user-data envelope and EC2 client token."""
     run = db.get(Run, run_id)
@@ -54,7 +55,7 @@ def stage_and_launch_baseline(
             "ENVIRONMENT_UNAVAILABLE", "Run has no approved environment plan", 409
         ) from error
     bundle = build_guest_bundle(source, manifest)
-    lease = reserve_sandbox(db, run.id, worker_id, fence, spec)
+    lease = reserve_sandbox(db, run.id, worker_id, fence, spec, phase=phase)
     db.commit()  # Existing-intent replay also releases its row lock before S3 I/O.
     keys = SandboxObjectKeys.scoped(
         lease.tenant_id, lease.project_id, lease.run_id, lease.id
@@ -71,7 +72,7 @@ def stage_and_launch_baseline(
         urls = issue_guest_urls(s3, bucket, keys, ttl_seconds=min(remaining, 1800))
         user_data = render_user_data(
             urls, lease.id, fence, bundle.sha256, bundle.manifest_sha256,
-            int(aware(lease.expires_at).timestamp()),
+            int(aware(lease.expires_at).timestamp()), phase=phase,
         )
         attach_guest_bootstrap(
             db, lease.id, worker_id, fence, user_data, staged_sha, envelope_key
@@ -100,7 +101,8 @@ def seal_and_collect_baseline(
         lease.tenant_id, lease.project_id, lease.run_id, lease.id
     )
     output = fetch_guest_output(
-        s3, bucket, keys, lease.id, fence, lease.source_sha256
+        s3, bucket, keys, lease.id, fence, lease.source_sha256,
+        phase=lease.phase,
     )
     if output is None:
         db.rollback()
@@ -126,12 +128,12 @@ def seal_and_collect_baseline(
     lease.result_sha256 = digest
     lease.result_summary = output.result
     lease.result_received_at = utcnow()
-    append_event(db, run, "sandbox.baseline_recorded", {
+    append_event(db, run, f"sandbox.{lease.phase}_recorded", {
         "sandbox_lease_id": lease.id,
         "result_sha256": digest,
         "evidence_sha256": output.result["evidence_sha256"],
         "guest_exit_code": output.result["guest_exit_code"],
-        "baseline_status": (output.result.get("baseline") or {}).get("status"),
+        "observation_status": (output.result.get(lease.phase) or {}).get("status"),
     })
     db.commit()
     return output

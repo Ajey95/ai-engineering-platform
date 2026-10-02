@@ -1136,3 +1136,17 @@ replay and source-scope tests passed. No deployed hosted worker, live GitHub
 fetch, AMI build, provider repair, or real AWS end-to-end proof exists.
 The full Python suite passed 229 tests with 4 skips; scoped Ruff and local
 Alembic drift checks passed after the migration.
+
+2026-10-03 general patch/candidate phase increment: `general_patch.py`
+requires approved paths, per-file original SHA-256 and bounded replacement
+text, then builds a deterministic candidate tar and review diff without
+executing the repository. The safe extractor now preserves only the original
+file's execute bit. Migration `f6092c41a8e5` records guest phase; after a
+baseline VM is terminated, a distinct candidate VM generation can launch and
+produce a separate receipt. The guest runner records its browser tree before
+and after the scenario. `guest_comparison.py` reports whether declared checks
+improved, failed or were inconclusive, with manifest, candidate tree, lease
+and check-receipt pins; it does not claim hidden correctness. Local PostgreSQL
+upgraded with no drift; the full suite passed 233 tests with 4 skips and
+scoped Ruff passed. No general native-model proposal or hosted worker is yet
+connected to these seams, and no real VM was launched.

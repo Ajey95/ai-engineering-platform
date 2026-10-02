@@ -28,7 +28,11 @@ def _manifest(port, *, external=(), python_version=None):
     })
 
 
-def test_guest_baseline_records_named_and_browser_evidence(tmp_path):
+@pytest.mark.parametrize("phase,status", [
+    ("baseline", "BASELINE_RECORDED"),
+    ("candidate", "CANDIDATE_RECORDED"),
+])
+def test_guest_records_named_and_browser_evidence(tmp_path, phase, status):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -47,8 +51,10 @@ def test_guest_baseline_records_named_and_browser_evidence(tmp_path):
         encoding="utf-8", newline="\n",
     )
     evidence = tmp_path / "evidence"
-    result = run_environment(_manifest(port), source, evidence, case_id="case-001")
-    assert result["status"] == "BASELINE_RECORDED"
+    result = run_environment(
+        _manifest(port), source, evidence, case_id="case-001", phase=phase
+    )
+    assert result["status"] == status and result["phase"] == phase
     assert result["named_tests"]["baseline"]["status"] == "PASSED"
     assert result["browser"]["status"] == "PASSED"
     assert (evidence / "browser" / "final.png").is_file()

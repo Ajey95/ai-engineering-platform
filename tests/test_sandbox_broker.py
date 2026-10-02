@@ -53,7 +53,8 @@ class FakeEC2:
         if token not in self.instances:
             interface = args["NetworkInterfaces"][0]
             instance = {
-                "InstanceId": "i-12345678", "ClientToken": token,
+                "InstanceId": f"i-{0x12345678 + len(self.instances):08x}",
+                "ClientToken": token,
                 "State": {"Name": "running"},
                 "NetworkInterfaces": [{
                     "SubnetId": interface["SubnetId"],
@@ -452,7 +453,8 @@ def test_hosted_baseline_handoff_is_replay_safe_and_records_guest_evidence(scope
     guest_result = {
         "version": 1, "lease_id": lease.id, "fence": fence,
         "source_sha256": lease.source_sha256,
-        "guest_exit_code": 0, "baseline": {"status": "BASELINE_RECORDED"},
+        "guest_exit_code": 0, "phase": "baseline",
+        "baseline": {"status": "BASELINE_RECORDED"},
         "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
         "evidence_bytes": len(evidence),
     }
@@ -475,3 +477,50 @@ def test_hosted_baseline_handoff_is_replay_safe_and_records_guest_evidence(scope
         OutboxEvent.topic == "sandbox.cleanup"
     )).all()
     assert events == []
+    revoke_sandbox(db, lease.id, "closed")
+    assert not terminate_revoked_sandbox(db, lease.id, ec2)
+    assert terminate_revoked_sandbox(db, lease.id, ec2)
+    candidate_file = io.BytesIO()
+    with tarfile.open(fileobj=candidate_file, mode="w") as archive:
+        data = b"print('candidate')\n"
+        entry = tarfile.TarInfo("app.py")
+        entry.size = len(data)
+        archive.addfile(entry, io.BytesIO(data))
+    candidate_bytes = candidate_file.getvalue()
+    candidate = SourceArchive(
+        run.base_commit, hashlib.sha256(candidate_bytes).hexdigest(),
+        candidate_bytes, 1,
+    )
+    second = stage_and_launch_baseline(
+        db, run.id, "worker-a", fence, candidate, _spec(), ec2, s3,
+        "private-bucket", _ENVELOPE_KEY, phase="candidate",
+    )
+    assert second.generation == 2 and second.phase == "candidate"
+    assert second.instance_id != lease.instance_id
+    second_keys = SandboxObjectKeys.scoped(
+        second.tenant_id, second.project_id, second.run_id, second.id
+    )
+    s3.objects[second_keys.ready] = json.dumps({
+        "version": 1, "lease_id": second.id, "fence": fence,
+        "source_sha256": second.source_sha256,
+    }).encode()
+    assert seal_and_collect_baseline(
+        db, second.id, "worker-a", fence, ec2, s3, "private-bucket"
+    ) is None
+    candidate_result = {
+        "version": 1, "lease_id": second.id, "fence": fence,
+        "source_sha256": second.source_sha256,
+        "guest_exit_code": 0, "phase": "candidate",
+        "candidate": {"status": "CANDIDATE_RECORDED"},
+        "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
+        "evidence_bytes": len(evidence),
+    }
+    s3.objects[second_keys.evidence] = evidence
+    s3.objects[second_keys.result] = json.dumps(candidate_result).encode()
+    assert seal_and_collect_baseline(
+        db, second.id, "worker-a", fence, ec2, s3, "private-bucket"
+    ).result == candidate_result
+    assert len(db.scalars(select(RunEvent).where(
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "sandbox.candidate_recorded",
+    )).all()) == 1

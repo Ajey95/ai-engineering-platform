@@ -56,6 +56,7 @@ class GuestBootstrapConfig:
     go_get: str
     result_put: str
     evidence_put: str
+    phase: str = "baseline"
 
     def __post_init__(self):
         if (
@@ -66,6 +67,7 @@ class GuestBootstrapConfig:
             or not isinstance(self.manifest_sha256, str)
             or not _SHA.fullmatch(self.manifest_sha256)
             or type(self.expires_at_epoch) is not int or self.expires_at_epoch <= 0
+            or self.phase not in {"baseline", "candidate"}
             or not all(isinstance(value, str) and _s3_url(value) for value in (
                 self.source_get, self.ready_put, self.go_get,
                 self.result_put, self.evidence_put,
@@ -89,6 +91,7 @@ class GuestBootstrapConfig:
             "version", "lease_id", "fence", "bundle_sha256", "manifest_sha256",
             "expires_at_epoch",
             "source_get", "ready_put", "go_get", "result_put", "evidence_put",
+            "phase",
         }
         if not isinstance(payload, dict) or set(payload) != required or payload["version"] != 1:
             raise GuestBootstrapError("Guest bootstrap schema is unsupported")
@@ -98,11 +101,12 @@ class GuestBootstrapConfig:
 def render_user_data(
     urls: GuestUrls, lease_id: str, fence: int,
     bundle_sha256: str, manifest_sha256: str, expires_at_epoch: int,
+    *, phase: str = "baseline",
 ) -> str:
     config = GuestBootstrapConfig(
         lease_id, fence, bundle_sha256, manifest_sha256, expires_at_epoch,
         urls.source_get, urls.ready_put, urls.go_get, urls.result_put,
-        urls.evidence_put,
+        urls.evidence_put, phase,
     )
     encoded = base64.b64encode(config.to_json()).decode("ascii")
     script = (
@@ -294,6 +298,7 @@ def run_guest_bootstrap(config: GuestBootstrapConfig, root: Path) -> dict:
         "--manifest", str(manifest_path), "--workspace", str(workspace),
         "--artifacts", str(artifacts), "--case-id",
         "sandbox-" + hashlib.sha256(config.lease_id.encode()).hexdigest()[:32],
+        "--phase", config.phase,
     ]
     try:
         completed = subprocess.run(command, timeout=min(plan.max_runtime_seconds, remaining),
@@ -312,7 +317,8 @@ def run_guest_bootstrap(config: GuestBootstrapConfig, root: Path) -> dict:
     output = {
         "version": 1, "lease_id": config.lease_id, "fence": config.fence,
         "source_sha256": config.bundle_sha256,
-        "guest_exit_code": exit_code, "baseline": guest_result,
+        "phase": config.phase, "guest_exit_code": exit_code,
+        config.phase: guest_result,
     }
     evidence = read_guest_evidence(artifacts)
     output["evidence_sha256"] = hashlib.sha256(evidence).hexdigest()

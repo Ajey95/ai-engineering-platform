@@ -87,9 +87,11 @@ def _runtime_matches(manifest: EnvironmentManifest) -> bool:
 
 def run_environment(
     manifest: EnvironmentManifest, workspace: Path, artifacts: Path,
-    *, case_id: str,
+    *, case_id: str, phase: str = "baseline",
 ) -> dict:
     """Record baseline evidence; a repair verdict requires later independent work."""
+    if phase not in {"baseline", "candidate"}:
+        raise ValueError("Guest execution phase is unsupported")
     workspace = workspace.resolve(strict=True)
     if not workspace.is_dir() or artifacts.resolve().is_relative_to(workspace):
         raise ValueError("Guest artifacts must be outside the source workspace")
@@ -100,7 +102,7 @@ def run_environment(
         )
     baseline_tree = tree_hash(workspace)
     result = {
-        "schema_version": "1.0", "case_id": case_id,
+        "schema_version": "1.0", "case_id": case_id, "phase": phase,
         "manifest_sha256": manifest.digest(), "baseline_tree_sha256": baseline_tree,
         "status": "ENVIRONMENT_UNAVAILABLE", "preparation": [],
         "named_tests": {}, "browser": None,
@@ -124,10 +126,17 @@ def run_environment(
             runner_manifest, name, workspace, artifacts
         )
     browser_dir = artifacts / "browser"
+    browser_tree = tree_hash(workspace)
     result["browser"] = asyncio.run(run_scenario(
         runner_manifest, workspace, browser_dir
     ))
-    result["status"] = "BASELINE_RECORDED"
+    after_browser_tree = tree_hash(workspace)
+    result["browser"]["tested_tree_sha256"] = browser_tree
+    result["browser"]["post_browser_tree_sha256"] = after_browser_tree
+    if browser_tree != after_browser_tree:
+        result["browser"]["status"] = "INCONCLUSIVE"
+        result["browser"]["tree_changed"] = True
+    result["status"] = "BASELINE_RECORDED" if phase == "baseline" else "CANDIDATE_RECORDED"
     return result
 
 
@@ -137,6 +146,7 @@ def main() -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--case-id", required=True)
+    parser.add_argument("--phase", choices=("baseline", "candidate"), required=True)
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() == 0:
         parser.error("Guest runner must execute as an unprivileged Linux user")
@@ -146,13 +156,14 @@ def main() -> int:
     resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
     manifest = EnvironmentManifest.model_validate_json(args.manifest.read_bytes())
     result = run_environment(
-        manifest, args.workspace, args.artifacts, case_id=args.case_id
+        manifest, args.workspace, args.artifacts, case_id=args.case_id,
+        phase=args.phase,
     )
     (args.artifacts / "result.json").write_text(
         json.dumps(result, sort_keys=True), encoding="utf-8"
     )
     package_guest_evidence(args.artifacts)
-    return 0 if result["status"] == "BASELINE_RECORDED" else 2
+    return 0 if result["status"] in {"BASELINE_RECORDED", "CANDIDATE_RECORDED"} else 2
 
 
 if __name__ == "__main__":

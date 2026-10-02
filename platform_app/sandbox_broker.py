@@ -53,9 +53,10 @@ class SandboxSpec:
             raise ValueError("Sandbox launch spec is outside the reviewed bounds")
 
 
-def _matches(lease: SandboxLease, spec: SandboxSpec) -> bool:
+def _matches(lease: SandboxLease, spec: SandboxSpec, phase: str) -> bool:
     return (
-        lease.image_id == spec.image_id
+        lease.phase == phase
+        and lease.image_id == spec.image_id
         and lease.instance_type == spec.instance_type
         and lease.subnet_id == spec.subnet_id
         and lease.security_group_id == spec.security_group_id
@@ -65,9 +66,12 @@ def _matches(lease: SandboxLease, spec: SandboxSpec) -> bool:
 
 
 def reserve_sandbox(
-    db: Session, run_id: str, worker_id: str, fence: int, spec: SandboxSpec
+    db: Session, run_id: str, worker_id: str, fence: int, spec: SandboxSpec,
+    *, phase: str = "baseline",
 ) -> SandboxLease:
     """Commit an EC2 idempotency key before any external launch call."""
+    if phase not in {"baseline", "candidate"}:
+        raise ValueError("Sandbox phase is unsupported")
     run = db.scalar(
         select(Run).where(Run.id == run_id).with_for_update()
         .execution_options(populate_existing=True)
@@ -87,7 +91,7 @@ def reserve_sandbox(
     if existing is not None:
         if (
             existing.state in {"intended", "bootstrapping", "provisioned"}
-            and existing.lease_fence == fence and _matches(existing, spec)
+            and existing.lease_fence == fence and _matches(existing, spec, phase)
         ):
             return existing
         raise ServiceError("SANDBOX_STILL_ACTIVE", "Prior sandbox needs cleanup", 409)
@@ -99,7 +103,7 @@ def reserve_sandbox(
     ).hexdigest()
     lease = SandboxLease(
         tenant_id=run.tenant_id, project_id=run.project_id, run_id=run.id,
-        generation=generation, lease_fence=fence, client_token=token,
+        generation=generation, phase=phase, lease_fence=fence, client_token=token,
         state="intended", image_id=spec.image_id, instance_type=spec.instance_type,
         subnet_id=spec.subnet_id, security_group_id=spec.security_group_id,
         root_device_name=spec.root_device_name, disk_gib=spec.disk_gib,
@@ -108,7 +112,8 @@ def reserve_sandbox(
     db.add(lease)
     db.flush()
     append_event(db, run, "sandbox.intended", {
-        "sandbox_lease_id": lease.id, "generation": generation, "image_id": spec.image_id,
+        "sandbox_lease_id": lease.id, "generation": generation,
+        "phase": phase, "image_id": spec.image_id,
     })
     db.commit()
     db.refresh(lease)

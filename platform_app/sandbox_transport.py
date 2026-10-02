@@ -88,7 +88,7 @@ def _read_bounded_object(s3, bucket: str, key: str, limit: int) -> bytes | None:
 
 def fetch_guest_output(
     s3, bucket: str, keys: SandboxObjectKeys, lease_id: str,
-    fence: int, source_sha256: str,
+    fence: int, source_sha256: str, *, phase: str = "baseline",
 ) -> GuestOutput | None:
     """Verify guest transport bytes; callers must also check the DB lease fence."""
     raw = _read_bounded_object(s3, bucket, keys.result, 1_000_000)
@@ -104,14 +104,16 @@ def fetch_guest_output(
         or result.get("lease_id") != lease_id
         or result.get("fence") != fence
         or result.get("source_sha256") != source_sha256
+        or phase not in {"baseline", "candidate"}
+        or result.get("phase") != phase
         or type(result.get("evidence_bytes")) is not int
         or not 1 <= result["evidence_bytes"] <= 50_000_000
         or not isinstance(result.get("evidence_sha256"), str)
         or not re.fullmatch(r"[0-9a-f]{64}", result["evidence_sha256"])
         or (result.get("guest_exit_code") is not None
             and type(result["guest_exit_code"]) is not int)
-        or (result.get("baseline") is not None
-            and not isinstance(result["baseline"], dict))
+        or (result.get(phase) is not None
+            and not isinstance(result[phase], dict))
     ):
         raise SandboxTransportError("Guest result does not match its lease")
     evidence = _read_bounded_object(s3, bucket, keys.evidence, 50_000_000)

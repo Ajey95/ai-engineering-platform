@@ -4,8 +4,8 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 229 tests with 4 skips after the hosted baseline and
-repository fetch additions; scoped lint and local Alembic drift check passed.
+Python suite passed 233 tests with 4 skips after the candidate-phase and
+general patch additions; scoped lint and local Alembic drift check passed.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider
@@ -110,6 +110,15 @@ not a live provider, customer repository, AWS or GitHub qualification.
   root reads one bounded no-follow file. PostgreSQL records one baseline
   receipt without changing the repair verdict. A controlled fake EC2/S3/DB
   replay test passed. This is not a deployed worker or autonomous repair.
+- `platform_app/general_patch.py` accepts bounded full-file replacements only
+  for an approved path set and exact original file digests, then generates a
+  deterministic candidate archive and unified diff without executing code.
+  Migration `f6092c41a8e5` records baseline versus candidate VM phase; the
+  controlled EC2/S3/DB test launched a second VM generation after terminating
+  the first. `platform_app/guest_comparison.py` compares manifest, candidate
+  tree, separate lease identity and declared check receipts, returning
+  SUPPORTED/FAILED/INCONCLUSIVE rather than an independent correctness verdict.
+  A native model call and hosted worker do not yet consume this path.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
@@ -402,7 +411,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. Hosted authorized-origin and network policy qualification remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
-| FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
+| FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. A controlled hosted handoff now records baseline and candidate guest phases in separate fake EC2 VMs and compares declared checks with exact tree/manifest pins; no live VM, live model or customer repository has been verified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. A read-only GitHub probe checks identity, reported push permission, default branch and pull read access; its scoped operator command records readiness and the publication command rechecks it. The REST publisher writes a deterministic branch/draft PR through a durable intent and reconciles uncertain retries. Controlled HTTP tests passed; no live GitHub account, PR write qualification, general repository workflow or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
@@ -410,7 +419,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Twenty-three Alembic revisions applied through `d4c05e73b28a` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Twenty-four Alembic revisions applied through `f6092c41a8e5` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
