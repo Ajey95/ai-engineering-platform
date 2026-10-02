@@ -130,6 +130,15 @@ REPRODUCED, HLS HTTP 200, and an honest `INCONCLUSIVE` verdict without a live
 provider. Desktop and mobile Chromium loaded the recording and screenshot,
 played video on desktop, and had no failed requests, page errors or overflow.
 This qualifies the synthetic local path on PostgreSQL, not hosted execution.
+Two simultaneous local PostgreSQL deletes of disposable run
+`9e8c0b45-7dfe-4403-93dd-5039470a0cb7` both returned `complete` after
+the run lock was reacquired following revocation. They produced one deletion
+row and one `artifact.deleted` event, removed HLS, and kept the screenshot.
+The first concurrency attempt had exposed a stale run sequence; this was fixed
+before the passing recheck.
+`scripts/verify_postgres_admission.py` now repeats the deletion race in a
+disposable migrated PostgreSQL database and exits nonzero if either request
+fails or more than one final event is written; its latest run passed.
 The admitted worker baseline verification produced run
 `b2f8ad2f-4c72-4727-be69-bdef8eeabdf6` at pinned commit `5382f81`:
 outbox delivered, PASS/FAIL/FAIL, media READY, reproduction REPRODUCED,

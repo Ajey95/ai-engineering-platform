@@ -354,3 +354,14 @@ model call occurred. Web 5176 proxies to this API and is the current demo URL.
 Desktop/mobile Playwright opened that run, decoded HLS and loaded its screenshot;
 desktop played past time zero; neither had failed requests, page errors or
 horizontal overflow. This is a synthetic local proof, not hosted release.
+
+2026-10-02 deletion race fix: two simultaneous PostgreSQL requests initially
+exposed a duplicate `run_events` sequence after the revocation commit. The
+handler now reacquires the run row lock and refreshes ORM state after that
+commit; it holds the lock through cleanup and final event insertion. A new
+disposable run `9e8c0b45-7dfe-4403-93dd-5039470a0cb7` completed in WSL
+Docker, then two concurrent delete calls both returned `complete`: one
+deletion row, one `artifact.deleted` event, HLS absent, screenshot retained.
+The disposable PostgreSQL verifier now includes the same two-request deletion
+race and passed alongside migration roundtrip, duplicate admission, resume and
+tenant constraints.

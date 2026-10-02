@@ -1,4 +1,4 @@
-"""Exercise migrated PostgreSQL admission under concurrent duplicate requests.
+"""Exercise migrated PostgreSQL admission, resume and recording deletion races.
 
 Creates and drops one uniquely named local test database. The enabled model
 row is a database fixture only; this script never calls a provider.
@@ -12,7 +12,11 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Barrier
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import psycopg
@@ -27,11 +31,13 @@ from platform_app.models import (
     OutboxEvent,
     Project,
     ProjectMembership,
+    RecordingDeletion,
     Run,
     RunEvent,
     Task,
     Tenant,
     TenantMembership,
+    ToolAction,
 )
 from platform_app.run_ledger import claim_run, resume_input_run, transition
 from platform_app.schemas import RunCreate
@@ -285,17 +291,97 @@ def main() -> int:
             postgres_resume = resumed.state == "QUEUED" and sorted(
                 event.status for event in dispatches
             ) == ["delivered", "pending"]
+        # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
+        # Both requests must return successfully while only one final event exists.
+        import platform_app.api as api_module
+        from platform_app.api import delete_run_recording
+
+        deletion_run_id = str(uuid4())
+        with Session(engine) as session:
+            session.add(Run(
+                id=deletion_run_id,
+                tenant_id="fixture-tenant",
+                project_id="fixture-project",
+                task_id="fixture-task",
+                created_by="fixture",
+                idempotency_key="recording-delete-race",
+                request_hash="a" * 64,
+                base_commit="b" * 40,
+                model_entry_id="database-fixture-model",
+                state="COMPLETED",
+                media_status="READY",
+                config_snapshot={},
+            ))
+            session.add(ToolAction(
+                tenant_id="fixture-tenant",
+                run_id=deletion_run_id,
+                step_id="browser",
+                logical_action="fixture.browser",
+                effect_key="c" * 64,
+                arguments_hash="d" * 64,
+                policy_result="allowed",
+                status="COMPLETED",
+                receipt={"recording": "recording.webm"},
+            ))
+            session.commit()
+        artifact_base = Path(__file__).resolve().parents[1] / "artifacts"
+        artifact_base.mkdir(exist_ok=True)
+        with TemporaryDirectory(prefix="aip-delete-race-", dir=artifact_base) as directory:
+            root = Path(directory)
+            media = (
+                root / "private-media" / "fixture-tenant"
+                / f"{deletion_run_id}_baseline" / "media" / ("e" * 64)
+            )
+            media.mkdir(parents=True)
+            (media / "master.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+            evidence = root / deletion_run_id / "baseline"
+            evidence.mkdir(parents=True)
+            (evidence / "recording.webm").write_bytes(b"synthetic recording")
+            (evidence / "final.png").write_bytes(b"synthetic screenshot")
+            deletion_barrier = Barrier(2)
+
+            def delete_once() -> dict:
+                with Session(engine) as session:
+                    deletion_barrier.wait(timeout=10)
+                    return delete_run_recording(
+                        deletion_run_id, "baseline", ("fixture-tenant", "fixture"), session
+                    )
+
+            with patch.object(api_module, "settings", lambda: SimpleNamespace(
+                environment="development", artifact_dir=str(root)
+            )):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [executor.submit(delete_once) for _ in range(2)]
+                    deleted = [future.result(timeout=30) for future in futures]
+            with Session(engine) as session:
+                deletion_rows = session.scalars(select(RecordingDeletion).where(
+                    RecordingDeletion.run_id == deletion_run_id
+                )).all()
+                deletion_events = session.scalars(select(RunEvent).where(
+                    RunEvent.run_id == deletion_run_id,
+                    RunEvent.event_type == "artifact.deleted",
+                )).all()
+            postgres_recording_delete_race = (
+                all(item["status"] == "complete" for item in deleted)
+                and len(deletion_rows) == 1
+                and deletion_rows[0].status == "complete"
+                and len(deletion_events) == 1
+                and not media.exists()
+                and not (evidence / "recording.webm").exists()
+                and (evidence / "final.png").is_file()
+            )
         result = {
             "schema_revision": revision,
             "schema_roundtrip": schema_roundtrip,
             "postgres_resume": postgres_resume,
+            "postgres_recording_delete_race": postgres_recording_delete_race,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
             "cross_tenant_membership_denied": cross_tenant_membership_denied,
             "cross_tenant_task_denied": cross_tenant_task_denied,
             "cross_tenant_event_denied": cross_tenant_event_denied,
             **counts,
-            "scope": "synthetic_postgresql_admission_only",
+            "scope": "synthetic_postgresql_integration_only",
         }
         print(json.dumps(result))
         return (
@@ -307,6 +393,7 @@ def main() -> int:
             and cross_tenant_event_denied
             and schema_roundtrip
             and postgres_resume
+            and postgres_recording_delete_race
             and all(v == 1 for v in counts.values())
             else 1
         )

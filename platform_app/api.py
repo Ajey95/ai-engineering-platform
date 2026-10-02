@@ -342,7 +342,10 @@ def delete_run_recording(
     if not is_owner(db, identity):
         require_project_role(db, identity, run.project_id, REVIEW_ROLES)
     # A terminal run cannot republish the recording after access is revoked.
-    run = db.scalar(select(Run).where(Run.id == run.id).with_for_update())
+    run = db.scalar(
+        select(Run).where(Run.id == run.id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if run.state not in TERMINAL_STATES | {"REVIEW_READY"}:
         raise ServiceError("RUN_ACTIVE", "Recording deletion requires a closed run", 409)
     deletion = deletion_for(db, run, label)
@@ -366,6 +369,17 @@ def delete_run_recording(
         ))
         append_event(db, run, "artifact.deletion_requested", {"label": label})
         db.commit()
+        # The revocation commit releases the first lock. Reacquire the run row
+        # so only one request removes this run's files or appends its final event.
+        run = db.scalar(
+            select(Run).where(Run.id == run.id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    deletion = db.scalar(
+        select(RecordingDeletion)
+        .where(RecordingDeletion.id == deletion.id)
+        .execution_options(populate_existing=True)
+    )
     if deletion.status != "complete":
         try:
             purge_local_recording(db, run, label, settings().artifact_dir)
