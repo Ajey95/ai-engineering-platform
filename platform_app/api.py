@@ -8,7 +8,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+    StreamingResponse,
+)
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,6 +32,7 @@ from platform_app.auth import (
 )
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
+from platform_app.evidence_bundle import BundleError, build_evidence_bundle
 from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
 from platform_app.memory import delete_fact, scoped_lookup
 from platform_app.model_base import utcnow
@@ -1186,6 +1193,22 @@ def review_packet(
         .order_by(RunEvent.sequence.desc())
         .limit(1)
     )
+    approval = db.scalar(select(PublicationApproval).where(
+        PublicationApproval.tenant_id == identity[0],
+        PublicationApproval.run_id == run.id,
+    ))
+    publication_receipt = receipts.get("draft_pr_publication") or {}
+    if publication_receipt.get("status") == "PUBLISHED":
+        publication_status = "PUBLISHED"
+    elif approval is None:
+        publication_status = "DISABLED"
+    elif approval.status == "approved":
+        expiry = approval.expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=utcnow().tzinfo)
+        publication_status = "APPROVED" if expiry > utcnow() else "EXPIRED"
+    else:
+        publication_status = approval.status.upper()
     provider_mode = (candidate_patch or {}).get("provider_mode")
     media_urls = {}
     deleted_labels = {
@@ -1266,7 +1289,10 @@ def review_packet(
         "verification_status": run.verdict,
         "review_decision": (review_event.payload or {}).get("decision") if review_event else None,
         "review_reason": (review_event.payload or {}).get("reason") if review_event else None,
-        "publication_status": "DISABLED",
+        "publication_status": publication_status,
+        "publication_url": (
+            publication_receipt.get("pr_url") if publication_status == "PUBLISHED" else None
+        ),
         "limitations": (
             ["Controlled provider response; this does not qualify a live autonomous repair"]
             if provider_mode == "controlled_test"
@@ -1297,6 +1323,57 @@ def download_review_packet(
         headers={
             "Content-Disposition": f'attachment; filename="aip-review-{packet["run_id"]}.json"',
         },
+    )
+
+
+@app.get("/v1/runs/{run_id}/evidence-bundle")
+def download_evidence_bundle(
+    run_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    packet = review_packet(run_id, identity, db)
+    run = authorized_run(db, identity, run_id)
+    actions = db.scalars(select(ToolAction).where(
+        ToolAction.tenant_id == identity[0], ToolAction.run_id == run.id,
+        ToolAction.status == "COMPLETED",
+    )).all()
+    receipts = {action.step_id: action.receipt or {} for action in actions}
+    artifacts: dict[str, bytes] = {}
+
+    def verified_bytes(response: FileResponse, expected: str) -> bytes:
+        path = Path(response.path)
+        try:
+            if path.stat().st_size > 5_000_000:
+                raise ServiceError("EVIDENCE_TOO_LARGE", "Evidence file exceeds archive policy", 409)
+            content = path.read_bytes()
+        except OSError as error:
+            raise ServiceError("EVIDENCE_CHANGED", "Evidence changed during export", 409) from error
+        if hashlib.sha256(content).hexdigest() != expected:
+            raise ServiceError("EVIDENCE_CHANGED", "Evidence changed during export", 409)
+        return content
+
+    for label in packet["screenshot_urls"]:
+        response = run_screenshot(run_id, label, identity, db)
+        step = "browser" if label == "baseline" else "candidate_browser"
+        artifacts[f"screenshots/{label}.png"] = verified_bytes(
+            response, receipts[step]["screenshot_sha256"]
+        )
+    for step in EVIDENCE_DIRS:
+        receipt = receipts.get(step) or {}
+        if not isinstance(receipt.get("output_file"), str):
+            continue
+        response = run_evidence_output(run_id, step, identity, db)
+        artifacts[f"logs/{step}.log"] = verified_bytes(response, receipt["output_sha256"])
+    if packet["patch_url"]:
+        artifacts["patch.diff"] = download_patch(run_id, identity, db).body
+    try:
+        archive = build_evidence_bundle(packet, artifacts)
+    except BundleError as error:
+        raise ServiceError("EVIDENCE_TOO_LARGE", str(error), 409) from error
+    return Response(
+        archive, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="aip-evidence-{run.id}.zip"'},
     )
 
 

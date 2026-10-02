@@ -388,6 +388,8 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
       </div>
       <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>
         {packet && <a href={`/v1/runs/${run.id}/review-packet/download`} download={`aip-review-${run.id}.json`}>Download review packet</a>}
+        {packet && <p><a href={`/v1/runs/${run.id}/evidence-bundle`} download={`aip-evidence-${run.id}.zip`}>Download evidence bundle</a></p>}
+        {packet?.publication_status && <p>Draft PR: <Status value={packet.publication_status} /> {packet.publication_url && <a href={packet.publication_url} target="_blank" rel="noopener noreferrer">Open draft PR</a>}</p>}
         {packet?.review_decision && <p>Reviewer decision: <strong>{packet.review_decision}</strong>{packet.review_reason ? ` — ${packet.review_reason}` : ''}</p>}
         {run.state === 'PAUSED_INPUT' && <form className="review-actions" onSubmit={event => {
           event.preventDefault()

@@ -678,3 +678,16 @@ repository API intercepted, so no placeholder connection was persisted.
 No page errors were observed. A settled 390x844 mobile screenshot showed the
 form and project content without clipping; screenshots are under ignored
 `artifacts/ui-qa/`. Browser plugin was unavailable; local Playwright was used.
+
+2026-10-02 evidence bundle: review packets now derive draft publication state
+from the approval and completed publication receipt instead of always saying
+DISABLED. Added `platform_app/evidence_bundle.py` and an authenticated
+`/v1/runs/{id}/evidence-bundle` ZIP endpoint. It reuses screenshot/log/patch
+verification, rechecks each file digest during bounded export, and lists
+SHA-256/byte count for every included artifact. Recordings are not embedded.
+Unit/API tests cover archive contents, tenant denial and tamper refusal. After
+restarting API 8101, a saved local run `9e8c0b45-7dfe-4403-93dd-5039470a0cb7`
+returned HTTP 200 with a 13,723-byte ZIP containing named/oracle logs, packet,
+baseline screenshot and manifest. Playwright Chromium verified the Review link
+on that run with no page errors; screenshot in `artifacts/ui-qa/review-bundle.png`.
+Python suite: 117 passed, 3 skipped; web build and Ruff passed.

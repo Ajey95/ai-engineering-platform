@@ -1,4 +1,7 @@
 import hashlib
+import io
+import json
+import zipfile
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -68,13 +71,22 @@ def test_evidence_download_is_scoped_and_hash_verified(tmp_path, monkeypatch):
             assert download.json() == packet.json()
             assert download.headers["content-disposition"].startswith("attachment;")
             assert download.headers["cache-control"] == "no-store"
+            bundle = client.get(f"/v1/runs/{run_id}/evidence-bundle")
+            assert bundle.status_code == 200
+            with zipfile.ZipFile(io.BytesIO(bundle.content)) as archive:
+                assert archive.read("logs/named.log") == original
+                assert json.loads(archive.read("review-packet.json"))["run_id"] == run_id
+                manifest = json.loads(archive.read("bundle-manifest.json"))
+                assert manifest["files"][0]["sha256"] == hashlib.sha256(original).hexdigest()
             assert client.get(url.replace("named", "unknown")).status_code == 404
             api.app.dependency_overrides[api.principal] = lambda: ("other-tenant", "actor")
             assert client.get(url).status_code == 404
             assert client.get(f"/v1/runs/{run_id}/review-packet/download").status_code == 404
+            assert client.get(f"/v1/runs/{run_id}/evidence-bundle").status_code == 404
             api.app.dependency_overrides[api.principal] = lambda: ("local-tenant", "actor")
             log.write_bytes(b"tampered")
             assert client.get(url).status_code == 404
+            assert client.get(f"/v1/runs/{run_id}/evidence-bundle").status_code == 404
         finally:
             api.app.dependency_overrides.clear()
     engine.dispose()

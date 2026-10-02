@@ -46,6 +46,9 @@ case suites; no complete benchmark has run yet.
 - A controlled synthetic form bug evaluation: real browser before/after
   recordings, exact-tree test receipts, an independent oracle, a review packet,
   and local HLS playback on the Evaluations page. The candidate is manual.
+- Authorized review downloads include a bounded evidence ZIP with the packet,
+  locally verified screenshots/logs, any verified fixture patch and a checksum
+  manifest. Browser recordings remain separately delivered or revocable.
 - Native non-streaming OpenAI, Anthropic and Google API adapters with provider
   continuation preservation and encrypted state envelopes. No live provider
   account has been qualified.

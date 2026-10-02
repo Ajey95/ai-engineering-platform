@@ -73,6 +73,7 @@ export interface ReviewPacket {
   review_decision?: 'accepted' | 'rejected' | null
   review_reason?: string | null
   publication_status?: string
+  publication_url?: string | null
   reproduction_status: string
   qualification_scope?: string
   autonomous_repair?: boolean
