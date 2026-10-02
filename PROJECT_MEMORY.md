@@ -776,3 +776,18 @@ reported no drift. The user's existing `http://127.0.0.1:5173/` address was
 not listening, so a Vite development server was started there with its `/v1`
 proxy targeting API 8101; `/v1/health` returned `ok`. The earlier 5176 server
 also remains available. No scheduled task was created.
+
+2026-10-02 operations response catalog: added `platform_app/ops_alerts.py`
+with owner, impact, runbook anchor and condition for the PRD's five critical
+page classes and five warning classes. `docs/operations/runbooks.md` covers
+security response plus provider, worker, sandbox, memory, media, database
+restore and publication ambiguity. The owner Operations snapshot now returns
+warning details and labels them `snapshot_only`. The UI shows warning owner
+and impact. No pager, sustained warning evaluator or hosted response drill is
+implemented; FR-OPS-01 remains Partial.
+The current API restarted on 8101 and the existing 5173 web proxy returned the
+owner operations summary with `warning_details` and export usage. The first
+proxy request during API startup briefly returned 500; an immediate direct
+request and subsequent proxied request returned 200. Chromium loaded the
+mobile 5173 Operations page with no JS errors or horizontal overflow. The web
+build and focused alert-catalog/operations tests passed.

@@ -15,6 +15,9 @@ case suites; no complete benchmark has run yet.
 - An owner-only Operations page reports tenant-scoped persisted run, queue,
   graph, tool, media and inference budget snapshots. Missing instrumentation is
   shown as unavailable; threshold checks are snapshots, not pager alerts.
+  [Operations runbooks](docs/operations/runbooks.md) and a machine-readable
+  owner/impact catalog cover the required incident classes; no paging service
+  is connected.
 - Canonical memory supports proposed, verified, rejected, superseded, expired
   and deleted states. Scoped transition history records the actor and reason;
   retrieval only serves current verified facts. New reviewer outcomes create

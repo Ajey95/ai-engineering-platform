@@ -36,7 +36,10 @@ type OperationsSummary = {
   media: { by_status: Record<string, number> }
   inference_budget: { reserved_usd: string; actual_usd: string }
   exports: { used_bytes_today: number; daily_cap_bytes: number }
-  warnings_now: string[]; unavailable: string[]
+  warnings_now: string[]
+  warning_details: { alert_id: string; owner: string; impact: string; runbook: string
+    evaluation: string }[]
+  unavailable: string[]
 }
 
 const nav: { id: Page; label: string; icon: typeof FolderGit2 }[] = [
@@ -423,7 +426,7 @@ export default function App() {
               <div className="content-panel"><h2>Run states</h2>{Object.entries(operations.runs.by_state).length ? Object.entries(operations.runs.by_state).map(([state, count]) => <div className="list-row" key={state}><span>{state.replaceAll('_', ' ')}</span><strong>{count}</strong></div>) : <p className="muted">No runs in this window.</p>}</div>
               <div className="content-panel"><h2>Tools, media and exports</h2><div className="list-row"><span>Failed tool effects</span><strong>{operations.tools.failed_count}</strong></div>{Object.entries(operations.tools.by_policy_result).map(([policy, count]) => <div className="list-row" key={policy}><span>Tool policy: {policy}</span><strong>{count}</strong></div>)}{Object.entries(operations.media.by_status).map(([status, count]) => <div className="list-row" key={status}><span>Media: {status}</span><strong>{count}</strong></div>)}<div className="list-row"><span>Evidence ZIP today</span><strong>{(operations.exports.used_bytes_today / 1_000_000).toFixed(2)} / {(operations.exports.daily_cap_bytes / 1_000_000).toFixed(0)} MB</strong></div></div>
             </div>
-            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warnings_now.length ? operations.warnings_now.map(item => <p className="ops-warning" key={item}>{item.replaceAll('_', ' ')}</p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These are snapshot checks, not sustained alerts or a paging service.</p></div>
+            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warning_details.length ? operations.warning_details.map(item => <p className="ops-warning" key={item.alert_id}>{item.alert_id.replaceAll('_', ' ')} · {item.owner}<small>{item.impact}</small></p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These are snapshot checks, not sustained alerts or a paging service.</p></div>
             <div className="content-panel"><h2>Metrics awaiting instrumentation</h2><p className="muted">{operations.unavailable.map(item => item.replaceAll('_', ' ')).join(' · ')}</p></div>
           </>}
         </section>}

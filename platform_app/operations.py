@@ -18,6 +18,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
+from platform_app.ops_alerts import current_warning_details
 
 
 def _age(now: datetime, created_at: datetime | None) -> int | None:
@@ -129,6 +130,7 @@ def operations_snapshot(
             "daily_cap_bytes": tenant.daily_export_cap_bytes,
         },
         "warnings_now": warnings,
+        "warning_details": current_warning_details(warnings),
         "unavailable": [
             "provider_latency_and_error_rate", "context_size_and_compaction_rate",
             "token_estimation_error", "sandbox_utilization", "abr_playback_quality",

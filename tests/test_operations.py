@@ -100,6 +100,11 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["warnings_now"] == [
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",
         ]
+        assert [item["owner"] for item in snapshot["warning_details"]] == [
+            "platform-on-call", "platform-on-call",
+        ]
+        assert all(item["evaluation"] == "snapshot_only"
+                   for item in snapshot["warning_details"])
         assert "sandbox_utilization" in snapshot["unavailable"]
         assert operations_snapshot(db, "tenant-b", now=now)["runs"]["by_state"] == {
             "COMPLETED": 1,
