@@ -2,10 +2,13 @@
 
 import hashlib
 import io
+import os
 import tarfile
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -16,8 +19,10 @@ from platform_app.code_index import code_files_for_revision, index_source_archiv
 from platform_app.db import Base
 from platform_app.graph_memory import (
     GraphUnavailable,
+    MemgraphProjection,
     _resolved_dependencies,
     connected_code_lookup,
+    connected_dependencies,
     project_next,
 )
 from platform_app.models import (
@@ -63,6 +68,31 @@ class CodeGraph:
             and (query in file.path or any(query in symbol["qualified_name"]
                                            for symbol in file.symbols))
         ][:limit]
+
+    def find_dependency_ids(
+        self, tenant_id, project_id, repository_ref, revision, path, depth, limit,
+    ):
+        if self.fail:
+            raise GraphUnavailable("offline")
+        files = self.files.get(revision, [])
+        root = next(file for file in files if file.path == path)
+        edges = _resolved_dependencies(files)
+        reached = {root.id}
+        frontier = reached.copy()
+        for _ in range(depth):
+            next_frontier = set()
+            for edge in edges:
+                if edge["source_id"] in frontier:
+                    next_frontier.add(edge["target_id"])
+                if edge["target_id"] in frontier:
+                    next_frontier.add(edge["source_id"])
+            next_frontier -= reached
+            reached |= next_frontier
+            frontier = next_frontier
+        by_id = {file.id: file for file in files}
+        return [root.id] + [file.id for file in sorted(
+            (by_id[id] for id in reached if id != root.id), key=lambda file: file.path
+        )][:limit - 1]
 
 
 def test_index_versions_scope_dependencies_and_outbox(tmp_path):
@@ -155,6 +185,13 @@ def test_index_versions_scope_dependencies_and_outbox(tmp_path):
         assert connected_code_lookup(
             db, graph, "tenant-a", "project-a", "example/repo", older.commit, "answer"
         )[0] == "graph"
+        mode, _, neighbors, relations = connected_dependencies(
+            db, graph, "tenant-a", "project-a", "example/repo", older.commit,
+            "app.py", 2, 10,
+        )
+        assert mode == "graph"
+        assert {file.path for file in neighbors} == {"app.py", "helper.py"}
+        assert len(relations) == 1
         graph.fail = True
         assert connected_code_lookup(
             db, graph, "tenant-a", "project-a", "example/repo", older.commit, "answer"
@@ -168,6 +205,14 @@ def test_index_versions_scope_dependencies_and_outbox(tmp_path):
             )
             assert response.status_code == 200
             assert [file["path"] for file in response.json()["files"]] == ["helper.py"]
+            dependency_response = TestClient(api.app).get(
+                f"/v1/projects/project-a/code-index/dependencies?"
+                f"source_revision={older.commit}&path=app.py&depth=2"
+            )
+            assert dependency_response.status_code == 200
+            assert dependency_response.json()["dependencies"] == [{
+                "source_path": "app.py", "target_path": "helper.py",
+            }]
             api.app.dependency_overrides[api.principal] = lambda: ("tenant-b", "actor")
             assert TestClient(api.app).get(
                 f"/v1/projects/project-a/code-index?source_revision={older.commit}&query=answer"
@@ -175,3 +220,53 @@ def test_index_versions_scope_dependencies_and_outbox(tmp_path):
         finally:
             api.app.dependency_overrides.clear()
     engine.dispose()
+
+
+def test_real_memgraph_code_projection_when_configured():
+    uri = os.environ.get("AIP_TEST_MEMGRAPH_URI")
+    if not uri:
+        pytest.skip("Set AIP_TEST_MEMGRAPH_URI for the Memgraph code graph gate")
+    tenant_id = f"code-test-{uuid4().hex}"
+    project_id = f"project-{uuid4().hex}"
+    revision = "f" * 40
+    snapshot = CodeIndexSnapshot(
+        id=str(uuid4()), tenant_id=tenant_id, project_id=project_id,
+        repository_ref="example/repo", commit=revision,
+        archive_sha256="e" * 64, total_files=2, indexed_files=2,
+        truncated=False, created_at=datetime.now(UTC),
+    )
+    helper = CodeFileVersion(
+        id=str(uuid4()), snapshot_id=snapshot.id, tenant_id=tenant_id,
+        project_id=project_id, path="helper.py", sha256="1" * 64,
+        language="python", symbols=[{
+            "qualified_name": "answer", "kind": "FunctionDef", "line": 1,
+        }], imports=[],
+    )
+    app = CodeFileVersion(
+        id=str(uuid4()), snapshot_id=snapshot.id, tenant_id=tenant_id,
+        project_id=project_id, path="app.py", sha256="2" * 64,
+        language="python", symbols=[], imports=["helper"],
+    )
+    graph = MemgraphProjection(uri)
+    try:
+        graph.upsert_code_snapshot(snapshot, [app, helper])
+        graph.upsert_code_snapshot(snapshot, [app, helper])
+        assert graph.find_file_ids(
+            tenant_id, project_id, "example/repo", revision, "answer", 10
+        ) == [helper.id]
+        assert set(graph.find_dependency_ids(
+            tenant_id, project_id, "example/repo", revision, "app.py", 2, 10
+        )) == {app.id, helper.id}
+        with graph.driver.session() as session:
+            dependency_count = session.run(
+                "MATCH (a:FileVersion {canonical_id: $source})-[:DEPENDS_ON]->"
+                "(b:FileVersion {canonical_id: $target}) RETURN count(*) AS total",
+                source=app.id, target=helper.id,
+            ).single()["total"]
+        assert dependency_count == 1
+        assert graph.find_file_ids(
+            tenant_id, project_id, "example/repo", "a" * 40, "answer", 10
+        ) == []
+    finally:
+        graph.clear_scope(tenant_id, project_id)
+        graph.close()

@@ -60,7 +60,7 @@ data "aws_iam_policy_document" "efs" {
 }
 
 resource "aws_iam_role_policy" "efs" {
-  for_each = local.workloads
+  for_each = local.artifact_workloads
   name     = "private-artifacts"
   role     = aws_iam_role.workload[each.key].id
   policy   = data.aws_iam_policy_document.efs.json
@@ -145,6 +145,54 @@ resource "aws_iam_role_policy" "agent" {
   name   = "hosted-sandbox"
   role   = aws_iam_role.workload["agent"].id
   policy = data.aws_iam_policy_document.agent.json
+}
+
+data "aws_iam_policy_document" "run_relay" {
+  statement {
+    sid       = "PublishRunWakeups"
+    actions   = ["sqs:SendMessage"]
+    resources = [var.agent_queue_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "run_relay" {
+  name   = "run-queue-publisher"
+  role   = aws_iam_role.workload["run_relay"].id
+  policy = data.aws_iam_policy_document.run_relay.json
+}
+
+data "aws_iam_policy_document" "sandbox_cleanup" {
+  statement {
+    sid       = "InspectManagedSandbox"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"]
+  }
+  statement {
+    sid       = "TerminateManagedSandbox"
+    actions   = ["ec2:TerminateInstances"]
+    resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/aip:managed"
+      values   = ["sandbox"]
+    }
+  }
+  statement {
+    sid       = "FenceGuestOutputs"
+    actions   = ["s3:PutObject"]
+    resources = ["${var.sandbox_artifact_bucket_arn}/sandbox/out/*"]
+  }
+  statement {
+    sid       = "RevokeGuestGoMarker"
+    actions   = ["s3:DeleteObject"]
+    resources = ["${var.sandbox_artifact_bucket_arn}/sandbox/in/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "sandbox_cleanup" {
+  name   = "sandbox-cleanup"
+  role   = aws_iam_role.workload["sandbox_cleanup"].id
+  policy = data.aws_iam_policy_document.sandbox_cleanup.json
 }
 
 # GitHub publication uses an injected token. The trusted task role has no

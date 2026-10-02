@@ -65,16 +65,25 @@ variable "image_uri" {
 
 variable "secret_environment" {
   type        = map(map(string))
-  description = "Per-workload ECS env name to existing Secrets Manager secret ARN. Keys: api, agent, publication, media, media_cleanup."
+  description = "Per-workload ECS env name to existing Secrets Manager secret ARN. See README for required maps."
   validation {
-    condition = (alltrue([for workload in ["api", "agent", "publication", "media", "media_cleanup"] :
+    condition = (alltrue([for workload in [
+      "api", "agent", "run_relay", "sandbox_cleanup", "graph_projection",
+      "operations", "alert_delivery", "publication", "media", "media_cleanup"
+      ] :
       contains(keys(var.secret_environment), workload)
       ]) && alltrue([for workload in keys(var.secret_environment) :
-      contains(["api", "agent", "publication", "media", "media_cleanup"], workload)
+      contains([
+        "api", "agent", "run_relay", "sandbox_cleanup", "graph_projection",
+        "operations", "alert_delivery", "publication", "media", "media_cleanup"
+      ], workload)
       ]) && alltrue(flatten([for workload, secrets in var.secret_environment : [
         for name, arn in secrets :
         can(regex("^AIP_[A-Z0-9_]+$", name)) && startswith(arn, "arn:aws:secretsmanager:")
-      ]])) && alltrue([for workload in ["api", "agent", "publication", "media", "media_cleanup"] :
+        ]])) && alltrue([for workload in [
+        "api", "agent", "run_relay", "sandbox_cleanup", "graph_projection",
+        "operations", "alert_delivery", "publication", "media", "media_cleanup"
+      ] :
       contains(keys(lookup(var.secret_environment, workload, {})), "AIP_DATABASE_URL")
       ]) && alltrue([for name in [
         "AIP_OIDC_ISSUER", "AIP_OIDC_AUDIENCE", "AIP_OIDC_JWKS_URL",
@@ -82,8 +91,11 @@ variable "secret_environment" {
         "AIP_OIDC_AUTHORIZATION_ENDPOINT", "AIP_OIDC_TOKEN_ENDPOINT",
         "AIP_BROWSER_SESSION_SECRET", "AIP_CLOUDFRONT_PRIVATE_KEY_B64",
       ] : contains(keys(lookup(var.secret_environment, "api", {})), name)]) &&
-    contains(keys(lookup(var.secret_environment, "agent", {})), "AIP_SANDBOX_ENVELOPE_KEY_B64"))
-    error_message = "Provide separate API, agent, publication and media secret maps with database, API OIDC/session and agent envelope settings."
+      contains(keys(lookup(var.secret_environment, "agent", {})), "AIP_SANDBOX_ENVELOPE_KEY_B64") &&
+      contains(keys(lookup(var.secret_environment, "graph_projection", {})), "AIP_MEMGRAPH_URI") &&
+      alltrue([for name in ["AIP_PAGER_WEBHOOK_URL", "AIP_PAGER_WEBHOOK_SECRET"] :
+    contains(keys(lookup(var.secret_environment, "alert_delivery", {})), name)]))
+    error_message = "Provide separate workload secret maps with database, API identity, agent envelope, graph URI and pager credentials."
   }
 }
 

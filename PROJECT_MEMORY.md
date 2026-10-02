@@ -1230,3 +1230,22 @@ a snapshot in the same tenant and project. Local PostgreSQL migrated to
 4 skipped; scoped Ruff passed. Controlled two-revision, dependency, tenant
 isolation and hosted worker tests passed. Live graph and customer repository
 qualification remain.
+
+2026-10-03 control worker wiring: trusted ECS Terraform now includes a run
+outbox relay, sandbox cleanup reconciler, Memgraph projector, operations
+evaluator and pager dispatcher alongside the API/agent/publication/media
+tasks. Relay and cleanup receive narrowly scoped SQS/EC2/S3 policies; only
+artifact-reading workloads mount EFS. Terraform fmt and validate passed for
+the control-plane module and pilot root. A real local Memgraph code graph
+roundtrip projected file/symbol/dependency nodes, verified lexical lookup
+and exact revision isolation, then cleaned the test scope. AWS account/region,
+Memgraph host, credentials and live deployment are still unselected.
+
+2026-10-03 dependency traversal increment: the code-index API now returns
+one or two dependency hops from an exact repository path and commit. Memgraph
+uses fixed Cypher with tenant/project/revision filters; the result is compared
+with bounded canonical PostgreSQL traversal and falls back on lag or mismatch.
+The live local Memgraph test verified idempotent file/symbol/dependency
+projection and exact revision isolation. Full Python suite: 243 passed,
+5 skipped (the live graph tests are opt-in for the whole suite). Terraform
+control-plane and pilot validation passed; no hosted graph was deployed.

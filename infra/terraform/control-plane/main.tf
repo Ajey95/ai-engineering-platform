@@ -1,5 +1,6 @@
 locals {
-  tags = merge(var.tags, { Application = "ai-engineering-platform", Boundary = "trusted" })
+  tags               = merge(var.tags, { Application = "ai-engineering-platform", Boundary = "trusted" })
+  artifact_workloads = toset(["api", "agent", "publication", "media", "media_cleanup"])
   common_environment = {
     AIP_ENVIRONMENT                = "production"
     AIP_ARTIFACT_DIR               = "/var/lib/aip/artifacts"
@@ -29,6 +30,36 @@ locals {
       memory  = 4096
       desired = 2
       command = ["python", "-m", "scripts.consume_hosted_dispatch", "--serve"]
+    }
+    run_relay = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.relay_run_dispatch", "--serve"]
+    }
+    sandbox_cleanup = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.dispatch_sandbox_cleanup", "--serve"]
+    }
+    graph_projection = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.project_memory_graph", "--serve"]
+    }
+    operations = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.evaluate_operations", "--serve"]
+    }
+    alert_delivery = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.dispatch_alerts", "--serve"]
     }
     publication = {
       cpu     = 512
@@ -260,14 +291,17 @@ resource "aws_ecs_task_definition" "control" {
     operating_system_family = "LINUX"
     cpu_architecture        = "X86_64"
   }
-  volume {
-    name = "artifacts"
-    efs_volume_configuration {
-      file_system_id     = aws_efs_file_system.artifacts.id
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = aws_efs_access_point.artifacts.id
-        iam             = "ENABLED"
+  dynamic "volume" {
+    for_each = contains(local.artifact_workloads, each.key) ? [1] : []
+    content {
+      name = "artifacts"
+      efs_volume_configuration {
+        file_system_id     = aws_efs_file_system.artifacts.id
+        transit_encryption = "ENABLED"
+        authorization_config {
+          access_point_id = aws_efs_access_point.artifacts.id
+          iam             = "ENABLED"
+        }
       }
     }
   }
@@ -278,11 +312,11 @@ resource "aws_ecs_task_definition" "control" {
     command                = each.value.command
     readonlyRootFilesystem = true
     user                   = "10001:10001"
-    mountPoints = [{
+    mountPoints = contains(local.artifact_workloads, each.key) ? [{
       sourceVolume  = "artifacts"
       containerPath = "/var/lib/aip/artifacts"
       readOnly      = false
-    }]
+    }] : []
     portMappings = each.key == "api" ? [{
       containerPort = 8000
       hostPort      = 8000

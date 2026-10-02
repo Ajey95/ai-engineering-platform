@@ -16,6 +16,7 @@ from platform_app.code_index import code_files_for_revision
 from platform_app.db import utcnow
 from platform_app.memory import scoped_lookup
 from platform_app.models import CodeFileVersion, CodeIndexSnapshot, MemoryFact, OutboxEvent
+from platform_app.service import ServiceError
 
 
 class GraphUnavailable(Exception):
@@ -73,6 +74,10 @@ class GraphProjection(Protocol):
     def find_file_ids(
         self, tenant_id: str, project_id: str, repository_ref: str,
         revision: str, query: str, limit: int,
+    ) -> list[str]: ...
+    def find_dependency_ids(
+        self, tenant_id: str, project_id: str, repository_ref: str,
+        revision: str, path: str, depth: int, limit: int,
     ) -> list[str]: ...
 
 
@@ -295,6 +300,38 @@ class MemgraphProjection:
         except (Neo4jError, ServiceUnavailable, SessionExpired) as error:
             raise GraphUnavailable("Memgraph code read failed") from error
 
+    def find_dependency_ids(
+        self, tenant_id: str, project_id: str, repository_ref: str,
+        revision: str, path: str, depth: int, limit: int,
+    ) -> list[str]:
+        if depth not in {1, 2}:
+            raise ValueError("Dependency depth must be one or two")
+        hops = "1..1" if depth == 1 else "1..2"
+        query = f"""
+            MATCH (c:Commit {{tenant_id: $tenant_id, project_id: $project_id,
+                              repository_ref: $repository_ref, revision: $revision}})
+                  -[:HAS_VERSION]->(root:FileVersion {{path: $path}})
+            OPTIONAL MATCH (root)-[:DEPENDS_ON*{hops}]-(neighbor:FileVersion)
+            WHERE neighbor.tenant_id = $tenant_id
+              AND neighbor.project_id = $project_id
+              AND neighbor.revision = $revision
+            WITH root, collect(DISTINCT neighbor) AS neighbors
+            UNWIND ([root] + neighbors) AS item
+            RETURN DISTINCT item.canonical_id AS id, item.path AS path
+            ORDER BY CASE WHEN path = $path THEN 0 ELSE 1 END, path, id
+            LIMIT $limit
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(
+                    query, tenant_id=tenant_id, project_id=project_id,
+                    repository_ref=repository_ref, revision=revision,
+                    path=path, limit=limit,
+                )
+                return [row["id"] for row in rows]
+        except (Neo4jError, ServiceUnavailable, SessionExpired) as error:
+            raise GraphUnavailable("Memgraph dependency read failed") from error
+
 
 def project_next(db: Session, graph: GraphProjection) -> str | None:
     """An outbox retry projects current canonical state, so old events cannot resurrect facts."""
@@ -462,3 +499,70 @@ def connected_code_lookup(
     if set(ids) != {file.id for file in canonical}:
         return "canonical_degraded", snapshot, canonical
     return "graph", snapshot, canonical
+
+
+def connected_dependencies(
+    db: Session, graph: GraphProjection | None,
+    tenant_id: str, project_id: str, repository_ref: str,
+    revision: str, path: str, depth: int = 2, limit: int = 40,
+) -> tuple[str, CodeIndexSnapshot | None, list[CodeFileVersion], list[dict[str, str]]]:
+    """Bound dependency traversal and recheck the entire result against one commit."""
+    if depth not in {1, 2} or not 1 <= limit <= 100 or not 1 <= len(path) <= 500:
+        raise ServiceError("CODE_QUERY_INVALID", "Dependency scope is outside policy", 400)
+    snapshot = db.scalar(select(CodeIndexSnapshot).where(
+        CodeIndexSnapshot.tenant_id == tenant_id,
+        CodeIndexSnapshot.project_id == project_id,
+        CodeIndexSnapshot.repository_ref == repository_ref,
+        CodeIndexSnapshot.commit == revision,
+    ))
+    if snapshot is None:
+        return "not_indexed", None, [], []
+    files = db.scalars(select(CodeFileVersion).where(
+        CodeFileVersion.snapshot_id == snapshot.id,
+        CodeFileVersion.tenant_id == tenant_id,
+        CodeFileVersion.project_id == project_id,
+    )).all()
+    by_path = {file.path: file for file in files}
+    if path not in by_path:
+        raise ServiceError("CODE_FILE_NOT_FOUND", "File is absent from pinned revision", 404)
+    by_id = {file.id: file for file in files}
+    all_edges = _resolved_dependencies(files)
+    adjacent: dict[str, set[str]] = {file.id: set() for file in files}
+    for edge in all_edges:
+        adjacent[edge["source_id"]].add(edge["target_id"])
+        adjacent[edge["target_id"]].add(edge["source_id"])
+    selected = {by_path[path].id}
+    frontier = selected.copy()
+    for _ in range(depth):
+        next_frontier = set()
+        for current in frontier:
+            next_frontier.update(adjacent[current] - selected)
+        selected.update(next_frontier)
+        frontier = next_frontier
+        if not frontier:
+            break
+    root = by_path[path]
+    canonical = [root] + sorted(
+        (by_id[id] for id in selected if id != root.id), key=lambda file: file.path
+    )[:limit - 1]
+    ids = {file.id for file in canonical}
+    edges = [edge for edge in all_edges if (
+        edge["source_id"] in ids and edge["target_id"] in ids
+    )]
+    pending = db.scalar(select(OutboxEvent.id).where(
+        OutboxEvent.tenant_id == tenant_id,
+        OutboxEvent.topic == "code.project",
+        OutboxEvent.status == "pending",
+        OutboxEvent.payload["snapshot_id"].as_string() == snapshot.id,
+    ).limit(1))
+    if graph is None or pending is not None:
+        return "canonical_degraded", snapshot, canonical, edges
+    try:
+        graph_ids = graph.find_dependency_ids(
+            tenant_id, project_id, repository_ref, revision, path, depth, limit
+        )
+    except GraphUnavailable:
+        return "canonical_degraded", snapshot, canonical, edges
+    if set(graph_ids) != ids:
+        return "canonical_degraded", snapshot, canonical, edges
+    return "graph", snapshot, canonical, edges

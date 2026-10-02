@@ -51,6 +51,7 @@ from platform_app.graph_memory import (
     GraphUnavailable,
     MemgraphProjection,
     connected_code_lookup,
+    connected_dependencies,
     connected_lookup,
 )
 from platform_app.hosted_evidence import verified_guest_evidence
@@ -1915,6 +1916,61 @@ def get_code_index(
             "language": file.language, "symbols": file.symbols,
             "imports": file.imports,
         } for file in files],
+    }
+
+
+@app.get("/v1/projects/{project_id}/code-index/dependencies")
+def get_code_dependencies(
+    project_id: str,
+    source_revision: str,
+    path: str,
+    depth: int = 2,
+    limit: int = 40,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    project = require_project_role(db, identity, project_id)
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source_revision):
+        raise ServiceError("CODE_QUERY_INVALID", "Pinned revision is invalid", 400)
+    if not project.repository_url:
+        return {"retrieval_mode": "not_indexed", "files": [], "dependencies": []}
+    repository_ref = github_repository_ref(project.repository_url)
+    graph = None
+    try:
+        if settings().memgraph_uri:
+            graph = MemgraphProjection(
+                settings().memgraph_uri,
+                settings().memgraph_user,
+                settings().memgraph_password,
+            )
+        mode, snapshot, files, edges = connected_dependencies(
+            db, graph, identity[0], project_id, repository_ref,
+            source_revision, path, depth, limit,
+        )
+    except GraphUnavailable:
+        mode, snapshot, files, edges = connected_dependencies(
+            db, None, identity[0], project_id, repository_ref,
+            source_revision, path, depth, limit,
+        )
+    finally:
+        if graph is not None:
+            graph.close()
+    by_id = {file.id: file for file in files}
+    return {
+        "retrieval_mode": mode,
+        "source_revision": source_revision,
+        "repository_ref": repository_ref,
+        "root_path": path,
+        "depth": depth,
+        "truncated": snapshot.truncated if snapshot else False,
+        "files": [{
+            "path": file.path, "sha256": file.sha256,
+            "language": file.language, "symbols": file.symbols,
+        } for file in files],
+        "dependencies": [{
+            "source_path": by_id[edge["source_id"]].path,
+            "target_path": by_id[edge["target_id"]].path,
+        } for edge in edges],
     }
 
 

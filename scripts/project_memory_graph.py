@@ -1,4 +1,4 @@
-"""Project canonical memory outbox events into a rebuildable Memgraph view."""
+"""Project canonical memory and code outbox events into Memgraph."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def main() -> int:
                         count = rebuild_scope(
                             db, graph, args.rebuild_tenant, args.rebuild_project
                         )
-                        print(f"Rebuilt {count} verified facts")
+                        print(f"Rebuilt {count} canonical records")
                         return 0
                     projected = project_next(db, graph)
                 if projected is None and not args.serve and expired == 0:
