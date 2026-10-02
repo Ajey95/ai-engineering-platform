@@ -11,6 +11,7 @@ from typing import Protocol
 
 from sqlalchemy import select
 
+from platform_app.context_bundle import fixture_context_bundle
 from platform_app.model_budget import reserve_model_call, settle_model_call
 from platform_app.models import BudgetEntry, ModelEntry, Run, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
@@ -65,29 +66,10 @@ def _provider(model: ModelEntry) -> PatchProvider:
     return adapter(key)
 
 
-def _prompt(task: Task, baseline_receipts: dict, server_source: str) -> str:
-    if len(server_source.encode("utf-8")) > 50_000:
-        raise ServiceError("CONTEXT_UNSATISFIABLE", "Source excerpt exceeds policy", 409)
-    evidence = {
-        name: {
-            "status": receipt.get("status"),
-            "exit_code": receipt.get("exit_code"),
-            "output_sha256": receipt.get("output_sha256"),
-            "responses": (receipt.get("responses") or [])[:5],
-            "page_errors": (receipt.get("page_errors") or [])[:5],
-        }
-        for name, receipt in baseline_receipts.items()
-    }
+def _prompt(run: Run, task: Task, baseline_receipts: dict, server_source: str) -> str:
     return json.dumps(
-        {
-            "report": task.report,
-            "expected_behavior": task.expected_behavior,
-            "actual_behavior": task.actual_behavior,
-            "baseline_evidence": evidence,
-            "file": {"path": "server.py", "content": server_source},
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
+        fixture_context_bundle(run, task, baseline_receipts, server_source, INSTRUCTION),
+        ensure_ascii=False, separators=(",", ":"),
     )
 
 
@@ -120,7 +102,7 @@ def request_fixture_patch(
         selected_provider = (
             None if prior and prior.status == "COMPLETED" else (provider or _provider(model))
         )
-        prompt = _prompt(task, baseline_receipts, server_source)
+        prompt = _prompt(run, task, baseline_receipts, server_source)
         action, reservation, plan = reserve_model_call(
             db,
             run,

@@ -48,6 +48,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
   ran all six baseline/candidate checks using Docker Engine in Ubuntu WSL;
   the hidden oracle was mounted only for its verifier container.
 - `platform_app/token_budget.py`: call envelope and conservative liability planning.
+- `platform_app/context_bundle.py`: the controlled repair call now serializes
+  a bounded ContextBundle with task constraints, permission boundaries, source
+  revision and hashes, trust labels, scope and token estimates. It does not yet
+  select repository excerpts or durable memory for general customer tasks.
 - `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
   the admitted worker publishes baseline and candidate media separately and
@@ -66,7 +70,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 56 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 58 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -97,6 +101,10 @@ After the screenshot digest change, controlled run
 `86a57044-b983-493a-ab45-b6f54e514931` at commit `6d28955` reproduced
 those baseline/candidate statuses with two screenshot hashes and two HLS
 manifests. It remains controlled response evidence.
+A later controlled response run `a42516d1-7377-49e5-a997-a74f215b0bb1`
+at commit `e7b3c2c` exercised the ContextBundle prompt path and again reached
+`REVIEW_READY` with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and
+both media READY. `autonomous_repair=false` remains correct.
 Production startup requires configured OIDC and PostgreSQL. This has only
 been exercised with local signed tokens and a disposable database, and hosted
 run execution remains deliberately disabled.
@@ -123,7 +131,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-03 | Partial | Paused state releases lease; resume and snapshot reconciliation absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
-| FR-CTX-01 | Missing | ContextBundle selection and evidence citation absent. |
+| FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items; general evidence selection, durable history/memory and live token accounting remain. |
 | FR-CTX-02 | Missing | Scoped code navigation and graph traversal absent. |
 | FR-CTX-03 | Missing | Compaction and replay absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |

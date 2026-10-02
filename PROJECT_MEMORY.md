@@ -224,3 +224,13 @@ Python tests: 56 passed, 1 Windows symlink skip; Ruff clean. WSL Docker Engine
 provider account or hosted deployment was qualified. Hosted run admission
 returns `EXECUTION_UNAVAILABLE`; Docker Desktop remains broken while the WSL
 Engine is the verified development runtime.
+
+2026-10-02 context continuation: the fixture patch call now receives a bounded
+ContextBundle with task constraints, permissions, source commit/hash,
+provenance locator, scope, trust labels and a labelled token estimate.
+Oversized source/evidence is refused. Python tests 58 passed, 1 Windows
+symlink skip; Ruff clean. Controlled worker run
+`a42516d1-7377-49e5-a997-a74f215b0bb1` at commit `e7b3c2c` reached
+REVIEW_READY with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and both
+media READY. The provider response was predetermined and the packet correctly
+states `autonomous_repair=false`; no live provider qualification occurred.

@@ -15,6 +15,8 @@ and release blockers.
 - Fenced lease, state transition and tool effect ledger primitives.
 - JSON schema tool-call assembler that discards incomplete arguments.
 - Token envelope and spend preflight calculations.
+- A bounded, source-backed ContextBundle for the synthetic repair call, with
+  commit/file hashes, scoped evidence and explicit trust labels.
 - Local FFmpeg HLS encoding with staging and immutable publication.
 - A controlled synthetic form bug evaluation: real browser before/after
   recordings, exact-tree test receipts, an independent oracle, a review packet,
