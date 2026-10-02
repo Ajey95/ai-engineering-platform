@@ -143,6 +143,38 @@ def test_recovery_blocks_uncertain_effect_replay(tmp_path):
     engine.dispose()
 
 
+def test_recovery_acknowledges_review_ready_after_worker_crash(tmp_path):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'review-recovery.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        db.add(
+            Run(
+                id="run-a", tenant_id="tenant-a", task_id="task-a", project_id="project-a",
+                created_by="alice", idempotency_key="key-a", request_hash="hash",
+                base_commit="a" * 40, model_entry_id="model-a", state="REVIEW_READY",
+                lease_owner="crashed-worker", lease_fence=1,
+                lease_until=utcnow() - timedelta(minutes=2), config_snapshot={},
+            )
+        )
+        db.add(
+            OutboxEvent(
+                id="event-a", tenant_id="tenant-a", topic="run.dispatch",
+                payload={"run_id": "run-a"}, status="processing",
+            )
+        )
+        db.commit()
+    worker = DevelopmentWorker(
+        Path(__file__).resolve().parents[1], tmp_path, session_factory=factory
+    )
+    assert worker.recover_stale() == 1
+    with factory() as db:
+        assert db.get(Run, "run-a").state == "REVIEW_READY"
+        assert db.get(OutboxEvent, "event-a").status == "delivered"
+    engine.dispose()
+
+
 def test_duplicate_dispatch_for_closed_run_is_acknowledged(tmp_path):
     engine = create_engine(f"sqlite:///{(tmp_path / 'duplicate.db').as_posix()}")
     Base.metadata.create_all(engine)

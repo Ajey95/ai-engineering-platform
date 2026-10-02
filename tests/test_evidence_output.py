@@ -63,9 +63,15 @@ def test_evidence_download_is_scoped_and_hash_verified(tmp_path, monkeypatch):
             packet = client.get(f"/v1/runs/{run_id}/review-packet")
             assert packet.status_code == 200
             assert packet.json()["diagnosis_evidence_refs"] == [url]
+            download = client.get(f"/v1/runs/{run_id}/review-packet/download")
+            assert download.status_code == 200
+            assert download.json() == packet.json()
+            assert download.headers["content-disposition"].startswith("attachment;")
+            assert download.headers["cache-control"] == "no-store"
             assert client.get(url.replace("named", "unknown")).status_code == 404
             api.app.dependency_overrides[api.principal] = lambda: ("other-tenant", "actor")
             assert client.get(url).status_code == 404
+            assert client.get(f"/v1/runs/{run_id}/review-packet/download").status_code == 404
             api.app.dependency_overrides[api.principal] = lambda: ("local-tenant", "actor")
             log.write_bytes(b"tampered")
             assert client.get(url).status_code == 404

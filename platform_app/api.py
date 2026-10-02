@@ -1092,6 +1092,21 @@ def review_packet(
     }
 
 
+@app.get("/v1/runs/{run_id}/review-packet/download")
+def download_review_packet(
+    run_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    packet = review_packet(run_id, identity, db)
+    return JSONResponse(
+        packet,
+        headers={
+            "Content-Disposition": f'attachment; filename="aip-review-{packet["run_id"]}.json"',
+        },
+    )
+
+
 @app.get("/v1/runs/{run_id}/patch")
 def download_patch(
     run_id: str,

@@ -540,3 +540,28 @@ at commit `b6dd3d5` reached REVIEW_READY/PASSED with ten effects and both
 media sides READY; it remains a synthetic provider response. The development
 worker was restarted from current code and one worker pair is running. API
 8101 and web 5176 both returned 200.
+
+2026-10-02 checkpointed fixture workflow: `platform_app/fixture_workflow.py`
+owns baseline, qualification, patch and verification phases with synchronous
+LangGraph checkpoints. PostgreSQL uses migration `4bc7f793d66a` to reserve
+the `aip_workflow` schema; a test interrupted patch and resumed with a new
+fence after closing and reopening its PostgreSQL connection. The worker now
+executes these stages under its existing lease and fenced effect ledger.
+Crash recovery acknowledges `REVIEW_READY` dispatches after expiry. A full
+controlled WSL Docker run `dc1e1bb5-7f6a-4a1c-8a92-ca52c2779947` reached
+REVIEW_READY/PASSED with ten completed effects and both media sides READY; a
+separate resumed-input run `5d634827-635c-409e-bd0c-6c206d96fb4d` did the
+same with two delivered dispatches. Both used predetermined provider responses,
+not a live account. Local PostgreSQL upgraded to the new head and Alembic
+reported no schema drift; `aip_workflow` contains the four LangGraph tables.
+The full Python suite passed 94 tests with two skips (the PostgreSQL test is
+opt-in without its URL, plus the Windows symlink privilege skip); focused
+PostgreSQL checkpoint test passed when enabled; Ruff and diff checks passed.
+General repository workflows, live providers and hosted sandboxing remain.
+
+2026-10-02 review packet export: added an authenticated, tenant-scoped JSON
+download of the persisted review packet and a Runs panel link. The API's
+global no-store middleware applies. The packet references independently
+authorized evidence URLs; it is not a self-contained archive. Tests verify
+packet equality and denial for another tenant. Frontend TypeScript/Vite build
+passed, though the shell's Node 21 emits Vite's unsupported-version warning.

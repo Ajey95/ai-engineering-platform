@@ -32,7 +32,11 @@ The paid pilot release gate in PRD §27.2 has not been run.
   commit, executes three isolated baseline checks, and stores effect intents
   before container execution and receipts afterward. For a qualified model it
   can request a bounded patch and verify the candidate in separate containers.
-  The complete path has only run with a controlled provider response.
+  The four phases now run through `platform_app/fixture_workflow.py` with
+  synchronous LangGraph checkpoints. PostgreSQL checkpoints use the dedicated
+  `aip_workflow` schema; restart at a failed phase was verified across two
+  database connections. The complete path has only run with a controlled
+  provider response.
 - `platform_app/model_budget.py`, `agent_patch.py`: reserve model call liability
   before native provider HTTP, settle reported usage, persist raw response and
   patch digest, and enforce a single-file fixture patch schema. The provider
@@ -81,6 +85,9 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - The Runs review panel displays persisted baseline named/browser/oracle receipt
   status, command, exit, duration and tree hash where available. Model choices
   use the API qualification flag rather than `state=enabled` alone.
+- The authorized review packet has a no-store JSON download route and a Runs
+  panel download link. It exports the persisted packet fields and references,
+  while the referenced evidence files remain separately authorized downloads.
 - The fixture patch download reconstructs a unified diff from the trusted
   pinned base, verifies the stored candidate tree and patch digest, and refuses
   altered artifacts. The Changes tab previews the diff.
@@ -88,7 +95,8 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 73 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 94 passing local tests and 2 skips (PostgreSQL checkpoint test needs
+  an explicit local URL; one Windows symlink privilege skip),
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -234,7 +242,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
-| FR-HAR-01 | Partial | Development outbox worker can poll continuously and executes baseline/controlled candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
+| FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. General tasks and live autonomous repair remain absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
@@ -254,7 +262,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
-| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis log downloads; the web log tab links the verified files. Alternatives and full packet export remain. |
+| FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis log downloads. An authorized no-store JSON download exports these packet fields; alternatives and a self-contained evidence bundle remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is audited and separate from publication; bound draft PR approval and reconciliation absent. |
@@ -263,7 +271,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Seven Alembic revisions applied through `eb8f0a7d36c4` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Eight Alembic revisions applied through `4bc7f793d66a` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
@@ -312,8 +320,9 @@ synthetic local run is not a release qualification.
 2. Hosted security is incomplete: OIDC and project roles have local tests, but
    no real issuer has been qualified. Per-run VM isolation and artifact edge
    authority are absent; hosted run admission fails closed.
-3. Durability is local only: initial PostgreSQL migration and admission race
-   passed, while queue/graph recovery and restore have not been exercised.
+3. Durability is local only: PostgreSQL migration, admission race and a
+   checkpointed phase restart passed. Full queue crash recovery and restore
+   have not been exercised.
 4. The worker publishes local HLS recordings and a tenant-scoped route; the
    independent media queue, hosted authorization and private CDN remain.
 5. No independent correctness benchmark or restore drill exists, so success,
@@ -321,12 +330,10 @@ synthetic local run is not a release qualification.
 
 ## Next implementation sequence
 
-1. Build the bounded agent patch loop on the worker's pinned fixture path,
-   with model budget reconciliation and checkpoint recovery. Keep the hidden
-   oracle inaccessible to the repair agent.
-2. Qualify one native provider adapter with a live account and run a bounded
-   LangGraph workflow on the fixture. Expand to three qualified
-   adapters only after each passes live conformance.
+1. Expand the checkpointed fixture workflow to general repository tasks while
+   retaining the harness boundary and keeping hidden oracles inaccessible.
+2. Qualify each native provider adapter with a live account and execute the
+   workflow with real usage receipts.
 3. Complete hosted worker dispatch, checkpoint recovery, scoped identity
    integration, graph projection and private artifact store.
 4. Add approved draft PR publication, hosted VM isolation, private ABR player

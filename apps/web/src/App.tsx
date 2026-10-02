@@ -332,6 +332,7 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
       </div>
       <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>
+        {packet && <a href={`/v1/runs/${run.id}/review-packet/download`} download={`aip-review-${run.id}.json`}>Download review packet</a>}
         {packet?.review_decision && <p>Reviewer decision: <strong>{packet.review_decision}</strong>{packet.review_reason ? ` — ${packet.review_reason}` : ''}</p>}
         {run.state === 'PAUSED_INPUT' && <form className="review-actions" onSubmit={event => {
           event.preventDefault()
