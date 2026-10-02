@@ -81,6 +81,7 @@ export interface ReviewPacket {
   browser_evidence_refs: string[]
   media_manifest_url?: string | null
   media_manifest_urls?: { baseline?: string; candidate?: string }
+  deleted_recording_labels?: ('baseline' | 'candidate')[]
   screenshot_urls?: { baseline?: string; candidate?: string }
   evidence_timeline?: { at_seconds: number; label: string; screenshot_url?: string }[]
 }

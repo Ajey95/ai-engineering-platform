@@ -161,6 +161,31 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RecordingDeletion(Base):
+    __tablename__ = "recording_deletions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "run_id", "label", name="uq_recording_deletion_scope"),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
+            name="fk_recording_deletions_run_scope",
+        ),
+        CheckConstraint("label IN ('baseline', 'candidate')", name="ck_recording_deletion_label"),
+        CheckConstraint(
+            "status IN ('pending', 'complete', 'failed')",
+            name="ck_recording_deletion_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    label: Mapped[str] = mapped_column(String(16))
+    actor: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

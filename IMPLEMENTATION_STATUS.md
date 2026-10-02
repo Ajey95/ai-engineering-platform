@@ -64,6 +64,10 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
   the admitted worker publishes baseline and candidate media separately and
   the tenant-scoped development API serves the published effect.
+- `platform_app/recording_deletion.py` and migration `c53718b2a844`:
+  a closed run can revoke one recording, remove its local raw WebM and HLS
+  directory, keep transcript/screenshot, and retain a scoped deletion/audit
+  record. Hosted object/CDN and backup propagation are not implemented.
 - Browser receipts include SHA-256 of final PNG screenshots. The tenant-scoped
   API checks the digest on every request and the Runs panel displays before
   and after screenshots.
@@ -83,7 +87,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 72 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 73 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -101,6 +105,18 @@ deployment, private CDN playback or restore drill has been verified. The three
 provider accounts, AWS region/account and GitHub organization are undecided.
 Docker Desktop crashes while initializing its `dockerInference` listener, but
 the project development container runs on a separate WSL Docker Engine.
+The refreshed demo at `127.0.0.1:5175` proxies to API port 8100. A disposable
+run `56a0dbcf-a3c6-46aa-b36e-8a3b914462aa` reproduced the fixture in a
+WSL container and closed `INCONCLUSIVE`. Its baseline HLS returned 200 before
+the delete request and 404 after; the HLS directory and raw WebM were gone,
+while its screenshot still returned 200 and 19 events remained. Desktop and
+390-pixel mobile Playwright checks displayed the deletion notice and loaded
+the screenshot with no page errors or horizontal overflow. Local PostgreSQL
+is migrated to `c53718b2a844`; Alembic reports no schema drift.
+An earlier disposable run `598ae8aa-4962-4112-89a0-abc2f193389b` received
+active cancellation and reached `CANCELLED` with no remaining run container.
+The SSE endpoint delivered events 1–3 before disconnect, then resumed at 4–6
+with `Last-Event-ID: 3` and no gap.
 The admitted worker baseline verification produced run
 `b2f8ad2f-4c72-4727-be69-bdef8eeabdf6` at pinned commit `5382f81`:
 outbox delivered, PASS/FAIL/FAIL, media READY, reproduction REPRODUCED,
@@ -165,6 +181,15 @@ Docker worker reproduced the form failure and finished `INCONCLUSIVE` with
 baseline media READY, correctly without a live model. Desktop 1440px and mobile
 390px checks showed the persisted failure evidence, no page errors and no
 horizontal overflow. The older 5173/8098 processes still serve stale code.
+The admitted run's HLS player was checked in Chromium: one video reached
+readyState 4, reported 7.2 seconds of media, played past time zero, and
+received master/variant playlists, init data and segments (HTTP 206) with no
+failed media request. This is local private-route playback, not CDN testing.
+Docker Desktop 4.67.0 still fails while removing its stale `dockerInference`
+Windows socket. A move of that exact reparse-point socket returned “file
+cannot be accessed by the system”; automatic approval review blocked its
+deletion outside the workspace. The separate Ubuntu WSL Docker Engine 29.8.2
+remains healthy and is the verified project runtime.
 
 ## Requirement traceability
 
@@ -187,7 +212,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
-| FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; active worker polls cancellation and kills active fixture container; full provider cancellation untested. |
+| FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
 | FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items; general evidence selection, durable history/memory and live token accounting remain. |
 | FR-CTX-02 | Missing | Scoped code navigation and graph traversal absent. |
 | FR-CTX-03 | Missing | Compaction and replay absent. |
@@ -202,26 +227,26 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
-| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified in admitted-run receipts and tenant-scoped local route, recording disabled when masks are requested, deletion lifecycle missing. |
+| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs and a verified fixture diff download; diagnosis evidence, alternatives and full packet export remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers; live model and customer repository scope unverified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is audited and separate from publication; bound draft PR approval and reconciliation absent. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; object store absent. |
-| FR-MED-03 | Partial | Hls.js player loaded and played manually evaluated local before/after HLS in Chromium; admitted-run players and screenshot view built but browser playback and hosted authorization unverified. |
+| FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Three Alembic migrations applied to disposable and local PostgreSQL; cross-tenant membership/task/event inserts were rejected and concurrent duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Six Alembic revisions applied through `c53718b2a844` on local PostgreSQL; disposable checks rejected cross-tenant inserts and duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
-| FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
+| FR-API-02 | Partial | SSE replay delivered events 1–3, then `Last-Event-ID: 3` resumed at 4–6 without gaps; hosted load and slow-client tests absent. |
 | FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens now admit a clearly labelled local fixture with pinned commit and show its real worker evidence; full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path now enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. Hosted broker and plugin authority absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Missing | Prompt injection qualification absent. |
-| FR-SEC-04 | Partial | Canonical deletion tombstone/outbox; object/cache/restore propagation absent. |
+| FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion record, immediate route revocation and raw/HLS cleanup; hosted object/cache/restore propagation absent. |
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Missing | Operational dashboards absent. |
@@ -240,15 +265,16 @@ admission, one reservation and one outbox row. AC-02 is tested at the
 standalone assembler boundary. AC-05 and
 AC-06 have ledger-level fencing/cancellation tests. AC-09 and AC-11 have pure
 token-plan checks. AC-12/13 have canonical memory tests. AC-21 has a real
-FFmpeg encode and idempotency test. AC-27 has a coded SSE replay/dedup path,
-but reconnect under network failure has not been tested. AC-15 has a local
+FFmpeg encode and idempotency test. AC-27 has a live SSE disconnect/reconnect
+check with contiguous replay; hosted proxy/load behavior remains untested.
+AC-15 has a local
 development container restriction probe, not the hosted hostile-repository
 VM acceptance test. AC-30 has manual
 desktop/mobile browser inspection, not a full accessibility audit.
 
-All remaining AC-03 through AC-30 scenarios require integrated or hosted
-qualification and are **not passed**. A passing unit test is not a paid pilot
-release qualification.
+The remaining acceptance scenarios need broader integration or hosted
+qualification and are **not passed for a paid pilot**. A passing unit test or
+synthetic local run is not a release qualification.
 
 ## What breaks first
 

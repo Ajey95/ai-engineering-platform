@@ -27,6 +27,7 @@ from platform_app.auth import (
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.memory import delete_fact, scoped_lookup
+from platform_app.model_base import utcnow
 from platform_app.model_qualification import (
     QualificationError,
     qualification_current,
@@ -39,6 +40,7 @@ from platform_app.models import (
     ModelEntry,
     Project,
     ProjectMembership,
+    RecordingDeletion,
     Run,
     RunEvent,
     Task,
@@ -46,6 +48,7 @@ from platform_app.models import (
     TenantMembership,
     ToolAction,
 )
+from platform_app.recording_deletion import deletion_for, purge_local_recording
 from platform_app.review_patch import verified_fixture_diff
 from platform_app.run_ledger import resume_input_run
 from platform_app.schemas import (
@@ -64,8 +67,10 @@ from platform_app.schemas import (
     TenantMembershipSet,
 )
 from platform_app.service import (
+    TERMINAL_STATES,
     ServiceError,
     admit_run,
+    append_event,
     canonical_hash,
     event_read,
     record_review_decision,
@@ -283,6 +288,8 @@ def run_media(
     run = authorized_run(db, identity, run_id)
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
+    if deletion_for(db, run, label) is not None:
+        raise HTTPException(status_code=404)
     artifact_root = Path(settings().artifact_dir).resolve()
     root = artifact_root / "private-media" / run.tenant_id / f"{run.id}_{label}" / "media"
     pointer_path = root / "ready.json"
@@ -315,6 +322,61 @@ def run_media(
         ".m4s": "video/iso.segment",
     }[selected.suffix]
     return FileResponse(selected, media_type=media_type)
+
+
+@app.delete("/v1/runs/{run_id}/recordings/{label}")
+def delete_run_recording(
+    run_id: str,
+    label: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    if label not in {"baseline", "candidate"}:
+        raise HTTPException(status_code=404)
+    run = authorized_run(db, identity, run_id)
+    if not is_owner(db, identity):
+        require_project_role(db, identity, run.project_id, REVIEW_ROLES)
+    # A terminal run cannot republish the recording after access is revoked.
+    run = db.scalar(select(Run).where(Run.id == run.id).with_for_update())
+    if run.state not in TERMINAL_STATES | {"REVIEW_READY"}:
+        raise ServiceError("RUN_ACTIVE", "Recording deletion requires a closed run", 409)
+    deletion = deletion_for(db, run, label)
+    if deletion is None:
+        deletion = RecordingDeletion(
+            tenant_id=run.tenant_id,
+            run_id=run.id,
+            label=label,
+            actor=identity[1],
+            status="pending",
+        )
+        db.add(deletion)
+        db.add(AuditEvent(
+            tenant_id=run.tenant_id,
+            actor=identity[1],
+            action="recording.delete",
+            target_ref=f"run:{run.id}:recording:{label}",
+            arguments_hash=canonical_hash({"run_id": run.id, "label": label}),
+            policy_revision=str((run.config_snapshot or {}).get("policy_revision", "1.0")),
+            outcome="access_revoked",
+        ))
+        append_event(db, run, "artifact.deletion_requested", {"label": label})
+        db.commit()
+    if deletion.status != "complete":
+        try:
+            purge_local_recording(db, run, label, settings().artifact_dir)
+        except (OSError, ValueError) as error:
+            deletion.status = "failed"
+            db.commit()
+            raise ServiceError(
+                "DELETE_PENDING", "Recording access revoked; object cleanup pending", 503
+            ) from error
+        deletion.status = "complete"
+        deletion.completed_at = utcnow()
+        other = "candidate" if label == "baseline" else "baseline"
+        run.media_status = "DELETED" if deletion_for(db, run, other) else "PARTIALLY_DELETED"
+        append_event(db, run, "artifact.deleted", {"label": label})
+        db.commit()
+    return {"run_id": run.id, "label": label, "status": deletion.status}
 
 
 @app.get("/v1/runs/{run_id}/screenshot/{label}")
@@ -842,7 +904,13 @@ def review_packet(
     )
     provider_mode = (candidate_patch or {}).get("provider_mode")
     media_urls = {}
+    deleted_labels = {
+        label for label in ("baseline", "candidate")
+        if deletion_for(db, run, label) is not None
+    }
     for label in ("baseline", "candidate"):
+        if label in deleted_labels:
+            continue
         media_receipt = receipts.get(f"media_{label}") or {}
         master = media_receipt.get("master")
         if media_receipt.get("status") == "READY" and isinstance(master, str):
@@ -923,6 +991,7 @@ def review_packet(
         "media_status": run.media_status,
         "media_manifest_urls": media_urls,
         "media_manifest_url": media_urls.get("candidate") or media_urls.get("baseline"),
+        "deleted_recording_labels": sorted(deleted_labels),
         "config_snapshot": run.config_snapshot,
     }
 

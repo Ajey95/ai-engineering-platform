@@ -305,3 +305,28 @@ as INCONCLUSIVE with baseline media READY and no provider call. Desktop/mobile
 Playwright checks showed persisted failure evidence, no page errors and no
 horizontal overflow. This is a reproducible synthetic demo, not full PRD
 completion.
+
+The admitted run HLS player decoded and played the 7.2-second baseline in
+Chromium. Its master/variant playlists, init and segments returned HTTP 206,
+with no failed media requests. Docker Desktop 4.67.0 remains broken at a stale
+`dockerInference` reparse-point socket; moving it failed with Windows file
+inaccessibility and automatic approval review blocked deleting it outside
+the workspace. WSL Docker Engine 29.8.2 remains the healthy project runtime.
+
+2026-10-02 recording deletion continuation: migration `c53718b2a844` and
+`platform_app/recording_deletion.py` add per-side deletion records. Closed-run
+DELETE revokes media access before physical removal, audits the action,
+removes local HLS/raw WebM, and preserves transcript/screenshot. The Review UI
+offers a confirmed control and reports deleted sides. Local PostgreSQL reached
+the new head with no drift. Python suite: 73 passed, 1 Windows symlink skip;
+web build passed (Node 21 warning; Node 22.12+ required for supported Vite).
+The current refreshed demo is web 5175/API 8100; worker remains on WSL Docker.
+Disposable run `56a0dbcf-a3c6-46aa-b36e-8a3b914462aa` reached INCONCLUSIVE
+with media READY. Live proxy check: media 200 before and 404 after deletion,
+local HLS/raw WebM absent, screenshot 200, 19 events intact. Desktop/mobile
+Playwright checks showed the deleted notice and loaded screenshot, no page
+errors or horizontal overflow. Prior active cancellation probe
+`598ae8aa-4962-4112-89a0-abc2f193389b` reached CANCELLED and left no run
+container. SSE reconnect replayed event IDs 4–6 after a cursor of 3. Hosted
+CDN/object/backup deletion propagation is still absent; do not claim FR-SEC-04
+or AC-25 complete.

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import {
   Activity, BarChart3, BookOpen, CheckCircle2, ChevronDown, CircleHelp,
   ClipboardList, Code2, FolderGit2, Gauge, Layers3, Menu, Play, Plus,
-  RefreshCw, Settings2, ShieldCheck, Square, XCircle,
+  RefreshCw, Settings2, ShieldCheck, Square, Trash2, XCircle,
 } from 'lucide-react'
 import { api, jsonBody, type CheckReceipt, type ModelEntry, type Project, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
 const MediaPlayer = lazy(() => import('./MediaPlayer'))
@@ -206,6 +206,20 @@ export default function App() {
     finally { setBusy(false) }
   }
 
+  async function deleteRecording(label: 'baseline' | 'candidate') {
+    if (!run || !window.confirm(`Delete the ${label} recording? The run transcript and screenshots will remain.`)) return
+    setBusy(true); setError('')
+    try {
+      await api(`/runs/${run.id}/recordings/${label}`, { method: 'DELETE' })
+      const [updated, history] = await Promise.all([
+        api<ReviewPacket>(`/runs/${run.id}/review-packet`),
+        api<RunEvent[]>(`/runs/${run.id}/events/history`),
+      ])
+      setPacket(updated); setEvents(history); await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Recording deletion failed') }
+    finally { setBusy(false) }
+  }
+
   async function searchMemory(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError('')
     if (!selectedProject) return
@@ -256,9 +270,9 @@ export default function App() {
           <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !runnableModels.length} title={!runnableModels.length ? 'No executable model is available' : undefined}><Play size={16} /> Start run</button></div>
           {!runnableModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
           {runnableModels.some(item => item.fixture_only) && <div className="notice"><CircleHelp size={18} /> The fixture model only reproduces the reviewed synthetic form bug. It is not a live provider or customer repository run.</div>}
-          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
+          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
-        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
+        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
         {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
         {page === 'memory' && <section className="page-section"><div className="page-heading"><div><h1>Memory</h1><p>Verified facts at an exact repository revision. Retrieval uses the canonical fallback.</p></div></div><form className="memory-search content-panel" onSubmit={searchMemory}><label>Commit SHA<input value={memoryRevision} onChange={event => setMemoryRevision(event.target.value)} pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label><label>Search text<input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder="File, symbol or incident" /></label><button className="secondary-button" disabled={!selectedProject}>Search memory</button></form><div className="content-panel"><h2>Source-backed facts</h2>{memoryFacts.length ? memoryFacts.map(fact => <div className="memory-fact" key={fact.id}><strong>{fact.subject}</strong><p>{fact.statement}</p><small>{fact.verification_scope || 'Scope not recorded'} · {fact.source_refs.join(', ')}</small></div>) : <p className="muted">No verified facts loaded for this revision.</p>}</div></section>}
@@ -287,13 +301,14 @@ export default function App() {
   </div>
 }
 
-function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, decideReview, busy }: {
+function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, decideReview, deleteRecording, busy }: {
   run: Run; task?: Task; packet: ReviewPacket | null; events: RunEvent[]
   tab: 'evidence' | 'changes' | 'logs' | 'environment'
   setTab: (tab: 'evidence' | 'changes' | 'logs' | 'environment') => void
   cancel: () => void
   resumeInput: (inputText: string, idempotencyKey: string) => Promise<void>
   decideReview: (decision: 'accepted' | 'rejected', reason: string) => Promise<void>
+  deleteRecording: (label: 'baseline' | 'candidate') => Promise<void>
   busy: boolean
 }) {
   const [rejectionReason, setRejectionReason] = useState('')
@@ -306,7 +321,7 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
       <div className="content-panel progress-panel"><div className="section-title"><Activity size={18} /><h3>Run progress</h3></div>{events.length ? <ol className="timeline">{events.map(event => <li key={event.event_id}><span className="timeline-node" /><div><strong>{event.event_type.replaceAll('.', ' · ')}</strong><small>{date(event.timestamp)}</small><p>{Object.entries(event.payload).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}</p></div></li>)}</ol> : <p className="muted">No durable events recorded yet.</p>}</div>
     </div>
     <div className="review-right"><div className="tabbar" role="tablist" aria-label="Run details">{(['evidence', 'changes', 'logs', 'environment'] as const).map(item => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'changes' ? 'Changed files' : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
-      <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} />}
+      <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} deleteRecording={deleteRecording} busy={busy} />}
         {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}{packet?.diagnosis_hypothesis && <p className="muted">Model hypothesis: {packet.diagnosis_hypothesis}</p>}{packet?.patch_url && <PatchViewer url={packet.patch_url} />}</>}
         {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
@@ -366,7 +381,10 @@ function ReceiptRow({ label, receipt }: { label: string; receipt: CheckReceipt }
   </div>
 }
 
-function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run }) {
+function EvidencePanel({ packet, run, deleteRecording, busy }: {
+  packet: ReviewPacket | null; run: Run
+  deleteRecording: (label: 'baseline' | 'candidate') => Promise<void>; busy: boolean
+}) {
   const baselineChecks: { label: string; receipt: CheckReceipt }[] = [
     ...(packet?.baseline_tests.map((receipt, index) => ({ label: `Named test ${index + 1}`, receipt })) ?? []),
     ...(packet?.baseline_browser ? [{ label: 'Browser scenario', receipt: packet.baseline_browser }] : []),
@@ -402,6 +420,10 @@ function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run 
             <Suspense fallback={<p className="muted">Loading player…</p>}>
               <MediaPlayer manifestUrl={packet.media_manifest_urls[label]!} />
             </Suspense>
+            {['COMPLETED', 'INCONCLUSIVE', 'FAILED', 'CANCELLED', 'REVIEW_READY'].includes(run.state) &&
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => void deleteRecording(label)}>
+                <Trash2 size={14} /> Delete recording
+              </button>}
           </div>)}
       </div> : packet?.media_manifest_url ?
       <Suspense fallback={<p className="muted">Loading player…</p>}>
@@ -409,6 +431,8 @@ function EvidencePanel({ packet, run }: { packet: ReviewPacket | null; run: Run 
       </Suspense> :
       <p className="muted">{baselineChecks.length || candidateChecks.length ? 'No playable recording is published for this run.' :
         'No test result, screenshot or recording is available yet.'}</p>}
+    {packet?.deleted_recording_labels?.map(label =>
+      <p className="muted" key={label}>{label === 'baseline' ? 'Before' : 'After'} recording deleted; run transcript retained.</p>)}
     {packet?.screenshot_urls && Object.keys(packet.screenshot_urls).length > 0 &&
       <div className="screenshot-grid">
         {(['baseline', 'candidate'] as const).map(label => packet.screenshot_urls?.[label] &&

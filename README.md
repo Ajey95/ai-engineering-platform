@@ -23,6 +23,9 @@ and release blockers.
 - A bounded, source-backed ContextBundle for the synthetic repair call, with
   commit/file hashes, scoped evidence and explicit trust labels.
 - Local FFmpeg HLS encoding with staging and immutable publication.
+- A per-recording delete route and Review control for closed runs. It revokes
+  local media access, removes that side's raw WebM and HLS files, and retains
+  the run transcript and screenshot with a durable deletion record.
 - A controlled synthetic form bug evaluation: real browser before/after
   recordings, exact-tree test receipts, an independent oracle, a review packet,
   and local HLS playback on the Evaluations page. The candidate is manual.
@@ -34,8 +37,9 @@ and release blockers.
 - React workspace with project onboarding, report submission, run history,
   review and usage views. It reads real API records; no fake run evidence is shown.
 
-No model is automatically qualified or enabled. The UI will correctly refuse
-to start a run until live provider conformance and sandbox execution exist.
+No provider model is automatically qualified or enabled. The reviewed local
+fixture model is a separate synthetic-only exception; the UI labels it and
+cannot use it for customer repositories.
 Hosted API identity can start with an OIDC issuer, audience, JWKS URL and
 database memberships, but customer run admission remains disabled until the
 production sandbox is qualified. Hosted frontend login and private media
@@ -89,6 +93,15 @@ npm run dev
 Open `http://127.0.0.1:5173`. The frontend proxy targets port 8098 by default.
 For a SQLite development smoke test, omit `.env` and the API uses a local
 SQLite file. This mode is for synthetic data only.
+
+For the current verified local session, use `http://127.0.0.1:5175/`. Its API
+is on port 8100 and the polling development worker uses the WSL Docker Engine.
+The older 5173/5174 sessions may serve earlier code. The Review screen can
+delete one closed run's baseline or candidate recording independently of the
+run transcript. `DELETE /v1/runs/{run_id}/recordings/{label}` is idempotent;
+`GET /v1/runs/{run_id}/review-packet` reports `deleted_recording_labels`.
+This is local origin cleanup. Hosted object/CDN propagation, backup replay and
+retention automation still need implementation and qualification.
 
 The current controlled fixture packet is at
 `artifacts/evaluation-v2/review-packet.json` and is intentionally ignored by

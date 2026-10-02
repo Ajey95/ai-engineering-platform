@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 import platform_app.api as api_module
 from platform_app.db import Base
-from platform_app.models import Project, Run, ToolAction
+from platform_app.models import AuditEvent, Project, RecordingDeletion, Run, ToolAction
 from platform_app.service import ServiceError
 
 
@@ -132,3 +132,69 @@ def test_run_screenshot_requires_receipt_digest_and_tenant(tmp_path, monkeypatch
         with pytest.raises(HTTPException) as changed:
             api_module.run_screenshot(run_id, "baseline", ("tenant-a", "actor"), db)
         assert changed.value.status_code == 404
+
+
+def test_recording_deletion_revokes_access_and_preserves_transcript(tmp_path, monkeypatch):
+    root = tmp_path / "artifacts"
+    run_id = "33333333-3333-4333-8333-333333333333"
+    effect = "a" * 64
+    media = root / "private-media" / "tenant-a" / f"{run_id}_baseline" / "media"
+    playlist = media / effect / "master.m3u8"
+    playlist.parent.mkdir(parents=True)
+    playlist.write_text("#EXTM3U\n")
+    (media / "ready.json").write_text(json.dumps({
+        "effect_key": effect, "master": f"{effect}/master.m3u8"
+    }))
+    evidence = root / run_id / "baseline"
+    evidence.mkdir(parents=True)
+    raw = evidence / "recording.webm"
+    raw.write_bytes(b"raw recording")
+    screenshot = evidence / "final.png"
+    screenshot.write_bytes(b"screenshot")
+    monkeypatch.setattr(api_module, "settings", lambda: SimpleNamespace(
+        artifact_dir=str(root), environment="development"
+    ))
+    engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Project(id="project", tenant_id="tenant-a", name="Fixture"))
+        db.add(Run(
+            id=run_id, tenant_id="tenant-a", task_id="task", project_id="project",
+            created_by="actor", idempotency_key="key", request_hash="r" * 64,
+            base_commit="b" * 40, model_entry_id="model", config_snapshot={},
+            state="QUEUED", media_status="READY",
+        ))
+        db.add(ToolAction(
+            tenant_id="tenant-a", run_id=run_id, step_id="browser",
+            logical_action="fixture.browser", effect_key="e" * 64,
+            arguments_hash="a" * 64, policy_result="allowed", status="COMPLETED",
+            receipt={"recording": "recording.webm"},
+        ))
+        db.commit()
+        assert api_module.run_media(
+            run_id, "baseline", f"{effect}/master.m3u8", ("tenant-a", "actor"), db
+        ).path == playlist
+        with pytest.raises(ServiceError) as active:
+            api_module.delete_run_recording(run_id, "baseline", ("tenant-a", "actor"), db)
+        assert active.value.status == 409
+        assert playlist.is_file() and raw.is_file()
+        db.get(Run, run_id).state = "COMPLETED"
+        db.commit()
+        result = api_module.delete_run_recording(run_id, "baseline", ("tenant-a", "actor"), db)
+        assert result["status"] == "complete"
+        assert not playlist.exists() and not raw.exists()
+        assert screenshot.is_file()
+        assert db.get(Run, run_id).state == "COMPLETED"
+        assert db.query(RecordingDeletion).count() == 1
+        assert db.query(AuditEvent).filter_by(action="recording.delete").count() == 1
+        assert api_module.delete_run_recording(
+            run_id, "baseline", ("tenant-a", "actor"), db
+        ) == result
+        with pytest.raises(HTTPException) as revoked:
+            api_module.run_media(
+                run_id, "baseline", f"{effect}/master.m3u8", ("tenant-a", "actor"), db
+            )
+        assert revoked.value.status_code == 404
+        with pytest.raises(ServiceError) as foreign:
+            api_module.delete_run_recording(run_id, "baseline", ("tenant-b", "actor"), db)
+        assert foreign.value.status == 404
