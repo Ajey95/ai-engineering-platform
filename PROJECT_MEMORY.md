@@ -718,3 +718,14 @@ screenshots are under ignored `artifacts/ui-qa/`. The live local API restarted
 on 8101 and returned 200 for scoped records; the local project has zero facts.
 Independent corroboration, regression feedback and immutable-artifact pinning
 are not implemented. The graph worker restarted on current code.
+
+2026-10-02 GitHub connection qualification increment: added a read-only
+GitHub REST probe with exact repository identity, active state, reported push
+permission, default branch ref SHA and pull request read checks. A process
+secret `secret://env/AIP_*` operator command records scoped ready/unverified
+state and an audit entry without persisting or printing the token. A failed
+recheck revokes prior ready state. Draft PR publication now verifies the
+approval before remote probing and rechecks the repository immediately before
+use. Mock HTTP and SQLite tests passed; no live token/account was supplied, so
+no real repository has been marked ready or PR created. A read-only probe does
+not prove actual PR write permission or branch rules.

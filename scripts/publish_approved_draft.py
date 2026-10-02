@@ -5,17 +5,19 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 from pathlib import Path
 
 from platform_app.config import settings
 from platform_app.db import SessionLocal
 from platform_app.github_publication import GitHubDraftPublisher, GitHubPublicationError
 from platform_app.models import PublicationApproval, RepositoryConnection
+from platform_app.publication import verify_draft_pr_approval
 from platform_app.publication_dispatch import publish_approved_run
+from platform_app.repository_connections import (
+    environment_secret_name,
+    qualify_repository_connection,
+)
 from platform_app.service import ServiceError
-
-ENV_REF = re.compile(r"^secret://env/(AIP_[A-Z0-9_]+)$")
 
 
 def main() -> int:
@@ -29,15 +31,18 @@ def main() -> int:
             approval = db.get(PublicationApproval, args.approval_id)
             if approval is None:
                 raise ServiceError("NOT_FOUND", "Publication approval not found", 404)
+            verify_draft_pr_approval(db, approval)
             connection = db.get(RepositoryConnection, approval.connection_id)
-            match = ENV_REF.fullmatch(connection.credential_ref or "") if connection else None
-            if match is None:
-                raise ServiceError(
-                    "CREDENTIAL_UNAVAILABLE", "Connection needs a process secret reference", 409
-                )
-            token = os.environ.get(match.group(1), "")
+            name = environment_secret_name(connection.credential_ref if connection else None)
+            token = os.environ.get(name, "")
             if not token:
                 raise ServiceError("CREDENTIAL_UNAVAILABLE", "GitHub token is unavailable", 409)
+            probe = qualify_repository_connection(db, connection, token, "publication-worker")
+            if not probe.ready:
+                raise ServiceError(
+                    "REPOSITORY_UNAVAILABLE",
+                    f"GitHub connection verification failed: {probe.reason}", 409,
+                )
         body = args.body_file.read_text(encoding="utf-8")
         publisher = GitHubDraftPublisher(token)
         result = publish_approved_run(

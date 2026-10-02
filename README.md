@@ -16,14 +16,29 @@ case suites; no complete benchmark has run yet.
   and deleted states. Scoped transition history records the actor and reason;
   retrieval only serves current verified facts.
 - Project scoped GitHub connection registration with opaque secret references,
-  maintainer authorization and explicit unverified readiness, visible on the
-  Projects screen. No GitHub account has been connected or probed.
+  maintainer authorization and a read-only credential qualification command,
+  visible on the Projects screen. No GitHub account has been connected or probed.
 - A distinct draft PR approval endpoint binds a reviewed run to its repository,
   base commit, patch and passing test receipts for 24 hours. Publication remains
   unavailable in ordinary use until a repository connection and live provider
   are qualified. The controlled GitHub REST adapter and operator command can
   create a draft PR only after that approval and a process secret are present;
   they have not been exercised against a live GitHub account.
+
+For an operator-managed GitHub connection, register a repository with
+`credential_ref=secret://env/AIP_GITHUB_TOKEN`, place the token in that process
+environment, and run:
+
+```powershell
+uv run python -m scripts.qualify_github_connection --connection-id CONNECTION_ID --actor OPERATOR_ID
+```
+
+The command checks the repository identity, reported push permission, default
+branch ref and pull request read access without creating GitHub objects. It
+marks the connection ready only after all checks pass. The draft publication
+command repeats the check immediately before use. GitHub branch rules and
+pull request write permission still require an actual approved publication to
+qualify; a read-only probe cannot prove those rights.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
 - Tenant daily/monthly inference caps and concurrent run admission limits,
