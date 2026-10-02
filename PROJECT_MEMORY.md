@@ -729,3 +729,10 @@ approval before remote probing and rechecks the repository immediately before
 use. Mock HTTP and SQLite tests passed; no live token/account was supplied, so
 no real repository has been marked ready or PR created. A read-only probe does
 not prove actual PR write permission or branch rules.
+
+2026-10-02 reviewer feedback memory: new accepted and rejected review
+decisions now atomically create a verified project decision fact sourced to
+the exact `review.decision` event. Its verification scope explicitly says it
+is a human review decision, not independent repair validation. Review
+idempotence prevents duplicate facts. Focused service/publication/memory tests
+passed 11/11. Automated invalidation after a later regression remains absent.

@@ -315,7 +315,7 @@ def record_review_decision(
         raise ServiceError("REVIEW_CLOSED", "Review decision has already been recorded", 409)
     if run.state != "REVIEW_READY" or run.verdict != "PASSED":
         raise ServiceError("REVIEW_NOT_READY", "Only verified review-ready runs can be closed", 409)
-    append_event(
+    decision_event = append_event(
         db,
         run,
         "review.decision",
@@ -324,6 +324,24 @@ def record_review_decision(
             "reason": reason,
             "actor": actor,
         },
+    )
+    db.flush()
+    from platform_app.memory import propose_fact, verify_fact
+
+    project = require_project(db, tenant_id, run.project_id)
+    evidence_ref = f"run-event:{decision_event.id}"
+    fact = propose_fact(
+        db, tenant_id, run.project_id,
+        run.config_snapshot.get("repository_ref") or project.repository_url
+        or f"project:{project.id}",
+        run.base_commit, "decision", f"Run {run.id} review decision",
+        f"Reviewer {decision} the repair proposal."
+        + (f" Reason: {reason}" if reason else ""),
+        [evidence_ref], actor=actor,
+    )
+    verify_fact(
+        db, fact, evidence_ref,
+        "Human review decision only; not independent repair validation", actor,
     )
     run.state = "COMPLETED"
     append_event(db, run, "run.state_changed", {"state": "COMPLETED", "verdict": run.verdict})

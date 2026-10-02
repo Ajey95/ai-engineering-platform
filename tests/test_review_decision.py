@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from platform_app.db import Base
-from platform_app.models import AuditEvent, Run, RunEvent
+from platform_app.models import AuditEvent, MemoryFact, Project, Run, RunEvent, Tenant
 from platform_app.service import ServiceError, record_review_decision, request_cancel
 
 
@@ -17,12 +17,22 @@ def _run() -> Run:
     )
 
 
+def _seed(db: Session) -> Run:
+    run = _run()
+    db.add_all([
+        Tenant(id="fixture-tenant", name="Fixture"),
+        Project(id="project", tenant_id="fixture-tenant", name="Project"),
+        run,
+    ])
+    db.commit()
+    return run
+
+
 def test_review_decision_is_durable_idempotent_and_preserves_verdict(tmp_path):
     engine = create_engine(f"sqlite:///{(tmp_path / 'review.db').as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        db.add(_run())
-        db.commit()
+        _seed(db)
         run = record_review_decision(
             db, "fixture-tenant", "11111111-1111-4111-8111-111111111111",
             "reviewer", "accepted",
@@ -39,6 +49,12 @@ def test_review_decision_is_durable_idempotent_and_preserves_verdict(tmp_path):
         )).all()
         assert len(events) == 1
         assert events[0].payload["decision"] == "accepted"
+        facts = db.scalars(select(MemoryFact).where(
+            MemoryFact.tenant_id == run.tenant_id, MemoryFact.project_id == run.project_id,
+        )).all()
+        assert len(facts) == 1 and facts[0].status == "verified"
+        assert facts[0].source_refs == [f"run-event:{events[0].id}"]
+        assert "not independent repair validation" in facts[0].verification_scope
         audits = db.scalars(select(AuditEvent).where(AuditEvent.target_ref == run.id)).all()
         assert len(audits) == 1
         with pytest.raises(ServiceError) as conflict:
@@ -53,9 +69,7 @@ def test_rejection_requires_reason_and_cancel_keeps_verified_result(tmp_path):
     engine = create_engine(f"sqlite:///{(tmp_path / 'review.db').as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        run = _run()
-        db.add(run)
-        db.commit()
+        run = _seed(db)
         with pytest.raises(ServiceError) as missing:
             record_review_decision(db, run.tenant_id, run.id, "reviewer", "rejected", "no")
         assert missing.value.code == "REASON_REQUIRED"
@@ -63,3 +77,19 @@ def test_rejection_requires_reason_and_cancel_keeps_verified_result(tmp_path):
         db.commit()
         assert run.state == "CANCELLED"
         assert run.verdict == "PASSED"
+
+
+def test_rejected_review_records_decision_but_does_not_validate_repair(tmp_path):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'rejected.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        run = _seed(db)
+        record_review_decision(
+            db, run.tenant_id, run.id, "reviewer", "rejected", "Fails accessibility check"
+        )
+        db.commit()
+        fact = db.scalar(select(MemoryFact).where(MemoryFact.project_id == "project"))
+        assert fact.status == "verified" and fact.fact_type == "decision"
+        assert "rejected" in fact.statement and "Fails accessibility" in fact.statement
+        assert fact.source_revision == run.base_commit
+    engine.dispose()

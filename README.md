@@ -14,7 +14,9 @@ case suites; no complete benchmark has run yet.
   usage and scoped canonical memory endpoints.
 - Canonical memory supports proposed, verified, rejected, superseded, expired
   and deleted states. Scoped transition history records the actor and reason;
-  retrieval only serves current verified facts.
+  retrieval only serves current verified facts. New reviewer outcomes create
+  decision records linked to their exact run events and scoped as human review
+  decisions, not independent proof of repair correctness.
 - Project scoped GitHub connection registration with opaque secret references,
   maintainer authorization and a read-only credential qualification command,
   visible on the Projects screen. No GitHub account has been connected or probed.
