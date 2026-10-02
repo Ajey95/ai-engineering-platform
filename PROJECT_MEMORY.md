@@ -528,3 +528,15 @@ actions return their digest-verified saved response before reassembling context,
 so later memory revocation cannot change a replay or issue a second provider
 call; tampered saved responses fail closed. General graph retrieval remains
 pending.
+
+2026-10-02 memory integration verification: 92 Python tests passed, one
+Windows symlink privilege skip; Ruff and `git diff --check` passed. A local
+PostgreSQL transaction inserted a verified fact, selected it by report terms
+and exact source revision, excluded another revision, then rolled back. The
+first smoke attempt had fixture setup order wrong under the composite project
+foreign key; explicit tenant/project flush fixed the setup and the query
+passed. Controlled Docker replay `05876cf6-72bf-48bb-9e78-59428fb53303`
+at commit `b6dd3d5` reached REVIEW_READY/PASSED with ten effects and both
+media sides READY; it remains a synthetic provider response. The development
+worker was restarted from current code and one worker pair is running. API
+8101 and web 5176 both returned 200.
