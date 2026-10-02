@@ -18,8 +18,10 @@ case suites; no complete benchmark has run yet.
   graph lag and budget-breach alerts; start it with
   `python -m scripts.evaluate_operations --serve --poll-seconds 30`.
   [Operations runbooks](docs/operations/runbooks.md) and a machine-readable
-  owner/impact catalog cover the required incident classes. No external paging
-  service is connected.
+  owner/impact catalog cover the required incident classes. A separate signed
+  webhook dispatcher can deliver durable alert transitions with retries when
+  `AIP_PAGER_WEBHOOK_URL` and `AIP_PAGER_WEBHOOK_SECRET` are configured; no live
+  paging destination has been qualified.
 - Canonical memory supports proposed, verified, rejected, superseded, expired
   and deleted states. Scoped transition history records the actor and reason;
   retrieval only serves current verified facts. New reviewer outcomes create

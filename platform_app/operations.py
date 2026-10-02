@@ -8,11 +8,14 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from platform_app.alert_delivery import validate_pager_destination
+from platform_app.config import settings
 from platform_app.db import utcnow
 from platform_app.models import (
     BudgetEntry,
     ExportCharge,
     OperationalAlert,
+    OperationalAlertEvent,
     OutboxEvent,
     Run,
     RunEvent,
@@ -114,6 +117,23 @@ def operations_snapshot(
         OperationalAlert.tenant_id == tenant_id,
         OperationalAlert.state.in_(["observing", "firing"]),
     ).order_by(OperationalAlert.first_seen_at)).all()
+    pending_notifications, oldest_notification = db.execute(select(
+        func.count(OperationalAlertEvent.id), func.min(OperationalAlertEvent.created_at),
+    ).where(
+        OperationalAlertEvent.tenant_id == tenant_id,
+        OperationalAlertEvent.notification_status == "pending",
+    )).one()
+    delivered_notifications = db.scalar(select(func.count(OperationalAlertEvent.id)).where(
+        OperationalAlertEvent.tenant_id == tenant_id,
+        OperationalAlertEvent.notification_status == "delivered",
+        OperationalAlertEvent.created_at >= cutoff,
+    )) or 0
+    config = settings()
+    try:
+        validate_pager_destination(config.pager_webhook_url, config.pager_webhook_secret)
+        pager_configured = True
+    except ValueError:
+        pager_configured = False
     return {
         "window_start": cutoff.isoformat(), "observed_at": now.isoformat(),
         "runs": {
@@ -138,6 +158,12 @@ def operations_snapshot(
         "warnings_now": warnings,
         "warning_details": current_warning_details(warnings),
         "active_alerts": [alert_read(row) for row in active_alerts],
+        "pager_delivery": {
+            "configured": pager_configured,
+            "pending_count": pending_notifications,
+            "oldest_pending_age_seconds": _age(now, oldest_notification),
+            "delivered_count_24h": delivered_notifications,
+        },
         "unavailable": [
             "provider_latency_and_error_rate", "context_size_and_compaction_rate",
             "token_estimation_error", "sandbox_utilization", "abr_playback_quality",

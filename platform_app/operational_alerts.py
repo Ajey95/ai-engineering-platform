@@ -41,6 +41,8 @@ def _transition(
         alert_id=alert.id, tenant_id=alert.tenant_id, generation=alert.generation,
         state=state, actor=actor, reason=reason, evidence=alert.evidence,
         created_at=now,
+        notification_status="pending" if state in {"firing", "resolved"} else "not_required",
+        notification_next_attempt_at=now if state in {"firing", "resolved"} else None,
     ))
 
 

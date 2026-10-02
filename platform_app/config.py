@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     memgraph_password: str = ""
     dev_evaluation_dir: str = "./artifacts/evaluation-v2"
     otlp_traces_endpoint: str = ""
+    pager_webhook_url: str = ""
+    pager_webhook_secret: str = ""
     max_run_spend_usd: float = Field(default=5.0, gt=0)
     max_model_calls: int = Field(default=40, ge=1)
     max_tool_calls: int = Field(default=80, ge=1)

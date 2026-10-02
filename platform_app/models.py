@@ -435,6 +435,14 @@ class OperationalAlert(Base):
 class OperationalAlertEvent(Base):
     __tablename__ = "operational_alert_events"
     __table_args__ = (
+        Index(
+            "ix_operational_alert_delivery_queue",
+            "notification_status", "notification_next_attempt_at",
+        ),
+        CheckConstraint(
+            "notification_status IN ('not_required', 'pending', 'delivered')",
+            name="ck_operational_alert_event_notification_status",
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "alert_id"],
             ["operational_alerts.tenant_id", "operational_alerts.id"],
@@ -450,6 +458,15 @@ class OperationalAlertEvent(Base):
     reason: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JsonType, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    notification_status: Mapped[str] = mapped_column(String(20), default="not_required")
+    notification_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    notification_next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notification_delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notification_last_error: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class ModelRegistryEvent(Base):

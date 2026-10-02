@@ -101,6 +101,8 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["warnings_now"] == [
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",
         ]
+        assert snapshot["pager_delivery"]["pending_count"] == 0
+        assert snapshot["pager_delivery"]["delivered_count_24h"] == 0
         assert [item["owner"] for item in snapshot["warning_details"]] == [
             "platform-on-call", "platform-on-call",
         ]

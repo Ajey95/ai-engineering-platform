@@ -842,3 +842,21 @@ rejected a transition claiming a different tenant. Local PostgreSQL upgraded
 to the new head and Alembic check found no drift. The first strict SQLite run
 exposed missing fixture flush ordering; the fixture was corrected, and focused
 alert/operations tests passed 5/5.
+
+2026-10-03 alert delivery increment: migration `f79e418c624a` adds durable
+notification status, attempts, retry time, delivered time and safe error code
+to scoped alert transitions. Firing and resolved transitions queue an outbound
+notification. `platform_app/alert_delivery.py` sends a compact signed HTTPS
+webhook with the transition ID as idempotency key, denies local/IP URLs,
+does not follow redirects, and retries failures with capped backoff. A
+separate operator process `scripts/dispatch_alerts.py` requires a configured
+URL and secret; no live endpoint or credential was provided or contacted.
+Controlled HTTP tests covered retry, signing, idempotency and unsafe URLs;
+a rollback-only PostgreSQL probe persisted a delivered receipt. Local
+PostgreSQL upgraded and Alembic detected no drift. The Operations API/UI now
+shows pager configuration and pending/delivered counts. Hosted egress,
+external pager semantics and the remaining alert evidence producers still
+need qualification.
+The full Python suite passed 149 tests, 3 skipped; Ruff and web build passed.
+The Operations snapshot treats a malformed pager destination as unconfigured;
+focused delivery/operations tests passed 11/11 after that refinement.

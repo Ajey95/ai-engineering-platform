@@ -1,8 +1,8 @@
 # Operations response runbooks
 
 These runbooks describe the intended response for the reference deployment.
-The current checkout runs locally. It has no external pager, hosted sandbox,
-CDN, or qualified restore region. A local operational evaluator persists queue,
+The current checkout runs locally. It has no configured external pager, hosted
+sandbox, CDN, or qualified restore region. A local operational evaluator persists queue,
 graph and budget-breach alert state; the other catalog conditions need their
 own evidence producers. An owner verifies the tenant, run, revision and
 time window before taking action. Keep restricted evidence out of ordinary
@@ -15,7 +15,16 @@ warnings require samples no more than 90 seconds apart for ten minutes after
 crossing five minutes of queue age. A stopped evaluator cannot prove continuous
 failure. Firing alerts appear in the owner Operations view; resolving one
 requires a recorded reason. A new budget-breach event reopens a resolved alert.
-There is no external paging delivery yet, so operators must inspect the view.
+A separate dispatcher sends signed, idempotent HTTPS webhook requests for
+firing and resolved transitions. Set `AIP_PAGER_WEBHOOK_URL` to the reviewed
+receiver URL and `AIP_PAGER_WEBHOOK_SECRET` to a secret manager supplied value
+of at least 32 bytes, then supervise
+`python -m scripts.dispatch_alerts --serve --poll-seconds 5`. The receiver
+must deduplicate the `Idempotency-Key` header because a crash after delivery
+can cause an at-least-once retry. Redirects are not followed and response
+bodies are not stored. The hosted egress policy and a real pager response drill
+must be qualified before relying on this as paging. Until then operators must
+inspect the view.
 
 ## Security incident
 
