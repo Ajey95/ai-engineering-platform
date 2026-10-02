@@ -97,7 +97,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 105 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 108 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -288,8 +288,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Missing | Operational dashboards absent. |
 | FR-OPS-01 | Missing | Alert owner/runbooks and drills absent. |
-| FR-EVL-01 | Missing | Versioned 30+10 benchmark and held-out oracles absent. |
-| FR-EVL-02 | Missing | Provider qualification benchmark absent. |
+| FR-EVL-01 | Partial | A strict versioned suite contract now requires exactly ten cases in each of the 30 bug plus 10 non-bug categories, at least 20 held out, distinct fixtures and hidden oracles, pinned Git assets, digests and accepted outcomes. Only one actual development fixture exists; the remaining 39 cases and protected oracle execution are absent. |
+| FR-EVL-02 | Partial | A conservative scorer requires one distinct attempt per case and one model, includes failures in denominators and flags false success. Supplied result fields are labelled unverified; no provider has run a complete benchmark or received qualification. |
 | FR-EVL-03 | Partial | Push/PR workflow now runs Python tests/lint, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and benchmark/model-change qualification gates remain. |
 | FR-NFR-01 | Missing | Hosted load, availability and recovery measurements absent. |
 | FR-NFR-02 | Missing | Full degraded-mode service behavior absent. |

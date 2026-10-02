@@ -619,3 +619,14 @@ The full suite passed 105 tests with three skips; Ruff and diff checks passed.
 The disposable PostgreSQL verifier passed migration roundtrip, resume and its
 race probes at the new head. The worker does not execute external plugin tools
 yet.
+
+2026-10-02 benchmark contract increment: added `platform_app/benchmark_contract.py`,
+`scripts/validate_benchmark.py` and `benchmarks/README.md`. The versioned suite
+requires exactly 10 cases per PRD category, at least 20 held out, distinct
+fixtures and hidden oracle paths, pinned Git assets/digests, seed and accepted
+outcomes. Scoring requires all 40 distinct attempts for one model, includes
+failures in denominators and detects false success, but labels supplied
+results `UNVERIFIED_RESULTS` because this tool cannot attest their origin.
+Only one actual fixture exists; the other 39 cases and live qualification have
+not been performed. Focused tests passed 3/3; the full Python suite passed 108
+with three skips and Ruff passed. This is a contract, not benchmark evidence.

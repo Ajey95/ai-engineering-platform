@@ -5,6 +5,8 @@ This repository implements an early **local development foundation** for the
 version 1.0. It is **not a complete implementation or a paid pilot release**.
 See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for requirement evidence
 and release blockers.
+The [benchmark contract](benchmarks/README.md) rejects incomplete or duplicate
+case suites; no complete benchmark has run yet.
 
 ## What runs today
 
