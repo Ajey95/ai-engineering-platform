@@ -14,8 +14,9 @@ from sqlalchemy import select
 
 from platform_app.context_bundle import fixture_context_bundle
 from platform_app.context_compaction import compact_fixture_context
+from platform_app.memory import select_context_facts
 from platform_app.model_budget import reserve_model_call, settle_model_call
-from platform_app.models import BudgetEntry, ModelEntry, Run, RunEvent, Task, ToolAction
+from platform_app.models import BudgetEntry, MemoryFact, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
 from platform_app.providers import (
     AnthropicMessages,
@@ -23,6 +24,7 @@ from platform_app.providers import (
     OpenAIResponses,
     ProviderTurn,
 )
+from platform_app.run_ledger import assert_fence
 from platform_app.service import ServiceError, append_event
 from platform_app.telemetry import set_safe_attributes, tracer
 from platform_app.token_budget import BudgetError, PriceRule, TokenPolicy, plan_call
@@ -70,6 +72,29 @@ def _provider(model: ModelEntry) -> PatchProvider:
     return adapter(key)
 
 
+def _replay_completed(
+    action: ToolAction, artifact_root: Path, run_id: str, step_id: str
+) -> AgentPatchResult:
+    receipt = action.receipt or {}
+    relative_ref = receipt.get("artifact_ref")
+    expected_digest = receipt.get("output_sha256")
+    if relative_ref != f"{run_id}/model/{step_id}.json":
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Model artifact reference changed", 409)
+    artifact = artifact_root / relative_ref
+    try:
+        saved = json.loads(artifact.read_text(encoding="utf-8"))
+        raw = saved["text"]
+        if hashlib.sha256(raw.encode("utf-8")).hexdigest() != expected_digest:
+            raise ValueError("Model output digest changed")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ServiceError(
+            "EFFECT_OUTCOME_UNKNOWN", "Model output artifact is missing", 409
+        ) from error
+    return AgentPatchResult(
+        parse_patch_response(raw), relative_ref, receipt.get("usage", {})
+    )
+
+
 def _prompt(
     run: Run,
     task: Task,
@@ -79,10 +104,11 @@ def _prompt(
     artifact_root: Path,
     tool_actions: dict[str, ToolAction],
     pending_tool_cycle: bool,
+    memory_facts: list[MemoryFact] | None = None,
 ) -> tuple[str, str | None]:
     bundle = fixture_context_bundle(
         run, task, baseline_receipts, server_source, INSTRUCTION, history,
-        artifact_root, tool_actions,
+        artifact_root, tool_actions, memory_facts,
     )
     snapshot = run.config_snapshot
     try:
@@ -135,9 +161,12 @@ def request_fixture_patch(
                 ToolAction.logical_action == "model.generate",
             )
         )
-        selected_provider = (
-            None if prior and prior.status == "COMPLETED" else (provider or _provider(model))
-        )
+        assert_fence(run, worker_id, fence)
+        if prior and prior.status == "COMPLETED":
+            if prior.tenant_id != run.tenant_id:
+                raise ServiceError("LEDGER_SCOPE", "Model action scope changed", 409)
+            return _replay_completed(prior, artifact_root, run_id, step_id)
+        selected_provider = provider or _provider(model)
         resume_events = db.scalars(
             select(RunEvent)
             .where(
@@ -170,9 +199,13 @@ def request_fixture_patch(
                 ToolAction.run_id == run.id, ToolAction.status == "INTENDED"
             ).limit(1)
         ) is not None
+        selected_memory = select_context_facts(
+            db, run.tenant_id, run.project_id, run.base_commit, task.report
+        )
         prompt, summary_ref = _prompt(
             run, task, baseline_receipts, server_source, history, artifact_root,
             {action.step_id: action for action in baseline_actions}, pending_tool_cycle,
+            selected_memory,
         )
         action, reservation, plan = reserve_model_call(
             db,
@@ -191,33 +224,12 @@ def request_fixture_patch(
                 event.payload.get("summary_ref") == summary_ref for event in prior_summaries
             ):
                 append_event(db, run, "context.compacted", {"summary_ref": summary_ref})
-        completed_receipt = action.receipt if action.status == "COMPLETED" else None
         db.commit()
         action_id, reservation_id = action.id, reservation.id
         model_id = model.model_id
         expected_provider = model.provider
 
-    if completed_receipt is not None:
-        relative_ref = completed_receipt.get("artifact_ref")
-        expected_digest = completed_receipt.get("output_sha256")
-        if relative_ref != f"{run_id}/model/{step_id}.json":
-            raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Model artifact reference changed", 409)
-        artifact = artifact_root / relative_ref
-        try:
-            saved = json.loads(artifact.read_text(encoding="utf-8"))
-            raw = saved["text"]
-            if hashlib.sha256(raw.encode("utf-8")).hexdigest() != expected_digest:
-                raise ValueError("Model output digest changed")
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            raise ServiceError(
-                "EFFECT_OUTCOME_UNKNOWN", "Model output artifact is missing", 409
-            ) from error
-        return AgentPatchResult(
-            parse_patch_response(raw), relative_ref, completed_receipt.get("usage", {})
-        )
-
     # The committed intent and reservation precede this external request.
-    assert selected_provider is not None
     turn = selected_provider.generate(model_id, INSTRUCTION, prompt, {}, plan.output_reserve)
     if turn.provider != expected_provider:
         raise ServiceError("PROVIDER_MISMATCH", "Provider response source changed", 409)

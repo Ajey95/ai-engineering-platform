@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from platform_app.models import Run, Task, ToolAction
+from platform_app.models import MemoryFact, Run, Task, ToolAction
 from platform_app.service import ServiceError
 from platform_app.telemetry import tracer
 from platform_app.tool_broker import ToolCallError, fixture_tool_result
@@ -94,6 +94,7 @@ def fixture_context_bundle(
     history: list[dict] | None = None,
     artifact_root: Path | None = None,
     tool_actions: dict[str, ToolAction] | None = None,
+    memory_facts: list[MemoryFact] | None = None,
 ) -> dict:
     source_bytes = server_source.encode("utf-8")
     if len(source_bytes) > 50_000:
@@ -165,6 +166,41 @@ def fixture_context_bundle(
                 scope,
             )
         )
+    selected_memory = []
+    for fact in (memory_facts or [])[:5]:
+        now = datetime.now(UTC)
+        valid_from = fact.valid_from
+        valid_until = fact.valid_until
+        if valid_from is not None and valid_from.tzinfo is None:
+            valid_from = valid_from.replace(tzinfo=UTC)
+        if valid_until is not None and valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=UTC)
+        if (
+            fact.tenant_id != run.tenant_id
+            or fact.project_id != run.project_id
+            or fact.source_revision != run.base_commit
+            or fact.status != "verified"
+            or valid_from is None
+            or valid_from > now
+            or valid_until is not None and valid_until <= now
+            or not isinstance(fact.source_refs, list)
+            or not fact.source_refs
+            or not all(isinstance(ref, str) and ref for ref in fact.source_refs)
+        ):
+            raise ServiceError("MEMORY_SCOPE", "Selected memory is not verified for this run", 409)
+        statement_bytes = fact.statement.encode("utf-8")
+        selected_memory.append({
+            "fact_id": fact.id,
+            "subject": fact.subject,
+            "statement_excerpt": fact.statement[:1000],
+            "statement_sha256": _digest(statement_bytes),
+            "truncated": len(fact.statement) > 1000,
+            "source_revision": fact.source_revision,
+            "source_refs": fact.source_refs[:3],
+            "source_refs_truncated": len(fact.source_refs) > 3,
+            "trust_label": "verified_project_memory_data",
+            "authorization_scope": scope,
+        })
     return {
         "schema_version": "1.0",
         "task_id": task.id,
@@ -178,7 +214,7 @@ def fixture_context_bundle(
         "permission_boundaries": instruction,
         "task_state": {"run_id": run.id, "state": run.state},
         "source_items": items,
-        "selected_memory": [],
+        "selected_memory": selected_memory,
         "concise_history": (history or [])[-3:],
         "summary_ref": None,
         "tool_set_ref": _digest(b"no-tools"),

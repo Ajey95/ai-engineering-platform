@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
@@ -12,6 +13,7 @@ from platform_app.agent_patch import request_fixture_patch
 from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
+    MemoryFact,
     ModelEntry,
     Project,
     Run,
@@ -22,6 +24,7 @@ from platform_app.models import (
 )
 from platform_app.providers import OpenAIResponses
 from platform_app.run_ledger import claim_run
+from platform_app.service import ServiceError
 
 
 def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
@@ -150,6 +153,22 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
             arguments_hash="c" * 64, policy_result="allowed", status="COMPLETED",
             receipt=browser_receipt,
         ))
+        db.add(MemoryFact(
+            id="fact-a", tenant_id="tenant-a", project_id="project-a",
+            repository_ref="fixture", source_revision="a" * 40,
+            fact_type="project_fact", subject="form quantity",
+            statement="The form quantity field may be omitted by clients",
+            source_refs=["test:quantity"], verification_scope="fixture tests",
+            status="verified", valid_from=datetime.now(UTC),
+        ))
+        db.add(MemoryFact(
+            id="fact-stale", tenant_id="tenant-a", project_id="project-a",
+            repository_ref="fixture", source_revision="b" * 40,
+            fact_type="project_fact", subject="form quantity",
+            statement="STALE_MEMORY_SHOULD_NOT_APPEAR",
+            source_refs=["test:stale"], verification_scope="fixture tests",
+            status="verified", valid_from=datetime.now(UTC),
+        ))
         db.commit()
 
     result = request_fixture_patch(
@@ -162,6 +181,11 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         tmp_path,
         provider=adapter,
     )
+    assert b"The form quantity field may be omitted" in calls[0].content
+    assert b"STALE_MEMORY_SHOULD_NOT_APPEAR" not in calls[0].content
+    with factory() as db:
+        db.get(MemoryFact, "fact-a").status = "deleted"
+        db.commit()
     replay = request_fixture_patch(
         factory,
         "run-a",
@@ -190,4 +214,13 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         assert (tmp_path / compactions[0].payload["summary_ref"]).is_file()
     artifact = json.loads((tmp_path / result.artifact_ref).read_text(encoding="utf-8"))
     assert artifact["text"] == patch
+    (tmp_path / result.artifact_ref).write_text('{"text":"tampered"}', encoding="utf-8")
+    with pytest.raises(ServiceError) as tampered:
+        request_fixture_patch(
+            factory, "run-a", "worker-one", fence,
+            {"browser": browser_receipt}, source.read_text(encoding="utf-8"),
+            tmp_path, provider=adapter,
+        )
+    assert tampered.value.code == "EFFECT_OUTCOME_UNKNOWN"
+    assert len(calls) == 1
     engine.dispose()

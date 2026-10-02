@@ -239,7 +239,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
-| FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items; general evidence selection, durable history/memory and live token accounting remain. |
+| FR-CTX-01 | Partial | Fixture model call receives a bounded ContextBundle with scoped, hashed, versioned and trust-labelled source items plus up to five current verified project memory facts selected by report terms at the pinned revision. General evidence selection, full history and live token accounting remain. |
 | FR-CTX-02 | Partial | An isolated pinned-snapshot navigator now bounds file listing, UTF-8 text search, Python symbol lookup and excerpt reads with commit, SHA-256 and trust provenance. The fixture worker reads its source through this scoped path; the hidden oracle is outside the scope. General language symbol indexing and tenant-scoped graph traversal remain absent. |
 | FR-CTX-03 | Partial | Fixture model input compacts at 80% of its conservative byte budget or before overflow. It preserves immutable constraints, tool call/result IDs, source commit and user decisions; writes content-addressed source/summary artifacts and one durable event. Scoped retrieval verifies both digests and decision equivalence. Controlled provider integration replays the same completed call without a second request. General transcript/session compaction, authorized agent retrieval and provider tool-cycle continuation remain absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
@@ -248,7 +248,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |
-| FR-MEM-04 | Partial | Scoped canonical lexical lookup; connected traversal absent. |
+| FR-MEM-04 | Partial | Scoped canonical lexical lookup now feeds bounded, provenance-labelled memory into fixture model context. Revoked or wrong-revision facts are excluded; connected traversal remains absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; hosted hostile-repository isolation remains unverified. |
 | FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |

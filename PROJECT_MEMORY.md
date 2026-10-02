@@ -518,3 +518,13 @@ API 8101, worker with image `aip-dev-sandbox:0.1.1`, and Vite 5176. API and
 web returned 200; the persisted demo run still returns two diagnosis log
 references. Automatic approval review rejected a combined background relaunch
 command; the separate foreground sessions are the working recovery path.
+
+2026-10-02 memory selection: fixture model context now includes up to five
+current verified MemoryFact records selected by task report terms, with exact
+tenant/project/source revision filters. Each item carries fact ID, bounded
+statement excerpt, full statement SHA-256, source refs, trust and scope labels.
+Tests exclude unverified, revoked and wrong-revision facts. Completed model
+actions return their digest-verified saved response before reassembling context,
+so later memory revocation cannot change a replay or issue a second provider
+call; tampered saved responses fail closed. General graph retrieval remains
+pending.

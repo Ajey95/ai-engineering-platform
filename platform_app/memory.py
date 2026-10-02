@@ -1,5 +1,7 @@
 """Canonical, source-backed project memory with a scoped lexical fallback."""
 
+import re
+
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -81,6 +83,44 @@ def scoped_lookup(
             ),
         )
         .order_by(MemoryFact.created_at.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(statement).all())
+
+
+def select_context_facts(
+    db: Session, tenant_id: str, project_id: str, source_revision: str,
+    task_report: str, limit: int = 5,
+) -> list[MemoryFact]:
+    """Select only current verified facts sharing terms with this run's report."""
+    if not 1 <= limit <= 10:
+        raise ServiceError("INVALID_LIMIT", "Memory selection limit is invalid", 400)
+    terms = list(dict.fromkeys(
+        word.lower() for word in re.findall(r"[A-Za-z0-9]{4,}", task_report)
+        if word.lower() not in {"with", "from", "this", "that", "when", "then"}
+    ))[:8]
+    if not terms:
+        return []
+    now = utcnow()
+    relevant = or_(*(
+        or_(
+            MemoryFact.subject.ilike(f"%{term}%"),
+            MemoryFact.statement.ilike(f"%{term}%"),
+        ) for term in terms
+    ))
+    statement = (
+        select(MemoryFact)
+        .where(
+            MemoryFact.tenant_id == tenant_id,
+            MemoryFact.project_id == project_id,
+            MemoryFact.source_revision == source_revision,
+            MemoryFact.status == "verified",
+            MemoryFact.valid_from.is_not(None),
+            MemoryFact.valid_from <= now,
+            or_(MemoryFact.valid_until.is_(None), MemoryFact.valid_until > now),
+            relevant,
+        )
+        .order_by(MemoryFact.created_at.desc(), MemoryFact.id)
         .limit(limit)
     )
     return list(db.scalars(statement).all())
