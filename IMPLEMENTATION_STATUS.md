@@ -13,6 +13,19 @@ The paid pilot release gate in PRD §27.2 has not been run.
   migration was applied to local PostgreSQL 17.11. A disposable migrated
   database concurrency test observed one run, reservation, outbox and event
   for two simultaneous duplicate requests.
+- `platform_app/auth.py`, migration `0a09a20564b1`: signed RS256 OIDC bearer
+  validation, active tenant membership and project role checks. The API scopes
+  tasks, runs, evidence, memory and usage to authorized projects. An owner can
+  manage memberships; a trusted operator can bootstrap the first owner. The
+  disposable PostgreSQL test upgraded the membership schema and verified the
+  bootstrap owner. A real OIDC issuer has not been connected or tested.
+- Migration `4fba39f6713d` replaces single-column foreign keys on core tenant
+  records with tenant/project scoped constraints. Disposable PostgreSQL probes
+  rejected cross-tenant project membership, task and run-event inserts; local
+  PostgreSQL upgraded to the new head with no detected schema drift.
+- Hosted run admission returns `EXECUTION_UNAVAILABLE` until a customer VM
+  sandbox is implemented; the development Docker adapter remains isolated to
+  synthetic fixtures.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
 - `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
   claims a lease, archives the fixture and hidden oracle at the run's pinned
@@ -53,7 +66,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 54 passing local tests and 1 Windows symlink privilege skip,
+- `tests/`: 56 passing local tests and 1 Windows symlink privilege skip,
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -84,7 +97,9 @@ After the screenshot digest change, controlled run
 `86a57044-b983-493a-ab45-b6f54e514931` at commit `6d28955` reproduced
 those baseline/candidate statuses with two screenshot hashes and two HLS
 manifests. It remains controlled response evidence.
-Production startup deliberately refuses to proceed.
+Production startup requires configured OIDC and PostgreSQL. This has only
+been exercised with local signed tokens and a disposable database, and hosted
+run execution remains deliberately disabled.
 
 ## Requirement traceability
 
@@ -132,7 +147,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js player loaded and played manually evaluated local before/after HLS in Chromium; admitted-run players and screenshot view built but browser playback and hosted authorization unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Initial Alembic migration applied to local PostgreSQL; concurrent duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Three Alembic migrations applied to disposable and local PostgreSQL; cross-tenant membership/task/event inserts were rejected and concurrent duplicate admission produced one run, reservation, outbox and event. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
@@ -142,7 +157,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Missing | Prompt injection qualification absent. |
 | FR-SEC-04 | Partial | Canonical deletion tombstone/outbox; object/cache/restore propagation absent. |
-| FR-SEC-05 | Partial | Audit record for admission/cancel; role and immutable retention controls absent. |
+| FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Missing | OpenTelemetry instrumentation absent. |
 | FR-OBS-02 | Missing | Operational dashboards absent. |
 | FR-OPS-01 | Missing | Alert owner/runbooks and drills absent. |
@@ -176,9 +191,9 @@ release qualification.
    fixture through a development worker. The provider path has only a
    predetermined response proof; no provider adapter is live qualified and
    no autonomous repair has been demonstrated.
-2. Hosted security is incomplete: OIDC memberships, project roles, per-run VM
-   isolation and artifact edge authority are absent. Non-development startup
-   fails closed.
+2. Hosted security is incomplete: OIDC and project roles have local tests, but
+   no real issuer has been qualified. Per-run VM isolation and artifact edge
+   authority are absent; hosted run admission fails closed.
 3. Durability is local only: initial PostgreSQL migration and admission race
    passed, while queue/graph recovery and restore have not been exercised.
 4. The worker publishes local HLS recordings and a tenant-scoped route; the
@@ -194,8 +209,8 @@ release qualification.
 2. Qualify one native provider adapter with a live account and run a bounded
    LangGraph workflow on the fixture. Expand to three qualified
    adapters only after each passes live conformance.
-3. Replace local shortcuts with PostgreSQL migrations, worker dispatch,
-   checkpoint recovery, scoped identity, graph projection and artifact store.
+3. Complete hosted worker dispatch, checkpoint recovery, scoped identity
+   integration, graph projection and private artifact store.
 4. Add approved draft PR publication, hosted VM isolation, private ABR player
    and CDN, then run every AC scenario and the §27.2 release gate.
 

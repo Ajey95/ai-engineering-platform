@@ -2,8 +2,10 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -28,6 +30,21 @@ class Tenant(Base):
     policy_revision: Mapped[str] = mapped_column(String(64), default="1.0")
 
 
+class TenantMembership(Base):
+    __tablename__ = "tenant_memberships"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "subject"),
+        CheckConstraint("role IN ('owner', 'member')", name="ck_tenant_membership_role"),
+        CheckConstraint("status IN ('active', 'disabled')", name="ck_tenant_membership_status"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    subject: Mapped[str] = mapped_column(String(200), index=True)
+    role: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("tenant_id", "id"),)
@@ -40,12 +57,41 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class Task(Base):
-    __tablename__ = "tasks"
-    __table_args__ = (UniqueConstraint("tenant_id", "id"),)
+class ProjectMembership(Base):
+    __tablename__ = "project_memberships"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"]
+        ),
+        UniqueConstraint("tenant_id", "project_id", "subject"),
+        CheckConstraint(
+            "role IN ('maintainer', 'contributor', 'reviewer', 'viewer')",
+            name="ck_project_membership_role",
+        ),
+        CheckConstraint("status IN ('active', 'disabled')", name="ck_project_membership_status"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    subject: Mapped[str] = mapped_column(String(200), index=True)
+    role: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id"),
+        UniqueConstraint("tenant_id", "project_id", "id", name="uq_tasks_scope_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            name="fk_tasks_project_scope",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
     report: Mapped[str] = mapped_column(Text)
     expected_behavior: Mapped[str] = mapped_column(Text)
     actual_behavior: Mapped[str] = mapped_column(Text)
@@ -58,11 +104,21 @@ class Run(Base):
     __table_args__ = (
         Index("ix_runs_tenant_state", "tenant_id", "state", "updated_at"),
         UniqueConstraint("tenant_id", "created_by", "idempotency_key"),
+        UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "task_id"],
+            ["tasks.tenant_id", "tasks.project_id", "tasks.id"],
+            name="fk_runs_task_scope",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            name="fk_runs_project_scope",
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
-    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
     created_by: Mapped[str] = mapped_column(String(200))
     idempotency_key: Mapped[str] = mapped_column(String(200))
     request_hash: Mapped[str] = mapped_column(String(64))
@@ -84,10 +140,16 @@ class Run(Base):
 
 class RunEvent(Base):
     __tablename__ = "run_events"
-    __table_args__ = (UniqueConstraint("run_id", "sequence"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence"),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_run_events_run_scope",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
     sequence: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(80))
     payload: Mapped[dict] = mapped_column(JsonType, default=dict)
@@ -98,7 +160,9 @@ class RunEvent(Base):
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    tenant_id: Mapped[str] = mapped_column(
+        ForeignKey("tenants.id", name="fk_outbox_events_tenant"), index=True
+    )
     topic: Mapped[str] = mapped_column(String(80), index=True)
     payload: Mapped[dict] = mapped_column(JsonType)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
@@ -108,9 +172,15 @@ class OutboxEvent(Base):
 
 class BudgetEntry(Base):
     __tablename__ = "budget_ledger"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_budget_ledger_run_scope",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
     category: Mapped[str] = mapped_column(String(50))
     reserved_usd: Mapped[float] = mapped_column(Numeric(12, 6))
     actual_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
@@ -137,7 +207,9 @@ class ModelEntry(Base):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    tenant_id: Mapped[str] = mapped_column(
+        ForeignKey("tenants.id", name="fk_audit_events_tenant"), index=True
+    )
     actor: Mapped[str] = mapped_column(String(200))
     action: Mapped[str] = mapped_column(String(100))
     target_ref: Mapped[str] = mapped_column(String(200))
@@ -149,10 +221,16 @@ class AuditEvent(Base):
 
 class ToolAction(Base):
     __tablename__ = "tool_actions"
-    __table_args__ = (UniqueConstraint("effect_key"),)
+    __table_args__ = (
+        UniqueConstraint("effect_key"),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_tool_actions_run_scope",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
     step_id: Mapped[str] = mapped_column(String(100))
     logical_action: Mapped[str] = mapped_column(String(100))
     effect_key: Mapped[str] = mapped_column(String(64))
@@ -168,10 +246,14 @@ class MemoryFact(Base):
     __tablename__ = "memory_facts"
     __table_args__ = (
         Index("ix_memory_scope_revision", "tenant_id", "project_id", "source_revision", "status"),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            name="fk_memory_facts_project_scope",
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(String(36), index=True)
-    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
     repository_ref: Mapped[str] = mapped_column(Text)
     source_revision: Mapped[str] = mapped_column(String(64))
     fact_type: Mapped[str] = mapped_column(String(40))

@@ -105,6 +105,11 @@ def run_read(run: Run) -> RunRead:
 def admit_run(
     db: Session, tenant_id: str, actor: str, task_id: str, key: str, body: RunCreate
 ) -> Run:
+    # The development Docker adapter is not a customer sandbox security boundary.
+    if settings().environment != "development":
+        raise ServiceError(
+            "EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503
+        )
     task = require_task(db, tenant_id, task_id)
     tenant = db.get(Tenant, tenant_id)
     if tenant is None or tenant.status != "active":
@@ -241,12 +246,12 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
 
 def record_review_decision(
     db: Session, tenant_id: str, run_id: str, actor: str,
-    decision: str, reason: str = "",
+    decision: str, reason: str = "", reviewer_authorized: bool = False,
 ) -> Run:
     run = db.scalar(select(Run).where(
         Run.id == run_id, Run.tenant_id == tenant_id
     ).with_for_update())
-    if run is None or run.created_by != actor:
+    if run is None or (run.created_by != actor and not reviewer_authorized):
         raise ServiceError("NOT_FOUND", "Run not found", 404)
     if decision not in {"accepted", "rejected"}:
         raise ServiceError("INVALID_DECISION", "Unknown reviewer decision", 400)

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     dev_actor: str = "local-developer"
     dev_tenant: str = "local-tenant"
     dev_token: str = ""
+    oidc_issuer: str = ""
+    oidc_audience: str = ""
+    oidc_jwks_url: str = ""
     public_base_url: str = "http://localhost:8000"
     artifact_dir: str = "./artifacts"
     dev_evaluation_dir: str = "./artifacts/evaluation-v2"
@@ -27,9 +30,12 @@ class Settings(BaseSettings):
         if self.environment != "development":
             if not self.database_url.startswith("postgresql+psycopg://"):
                 raise ValueError("PostgreSQL is required outside development")
-            raise ValueError(
-                "Hosted identity and project roles are not implemented; refusing startup"
-            )
+            if (
+                not self.oidc_issuer.startswith("https://")
+                or not self.oidc_audience
+                or not self.oidc_jwks_url.startswith("https://")
+            ):
+                raise ValueError("Hosted OIDC issuer, audience and HTTPS JWKS URL are required")
         return self
 
 

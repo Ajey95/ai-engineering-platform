@@ -12,8 +12,8 @@ Current build is a local foundation plus a controlled repair-evidence path,
 `IMPLEMENTATION_STATUS.md` as the requirement ledger. Code lives in
 `platform_app/` and `apps/web/`. `design-concept.png` is the generated direction
 used for the UI. The frontend reads real API data and never displays invented
-repair evidence. Non-development startup fails closed until hosted identity
-and roles exist.
+repair evidence. Hosted API identity now has a local OIDC and membership path;
+hosted run admission still fails closed until VM sandboxing is qualified.
 
 Verified before this turn: 15 Python tests passed; Vite build passed with bundled
 Node 24; Playwright fallback exercised local project/report creation on desktop
@@ -205,3 +205,22 @@ both media READY and two screenshot hashes. It still has
 `autonomous_repair=false`. Python tests 54 passed, 1 Windows symlink skip;
 ruff and web build passed. Docker Desktop remains unresolved; WSL Engine ran
 the verification.
+
+2026-10-02 hosted authorization continuation: added PyJWT RS256 issuer,
+audience, expiration and subject validation against an operator configured
+JWKS URL. API requires an active tenant membership for the verified subject
+and checks project roles on tasks, runs, evidence, media, memory and usage.
+Owners can manage tenant/project memberships; updates are audited and the
+last active owner is protected. A trusted operator bootstrap command creates
+the first tenant owner. Migration `0a09a20564b1` adds memberships, role/status
+checks and a composite tenant/project foreign key. Migration `4fba39f6713d`
+adds scoped keys across task, run, evidence, budget, tool and memory records.
+Disposable PostgreSQL verification proved the owner bootstrap, rejected
+cross-tenant membership/task/event inserts, and retained one
+admission/reservation/outbox/event in a duplicate request race. Local
+PostgreSQL upgraded to the new head with no schema drift.
+Python tests: 56 passed, 1 Windows symlink skip; Ruff clean. WSL Docker Engine
+29.8.2 and PostgreSQL container healthy. No real OIDC issuer, customer sandbox,
+provider account or hosted deployment was qualified. Hosted run admission
+returns `EXECUTION_UNAVAILABLE`; Docker Desktop remains broken while the WSL
+Engine is the verified development runtime.

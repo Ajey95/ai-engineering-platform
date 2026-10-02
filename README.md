@@ -27,8 +27,10 @@ and release blockers.
 
 No model is automatically qualified or enabled. The UI will correctly refuse
 to start a run until live provider conformance and sandbox execution exist.
-Outside development, startup fails closed because OIDC roles and production
-isolation are not yet implemented.
+Hosted API identity can start with an OIDC issuer, audience, JWKS URL and
+database memberships, but customer run admission remains disabled until the
+production sandbox is qualified. Hosted frontend login and private media
+delivery are not implemented.
 
 ## Local setup
 
@@ -111,6 +113,25 @@ General admission requires a model with a live qualification marker and
 validation time. The disposable fixture model is accepted only for the reviewed
 development case and project; this marker does not make the provider qualified.
 
+For a hosted control plane, set `AIP_ENVIRONMENT=production`, a migrated
+PostgreSQL URL, `AIP_OIDC_ISSUER`, `AIP_OIDC_AUDIENCE`, and `AIP_OIDC_JWKS_URL`.
+The API accepts an RS256 bearer token with verified issuer, audience and
+expiration, plus `X-Tenant-ID`. That header selects only a tenant where the
+verified token subject has an active membership. A trusted operator creates
+the first owner after migration:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.bootstrap_tenant --tenant-id <tenant-id> --tenant-name <name> --owner-subject <verified-oidc-subject>
+```
+
+The owner can manage tenant and project memberships through `/v1/memberships`
+and `/v1/projects/{id}/members`. Project reads and mutations check roles;
+the last active owner cannot be disabled. The hosted API rejects run admission
+with `EXECUTION_UNAVAILABLE` until a customer sandbox is implemented. The
+bootstrap command is an operator action; `--owner-subject` must come from a
+verified identity. This local implementation has not been tested against a
+real issuer or deployed identity provider.
+
 To exercise the admitted-run worker against the trusted synthetic baseline:
 
 ```powershell
@@ -166,9 +187,9 @@ repository root to check browser playback on desktop and mobile.
 
 The local `AIP_DEV_ACTOR` and `AIP_DEV_TENANT` are development fixtures. They are
 not authentication. Never expose the current API to the Internet or supply
-customer repository credentials. Hosted deployment requires OIDC membership
-checks, per-run VM sandboxing, scoped repository credentials, migrations,
-private artifact delivery, and all release gates in the PRD.
+customer repository credentials. Hosted deployment still requires a qualified
+OIDC provider, per-run VM sandboxing, scoped repository credentials, private
+artifact delivery, and all release gates in the PRD.
 
 ## Source and status
 

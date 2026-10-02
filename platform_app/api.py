@@ -8,22 +8,36 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from platform_app.auth import (
+    READ_ROLES,
+    REVIEW_ROLES,
+    WRITE_ROLES,
+    is_owner,
+    require_owner,
+    require_project_role,
+    require_tenant_membership,
+    verify_bearer,
+    visible_project_ids,
+)
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.memory import delete_fact, scoped_lookup
 from platform_app.models import (
+    AuditEvent,
     BudgetEntry,
     MemoryFact,
     ModelEntry,
     Project,
+    ProjectMembership,
     Run,
     RunEvent,
     Task,
     Tenant,
+    TenantMembership,
     ToolAction,
 )
 from platform_app.review_patch import verified_fixture_diff
@@ -32,12 +46,14 @@ from platform_app.schemas import (
     EventRead,
     ModelRegister,
     ProjectCreate,
+    ProjectMembershipSet,
     ProjectRead,
     ReviewDecisionCreate,
     RunCreate,
     RunRead,
     TaskCreate,
     TaskRead,
+    TenantMembershipSet,
 )
 from platform_app.service import (
     ServiceError,
@@ -46,7 +62,6 @@ from platform_app.service import (
     event_read,
     record_review_decision,
     request_cancel,
-    require_project,
     require_run,
     require_task,
     run_read,
@@ -98,17 +113,36 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
-def principal(authorization: str | None = Header(default=None)) -> tuple[str, str]:
-    configured = settings().dev_token
-    if configured and authorization != f"Bearer {configured}":
-        raise HTTPException(status_code=401, detail="Invalid bearer token")
-    if settings().environment != "development" and not configured:
-        raise HTTPException(status_code=503, detail="Identity provider is not configured")
-    return settings().dev_tenant, settings().dev_actor
-
-
 def db_session():
     yield from session_scope()
+
+
+def principal(
+    authorization: str | None = Header(default=None),
+    x_tenant_id: str | None = Header(default=None),
+    db: Session = Depends(db_session),
+) -> tuple[str, str]:
+    config = settings()
+    if config.environment == "development":
+        if config.dev_token and authorization != f"Bearer {config.dev_token}":
+            raise ServiceError("UNAUTHENTICATED", "Invalid bearer token", 401)
+        return config.dev_tenant, config.dev_actor
+    if not authorization or not authorization.startswith("Bearer "):
+        raise ServiceError("UNAUTHENTICATED", "Bearer token is required", 401)
+    if not x_tenant_id or len(x_tenant_id) > 36:
+        raise ServiceError("UNAUTHENTICATED", "Workspace selection is required", 401)
+    subject = verify_bearer(authorization.removeprefix("Bearer "), config)
+    require_tenant_membership(db, x_tenant_id, subject)
+    return x_tenant_id, subject
+
+
+def authorized_run(
+    db: Session, identity: tuple[str, str], run_id: str,
+    roles: frozenset[str] = READ_ROLES,
+) -> Run:
+    run = require_run(db, identity[0], run_id)
+    require_project_role(db, identity, run.project_id, roles)
+    return run
 
 
 @app.get("/v1/health")
@@ -213,7 +247,7 @@ def run_media(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    run = require_run(db, identity[0], run_id)
+    run = authorized_run(db, identity, run_id)
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
     artifact_root = Path(settings().artifact_dir).resolve()
@@ -260,7 +294,7 @@ def run_screenshot(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    run = require_run(db, identity[0], run_id)
+    run = authorized_run(db, identity, run_id)
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
     step = "browser" if label == "baseline" else "candidate_browser"
@@ -297,6 +331,7 @@ def create_project(
     db: Session = Depends(db_session),
 ):
     tenant_id, _ = identity
+    require_owner(db, identity)
     project = Project(
         tenant_id=tenant_id,
         name=body.name,
@@ -305,6 +340,12 @@ def create_project(
         environment_manifest=body.environment_manifest,
     )
     db.add(project)
+    db.flush()
+    if settings().environment != "development":
+        db.add(ProjectMembership(
+            tenant_id=tenant_id, project_id=project.id,
+            subject=identity[1], role="maintainer",
+        ))
     db.commit()
     db.refresh(project)
     return ProjectRead(
@@ -321,7 +362,11 @@ def list_projects(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    rows = db.scalars(select(Project).where(Project.tenant_id == identity[0]).limit(100)).all()
+    query = select(Project).where(Project.tenant_id == identity[0])
+    visible = visible_project_ids(db, identity)
+    if visible is not None:
+        query = query.where(Project.id.in_(visible))
+    rows = db.scalars(query.limit(100)).all()
     return [
         ProjectRead(
             id=p.id,
@@ -334,6 +379,108 @@ def list_projects(
     ]
 
 
+@app.get("/v1/memberships")
+def list_tenant_memberships(
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    rows = db.scalars(select(TenantMembership).where(
+        TenantMembership.tenant_id == identity[0]
+    ).order_by(TenantMembership.subject).limit(500)).all()
+    return [{"subject": row.subject, "role": row.role, "status": row.status} for row in rows]
+
+
+@app.put("/v1/memberships/{subject}")
+def set_tenant_membership(
+    subject: str,
+    body: TenantMembershipSet,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    if not 1 <= len(subject) <= 200:
+        raise ServiceError("INVALID_SUBJECT", "Invalid identity subject", 400)
+    tenant = db.scalar(select(Tenant).where(Tenant.id == identity[0]).with_for_update())
+    if tenant is None:
+        raise ServiceError("NOT_FOUND", "Workspace not found", 404)
+    require_owner(db, identity)
+    row = db.scalar(select(TenantMembership).where(
+        TenantMembership.tenant_id == identity[0], TenantMembership.subject == subject
+    ))
+    if row is not None and row.role == "owner" and row.status == "active" and (
+        body.role != "owner" or body.status != "active"
+    ):
+        owner_count = db.scalar(select(func.count()).select_from(TenantMembership).where(
+            TenantMembership.tenant_id == identity[0],
+            TenantMembership.role == "owner", TenantMembership.status == "active",
+        ))
+        if owner_count <= 1:
+            raise ServiceError("LAST_OWNER", "The last owner cannot be disabled", 409)
+    if row is None:
+        row = TenantMembership(tenant_id=identity[0], subject=subject)
+        db.add(row)
+    row.role, row.status = body.role, body.status
+    db.add(AuditEvent(
+        tenant_id=identity[0], actor=identity[1], action="membership.tenant_set",
+        target_ref=subject, arguments_hash=canonical_hash(body.model_dump()),
+        policy_revision=tenant.policy_revision, outcome="allowed",
+    ))
+    db.commit()
+    return {"subject": row.subject, "role": row.role, "status": row.status}
+
+
+@app.get("/v1/projects/{project_id}/members")
+def list_project_memberships(
+    project_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    require_project_role(db, identity, project_id)
+    rows = db.scalars(select(ProjectMembership).where(
+        ProjectMembership.tenant_id == identity[0],
+        ProjectMembership.project_id == project_id,
+    ).order_by(ProjectMembership.subject).limit(500)).all()
+    return [{"subject": row.subject, "role": row.role, "status": row.status} for row in rows]
+
+
+@app.put("/v1/projects/{project_id}/members/{subject}")
+def set_project_membership(
+    project_id: str,
+    subject: str,
+    body: ProjectMembershipSet,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    if not 1 <= len(subject) <= 200:
+        raise ServiceError("INVALID_SUBJECT", "Invalid identity subject", 400)
+    tenant = db.scalar(select(Tenant).where(Tenant.id == identity[0]).with_for_update())
+    if tenant is None:
+        raise ServiceError("NOT_FOUND", "Workspace not found", 404)
+    require_owner(db, identity)
+    require_project_role(db, identity, project_id)
+    if body.status == "active":
+        require_tenant_membership(db, identity[0], subject)
+    row = db.scalar(select(ProjectMembership).where(
+        ProjectMembership.tenant_id == identity[0],
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.subject == subject,
+    ))
+    if row is None:
+        row = ProjectMembership(
+            tenant_id=identity[0], project_id=project_id, subject=subject
+        )
+        db.add(row)
+    row.role, row.status = body.role, body.status
+    db.add(AuditEvent(
+        tenant_id=identity[0], actor=identity[1], action="membership.project_set",
+        target_ref=f"{project_id}:{subject}", arguments_hash=canonical_hash(body.model_dump()),
+        policy_revision=tenant.policy_revision, outcome="allowed",
+    ))
+    db.commit()
+    return {"subject": row.subject, "role": row.role, "status": row.status}
+
+
 @app.post("/v1/tasks", response_model=TaskRead, status_code=201)
 def create_task(
     body: TaskCreate,
@@ -341,7 +488,7 @@ def create_task(
     db: Session = Depends(db_session),
 ):
     tenant_id, actor = identity
-    require_project(db, tenant_id, body.project_id)
+    require_project_role(db, identity, body.project_id, WRITE_ROLES)
     task = Task(
         tenant_id=tenant_id,
         project_id=body.project_id,
@@ -371,8 +518,12 @@ def list_tasks(
 ):
     query = select(Task).where(Task.tenant_id == identity[0])
     if project_id:
-        require_project(db, identity[0], project_id)
+        require_project_role(db, identity, project_id)
         query = query.where(Task.project_id == project_id)
+    else:
+        visible = visible_project_ids(db, identity)
+        if visible is not None:
+            query = query.where(Task.project_id.in_(visible))
     rows = db.scalars(query.order_by(Task.created_at.desc()).limit(100)).all()
     return [
         TaskRead(
@@ -395,6 +546,8 @@ def create_run(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
+    task = require_task(db, identity[0], task_id)
+    require_project_role(db, identity, task.project_id, WRITE_ROLES)
     try:
         run = admit_run(db, identity[0], identity[1], task_id, idempotency_key, body)
         db.commit()
@@ -424,8 +577,12 @@ def list_runs(
 ):
     query = select(Run).where(Run.tenant_id == identity[0])
     if project_id:
-        require_project(db, identity[0], project_id)
+        require_project_role(db, identity, project_id)
         query = query.where(Run.project_id == project_id)
+    else:
+        visible = visible_project_ids(db, identity)
+        if visible is not None:
+            query = query.where(Run.project_id.in_(visible))
     rows = db.scalars(query.order_by(Run.created_at.desc()).limit(100)).all()
     return [run_read(row) for row in rows]
 
@@ -436,7 +593,7 @@ def get_run(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    return run_read(require_run(db, identity[0], run_id))
+    return run_read(authorized_run(db, identity, run_id))
 
 
 @app.post("/v1/runs/{run_id}/cancel", response_model=RunRead, status_code=202)
@@ -445,9 +602,9 @@ def cancel_run(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    run = require_run(db, identity[0], run_id)
+    run = authorized_run(db, identity, run_id)
     if run.created_by != identity[1]:
-        raise ServiceError("NOT_FOUND", "Run not found", 404)
+        require_project_role(db, identity, run.project_id, frozenset({"maintainer"}))
     request_cancel(db, run, identity[1])
     db.commit()
     db.refresh(run)
@@ -461,8 +618,10 @@ def review_decision(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
+    authorized_run(db, identity, run_id, REVIEW_ROLES)
     run = record_review_decision(
-        db, identity[0], run_id, identity[1], body.decision, body.reason
+        db, identity[0], run_id, identity[1], body.decision, body.reason,
+        reviewer_authorized=True,
     )
     db.commit()
     db.refresh(run)
@@ -476,7 +635,7 @@ def event_history(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    require_run(db, identity[0], run_id)
+    authorized_run(db, identity, run_id)
     rows = db.scalars(
         select(RunEvent)
         .where(RunEvent.run_id == run_id, RunEvent.sequence > max(0, after))
@@ -491,10 +650,11 @@ async def run_events(
     run_id: str,
     request: Request,
     last_event_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    require_run(db, identity[0], run_id)
+    authorized_run(db, identity, run_id)
     try:
         cursor = max(0, int(last_event_id or "0"))
     except ValueError as error:
@@ -505,6 +665,15 @@ async def run_events(
         idle = 0
         while not await request.is_disconnected():
             with SessionLocal() as read_db:
+                try:
+                    if settings().environment != "development":
+                        if not authorization or not authorization.startswith("Bearer "):
+                            break
+                        if verify_bearer(authorization.removeprefix("Bearer ")) != identity[1]:
+                            break
+                    authorized_run(read_db, identity, run_id)
+                except ServiceError:
+                    break
                 rows = read_db.scalars(
                     select(RunEvent)
                     .where(
@@ -544,7 +713,7 @@ def review_packet(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    run = require_run(db, identity[0], run_id)
+    run = authorized_run(db, identity, run_id)
     task = require_task(db, identity[0], run.task_id)
     actions = db.scalars(
         select(ToolAction)
@@ -668,7 +837,7 @@ def download_patch(
 ):
     if settings().environment != "development":
         raise HTTPException(status_code=404)
-    run = require_run(db, identity[0], run_id)
+    run = authorized_run(db, identity, run_id)
     action = db.scalar(select(ToolAction).where(
         ToolAction.run_id == run.id,
         ToolAction.tenant_id == identity[0],
@@ -735,12 +904,13 @@ def usage(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    rows = db.scalars(
-        select(BudgetEntry)
-        .where(BudgetEntry.tenant_id == identity[0])
-        .order_by(BudgetEntry.created_at.desc())
-        .limit(200)
-    ).all()
+    query = select(BudgetEntry).join(Run, BudgetEntry.run_id == Run.id).where(
+        BudgetEntry.tenant_id == identity[0], Run.tenant_id == identity[0]
+    )
+    if not is_owner(db, identity):
+        visible = visible_project_ids(db, identity) or set()
+        query = query.where(Run.project_id.in_(visible))
+    rows = db.scalars(query.order_by(BudgetEntry.created_at.desc()).limit(200)).all()
     return {
         "entries": [
             {
@@ -763,7 +933,7 @@ def get_memory(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    require_project(db, identity[0], project_id)
+    require_project_role(db, identity, project_id)
     facts = scoped_lookup(db, identity[0], project_id, source_revision, query)
     return {
         "retrieval_mode": "canonical_degraded",
@@ -789,9 +959,7 @@ def remove_memory(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    if settings().environment != "development":
-        raise ServiceError("TOOL_DENIED", "Project maintainer role is required", 403)
-    require_project(db, identity[0], project_id)
+    require_project_role(db, identity, project_id, frozenset({"maintainer"}))
     fact = db.scalar(
         select(MemoryFact).where(
             MemoryFact.id == fact_id,

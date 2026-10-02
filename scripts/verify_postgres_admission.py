@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import psycopg
 from psycopg import sql
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,10 +26,12 @@ from platform_app.models import (
     ModelEntry,
     OutboxEvent,
     Project,
+    ProjectMembership,
     Run,
     RunEvent,
     Task,
     Tenant,
+    TenantMembership,
 )
 from platform_app.schemas import RunCreate
 from platform_app.service import admit_run
@@ -54,10 +56,52 @@ def main() -> int:
         )
         if migration.returncode:
             raise RuntimeError(f"Migration failed: {migration.stderr[-1000:]}")
+        bootstrap = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.bootstrap_tenant",
+                "--tenant-id",
+                "bootstrap-tenant",
+                "--tenant-name",
+                "Bootstrap fixture",
+                "--owner-subject",
+                "verified-oidc-subject",
+            ],
+            env={**os.environ, "AIP_DATABASE_URL": url},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if bootstrap.returncode:
+            raise RuntimeError(f"Bootstrap failed: {bootstrap.stderr[-1000:]}")
         engine = create_engine(url, pool_pre_ping=True)
         with Session(engine) as session:
+            revision = session.scalar(text("SELECT version_num FROM alembic_version"))
+            bootstrap_owner = (
+                session.scalar(
+                    select(TenantMembership).where(
+                        TenantMembership.tenant_id == "bootstrap-tenant",
+                        TenantMembership.subject == "verified-oidc-subject",
+                        TenantMembership.role == "owner",
+                        TenantMembership.status == "active",
+                    )
+                )
+                is not None
+            )
             session.add(Tenant(id="fixture-tenant", name="PostgreSQL fixture"))
             session.flush()
+            session.add_all(
+                [
+                    TenantMembership(tenant_id="fixture-tenant", subject="fixture", role="owner"),
+                    ProjectMembership(
+                        tenant_id="fixture-tenant",
+                        project_id="fixture-project",
+                        subject="fixture",
+                        role="maintainer",
+                    ),
+                ]
+            )
             session.add(
                 Project(
                     id="fixture-project",
@@ -100,6 +144,25 @@ def main() -> int:
             )
             session.commit()
 
+        with Session(engine) as session:
+            session.add(Tenant(id="foreign-tenant", name="Foreign fixture"))
+            session.commit()
+            session.add(
+                ProjectMembership(
+                    tenant_id="foreign-tenant",
+                    project_id="fixture-project",
+                    subject="intruder",
+                    role="viewer",
+                )
+            )
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                cross_tenant_membership_denied = True
+            else:
+                cross_tenant_membership_denied = False
+
         barrier = Barrier(2)
         body = RunCreate(
             base_commit="a" * 40,
@@ -138,20 +201,90 @@ def main() -> int:
             futures = [executor.submit(admit_once) for _ in range(2)]
             ids = [future.result(timeout=30) for future in futures]
         with Session(engine) as session:
+            session.add(
+                Task(
+                    id="intruder-task",
+                    tenant_id="foreign-tenant",
+                    project_id="fixture-project",
+                    report="Cross tenant task",
+                    expected_behavior="denied",
+                    actual_behavior="attempted",
+                    created_by="intruder",
+                )
+            )
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                cross_tenant_task_denied = True
+            else:
+                cross_tenant_task_denied = False
+            session.add(
+                RunEvent(
+                    tenant_id="foreign-tenant",
+                    run_id=ids[0],
+                    sequence=999,
+                    event_type="intruder",
+                    payload={},
+                )
+            )
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                cross_tenant_event_denied = True
+            else:
+                cross_tenant_event_denied = False
+        with Session(engine) as session:
             counts = {
                 "runs": session.scalar(select(func.count()).select_from(Run)),
                 "reservations": session.scalar(select(func.count()).select_from(BudgetEntry)),
                 "outbox": session.scalar(select(func.count()).select_from(OutboxEvent)),
                 "events": session.scalar(select(func.count()).select_from(RunEvent)),
             }
+        # The scoped-key migration is handwritten because Alembic cannot name
+        # dropped PostgreSQL constraints reliably during autogeneration.
+        engine.dispose()
+        engine = None
+        for command in ("downgrade", "upgrade"):
+            target = "-1" if command == "downgrade" else "head"
+            result_command = subprocess.run(
+                [sys.executable, "-m", "alembic", command, target],
+                env={**os.environ, "AIP_DATABASE_URL": url},
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result_command.returncode:
+                raise RuntimeError(f"Migration {command} failed: {result_command.stderr[-1000:]}")
+        engine = create_engine(url, pool_pre_ping=True)
+        with Session(engine) as session:
+            schema_roundtrip = (
+                session.scalar(text("SELECT version_num FROM alembic_version")) == revision
+            )
         result = {
-            "schema_revision": "6185524d46e8",
+            "schema_revision": revision,
+            "schema_roundtrip": schema_roundtrip,
             "same_run_id": ids[0] == ids[1],
+            "bootstrap_owner": bootstrap_owner,
+            "cross_tenant_membership_denied": cross_tenant_membership_denied,
+            "cross_tenant_task_denied": cross_tenant_task_denied,
+            "cross_tenant_event_denied": cross_tenant_event_denied,
             **counts,
             "scope": "synthetic_postgresql_admission_only",
         }
         print(json.dumps(result))
-        return 0 if result["same_run_id"] and all(v == 1 for v in counts.values()) else 1
+        return (
+            0
+            if result["same_run_id"]
+            and bootstrap_owner
+            and cross_tenant_membership_denied
+            and cross_tenant_task_denied
+            and cross_tenant_event_denied
+            and schema_roundtrip
+            and all(v == 1 for v in counts.values())
+            else 1
+        )
     finally:
         if engine is not None:
             engine.dispose()

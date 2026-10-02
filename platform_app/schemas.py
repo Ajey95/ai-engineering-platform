@@ -23,6 +23,16 @@ class ProjectRead(StrictModel):
     created_at: datetime
 
 
+class TenantMembershipSet(StrictModel):
+    role: Literal["owner", "member"]
+    status: Literal["active", "disabled"] = "active"
+
+
+class ProjectMembershipSet(StrictModel):
+    role: Literal["maintainer", "contributor", "reviewer", "viewer"]
+    status: Literal["active", "disabled"] = "active"
+
+
 class TaskCreate(StrictModel):
     project_id: str
     report: str = Field(min_length=10, max_length=20000)

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 import platform_app.api as api_module
 from platform_app.db import Base
-from platform_app.models import Run, ToolAction
+from platform_app.models import Project, Run, ToolAction
 from platform_app.service import ServiceError
 
 
@@ -73,6 +73,7 @@ def test_run_media_is_tenant_scoped_and_stays_within_published_effect(tmp_path, 
     engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        db.add(Project(id="project", tenant_id=tenant_id, name="Fixture"))
         db.add(Run(
             id=run_id, tenant_id=tenant_id, task_id="task", project_id="project",
             created_by="actor", idempotency_key="key", request_hash="r" * 64,
@@ -109,6 +110,7 @@ def test_run_screenshot_requires_receipt_digest_and_tenant(tmp_path, monkeypatch
     engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        db.add(Project(id="project", tenant_id="tenant-a", name="Fixture"))
         db.add(Run(
             id=run_id, tenant_id="tenant-a", task_id="task", project_id="project",
             created_by="actor", idempotency_key="key", request_hash="r" * 64,
