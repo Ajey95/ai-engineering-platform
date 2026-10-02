@@ -998,3 +998,18 @@ health returned 200, unauthenticated `/v1/projects` 401 and the smoke bearer
 token returned an empty list. The container was stopped. This proves a local
 container runtime, not ECS, live OIDC, a hosted DB or customer sandbox. Docker
 Desktop remains broken; the WSL Engine remains the working runtime.
+
+2026-10-03 EC2 lifecycle increment: migration `ef86c2bb703d` added a scoped
+`sandbox_leases` ledger and upgraded local PostgreSQL with no Alembic drift.
+`platform_app/sandbox_broker.py` persists the EC2 client token before launch,
+checks run fences and bounded private/encrypted launch settings, revokes on
+cancellation or expiry, and reconciles unknown launch outcomes before
+termination. `scripts/dispatch_sandbox_cleanup.py` sweeps leases and drains
+cleanup outbox entries with retry. A stale identity-map read after a run lock
+was corrected using `populate_existing` on run and lease queries. The focused
+broker/admission suite passed 19/19, the full Python suite passed 171 tests
+with 3 skips before that refresh-only correction, scoped Ruff passed, and
+`alembic check` found no drift. Fake EC2 confirms behavior; no actual VM was
+launched. Hosted admission remains disabled because guest execution,
+authenticated transport, network policy, snapshot handling and live account
+qualification are not implemented.

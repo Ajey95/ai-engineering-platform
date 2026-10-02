@@ -32,6 +32,16 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - Hosted run admission returns `EXECUTION_UNAVAILABLE` until a customer VM
   sandbox is implemented; the development Docker adapter remains isolated to
   synthetic fixtures.
+- `platform_app/sandbox_broker.py`, migration `ef86c2bb703d` and
+  `scripts/dispatch_sandbox_cleanup.py` now persist a run-scoped EC2 launch
+  intent and stable client token before contacting EC2. The bounded launch
+  request disables public IP and instance metadata, omits an instance role,
+  encrypts the root disk and tags the lease/expiry. Cancellation revokes the
+  lease in the run transaction; a cleanup worker can find a lost launch receipt
+  by client token and retries termination until EC2 reports it complete.
+  Callback fence checks reject a revoked VM. Controlled fake-EC2 tests passed;
+  no guest image, network policy, authenticated transport, live AWS launch or
+  customer repository execution has been qualified.
 - `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
   code as a non-root image separate from the synthetic fixture runner. The
   WSL Docker build produced local image digest
@@ -309,8 +319,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; hosted hostile-repository isolation remains unverified. |
-| FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
-| FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
+| FR-SBX-02 | Partial | A durable per-run EC2 intent, bounded private launch request and response isolation checks exist, but there is no guest image, network policy proof, authenticated guest transport or live launch. Hosted admission stays disabled. |
+| FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
@@ -322,7 +332,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Nineteen Alembic revisions applied through `d8c107a4f0b5` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Twenty Alembic revisions applied through `ef86c2bb703d` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

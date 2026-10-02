@@ -312,6 +312,45 @@ class PrivateMediaPublication(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SandboxLease(Base):
+    __tablename__ = "sandbox_leases"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "run_id"],
+            ["runs.tenant_id", "runs.project_id", "runs.id"],
+            name="fk_sandbox_lease_run_scope",
+        ),
+        UniqueConstraint("tenant_id", "run_id", "generation", name="uq_sandbox_generation"),
+        UniqueConstraint("client_token", name="uq_sandbox_client_token"),
+        UniqueConstraint("instance_id", name="uq_sandbox_instance_id"),
+        CheckConstraint("generation > 0", name="ck_sandbox_generation_positive"),
+        CheckConstraint("disk_gib BETWEEN 8 AND 100", name="ck_sandbox_disk_bounds"),
+        CheckConstraint(
+            "state IN ('intended', 'provisioned', 'revoked', 'terminating', 'terminated')",
+            name="ck_sandbox_state",
+        ),
+        Index("ix_sandbox_leases_expiry", "state", "expires_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    generation: Mapped[int] = mapped_column(Integer)
+    lease_fence: Mapped[int] = mapped_column(Integer)
+    client_token: Mapped[str] = mapped_column(String(64))
+    instance_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    state: Mapped[str] = mapped_column(String(20), default="intended")
+    image_id: Mapped[str] = mapped_column(String(32))
+    instance_type: Mapped[str] = mapped_column(String(32))
+    subnet_id: Mapped[str] = mapped_column(String(32))
+    security_group_id: Mapped[str] = mapped_column(String(32))
+    root_device_name: Mapped[str] = mapped_column(String(32))
+    disk_gib: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

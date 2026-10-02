@@ -264,6 +264,15 @@ def admit_run(
 
 
 def request_cancel(db: Session, run: Run, actor: str) -> None:
+    from platform_app.models import SandboxLease
+
+    locked = db.scalar(
+        select(Run).where(Run.id == run.id, Run.tenant_id == run.tenant_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    if locked is None:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
+    run = locked
     if run.state in TERMINAL_STATES:
         return
     run.cancel_requested = True
@@ -282,6 +291,22 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
     else:
         run.state = "CANCEL_REQUESTED"
         append_event(db, run, "run.state_changed", {"state": "CANCEL_REQUESTED"})
+    active_sandboxes = db.scalars(
+        select(SandboxLease).where(
+            SandboxLease.tenant_id == run.tenant_id,
+            SandboxLease.run_id == run.id,
+            SandboxLease.state.in_(["intended", "provisioned"]),
+        ).with_for_update()
+    ).all()
+    for sandbox in active_sandboxes:
+        sandbox.state = "revoked"
+        sandbox.updated_at = utcnow()
+        db.add(OutboxEvent(
+            tenant_id=run.tenant_id,
+            topic="sandbox.cleanup",
+            payload={"run_id": run.id, "sandbox_lease_id": sandbox.id},
+        ))
+        append_event(db, run, "sandbox.revoked", {"sandbox_lease_id": sandbox.id})
     db.add(
         AuditEvent(
             tenant_id=run.tenant_id,
