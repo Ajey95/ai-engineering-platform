@@ -41,6 +41,7 @@ from platform_app.models import (
     ModelEntry,
     Project,
     ProjectMembership,
+    PublicationApproval,
     RecordingDeletion,
     RepositoryConnection,
     Run,
@@ -50,6 +51,7 @@ from platform_app.models import (
     TenantMembership,
     ToolAction,
 )
+from platform_app.publication import approve_draft_pr
 from platform_app.recording_deletion import (
     deletion_for,
     purge_local_recording,
@@ -65,6 +67,8 @@ from platform_app.schemas import (
     ProjectCreate,
     ProjectMembershipSet,
     ProjectRead,
+    PublicationApprovalCreate,
+    PublicationApprovalRead,
     RepositoryConnectionCreate,
     RepositoryConnectionRead,
     ResumeInputCreate,
@@ -988,6 +992,84 @@ def review_decision(
     db.commit()
     db.refresh(run)
     return run_read(run)
+
+
+def _publication_approval_read(row: PublicationApproval) -> PublicationApprovalRead:
+    return PublicationApprovalRead(
+        id=row.id, run_id=row.run_id, action="draft_pr", destination=row.destination,
+        base_commit=row.base_commit, patch_sha256=row.patch_sha256,
+        test_evidence_sha256=row.test_evidence_sha256, status=row.status,
+        expires_at=row.expires_at,
+    )
+
+
+@app.post(
+    "/v1/runs/{run_id}/publication-approval",
+    response_model=PublicationApprovalRead, status_code=201,
+)
+def approve_publication(
+    run_id: str,
+    body: PublicationApprovalCreate,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    authorized_run(db, identity, run_id, frozenset({"maintainer"}))
+    row = approve_draft_pr(
+        db, tenant_id=identity[0], run_id=run_id,
+        connection_id=body.connection_id, base_branch=body.base_branch,
+        actor=identity[1],
+    )
+    db.commit()
+    db.refresh(row)
+    return _publication_approval_read(row)
+
+
+@app.get(
+    "/v1/runs/{run_id}/publication-approval",
+    response_model=PublicationApprovalRead,
+)
+def get_publication_approval(
+    run_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    authorized_run(db, identity, run_id)
+    row = db.scalar(select(PublicationApproval).where(
+        PublicationApproval.tenant_id == identity[0],
+        PublicationApproval.run_id == run_id,
+    ))
+    if row is None:
+        raise ServiceError("NOT_FOUND", "Publication approval not found", 404)
+    return _publication_approval_read(row)
+
+
+@app.delete(
+    "/v1/runs/{run_id}/publication-approval",
+    response_model=PublicationApprovalRead,
+)
+def revoke_publication_approval(
+    run_id: str,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = authorized_run(db, identity, run_id, frozenset({"maintainer"}))
+    row = db.scalar(select(PublicationApproval).where(
+        PublicationApproval.tenant_id == identity[0],
+        PublicationApproval.run_id == run_id,
+    ).with_for_update())
+    if row is None:
+        raise ServiceError("NOT_FOUND", "Publication approval not found", 404)
+    if row.status == "approved":
+        row.status = "revoked"
+        db.add(AuditEvent(
+            tenant_id=identity[0], actor=identity[1], action="publication.revoke_draft_pr",
+            target_ref=row.id, arguments_hash=canonical_hash({"approval_id": row.id}),
+            policy_revision=run.config_snapshot.get("policy_version", "1.0"),
+            outcome="revoked",
+        ))
+        db.commit()
+        db.refresh(row)
+    return _publication_approval_read(row)
 
 
 @app.get("/v1/runs/{run_id}/events/history", response_model=list[EventRead])

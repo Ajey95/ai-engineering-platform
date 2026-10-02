@@ -640,3 +640,16 @@ reference and reports `credential_required`, `verification_required` or
 Local PostgreSQL upgraded with no Alembic drift; the disposable migration
 roundtrip, quota and tenant-scope probes passed. Python suite: 110 passed, 3
 skipped; Ruff passed. This does not enable customer checkout or draft PRs.
+
+2026-10-02 publication approval increment: `platform_app/publication.py` and
+Alembic `cbd675bb9a11` add explicit 24-hour draft PR authority. It requires
+an accepted completed run with PASSED verdict, a ready repository connection
+pinned in the run snapshot, a native-provider patch receipt and three passing
+candidate check receipts. Approval binds tenant/project/run/action/destination,
+base commit, patch digest and a canonical hash of exact test effects/receipts;
+it can be revoked and must be reverified before any publisher uses it. Scoped
+database FKs reject cross-project run/connection references. Local API and
+service tests passed; full Python suite 113 passed, 3 skipped; Ruff passed.
+PostgreSQL upgraded to `cbd675bb9a11`, Alembic detected no drift, and the
+disposable migration/race verifier passed. No actual GitHub push or PR creation
+has occurred.

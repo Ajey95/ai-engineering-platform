@@ -15,6 +15,9 @@ case suites; no complete benchmark has run yet.
 - Project scoped GitHub connection registration with opaque secret references,
   maintainer authorization and explicit unverified readiness. No GitHub account
   has been connected or probed.
+- A distinct draft PR approval endpoint binds a reviewed run to its repository,
+  base commit, patch and passing test receipts for 24 hours. Publication remains
+  disabled until the GitHub integration and credential probe are implemented.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
 - Tenant daily/monthly inference caps and concurrent run admission limits,

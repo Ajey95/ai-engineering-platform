@@ -92,6 +92,23 @@ class ReviewDecisionCreate(StrictModel):
     reason: str = Field(default="", max_length=2000)
 
 
+class PublicationApprovalCreate(StrictModel):
+    connection_id: str = Field(min_length=1, max_length=36)
+    base_branch: str = Field(min_length=1, max_length=100)
+
+
+class PublicationApprovalRead(StrictModel):
+    id: str
+    run_id: str
+    action: Literal["draft_pr"]
+    destination: str
+    base_commit: str
+    patch_sha256: str
+    test_evidence_sha256: str
+    status: str
+    expires_at: datetime
+
+
 class ResumeInputCreate(StrictModel):
     input_text: str = Field(min_length=5, max_length=4000)
 

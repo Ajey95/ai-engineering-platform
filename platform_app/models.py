@@ -93,6 +93,9 @@ class RepositoryConnection(Base):
             "tenant_id", "project_id", "provider", "repository_ref",
             name="uq_repository_connections_scope_ref",
         ),
+        UniqueConstraint(
+            "tenant_id", "project_id", "id", name="uq_repository_connections_scope_id"
+        ),
         CheckConstraint("provider = 'github'", name="ck_repository_connection_provider"),
         CheckConstraint(
             "status IN ('unverified', 'ready', 'disabled')",
@@ -109,6 +112,51 @@ class RepositoryConnection(Base):
     created_by: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PublicationApproval(Base):
+    __tablename__ = "publication_approvals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "run_id"],
+            ["runs.tenant_id", "runs.project_id", "runs.id"],
+            name="fk_publication_approvals_run_scope",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            name="fk_publication_approvals_project_scope",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id", "connection_id"],
+            [
+                "repository_connections.tenant_id", "repository_connections.project_id",
+                "repository_connections.id",
+            ],
+            name="fk_publication_approvals_connection_scope",
+        ),
+        UniqueConstraint(
+            "tenant_id", "run_id", "action", name="uq_publication_approval_run_action"
+        ),
+        CheckConstraint("action = 'draft_pr'", name="ck_publication_approval_action"),
+        CheckConstraint(
+            "status IN ('approved', 'revoked', 'consumed')",
+            name="ck_publication_approval_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    project_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    connection_id: Mapped[str] = mapped_column(String(36))
+    action: Mapped[str] = mapped_column(String(24), default="draft_pr")
+    destination: Mapped[str] = mapped_column(String(300))
+    base_commit: Mapped[str] = mapped_column(String(40))
+    patch_sha256: Mapped[str] = mapped_column(String(64))
+    test_evidence_sha256: Mapped[str] = mapped_column(String(64))
+    actor: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(24), default="approved")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Task(Base):
@@ -138,6 +186,7 @@ class Run(Base):
         Index("ix_runs_tenant_state", "tenant_id", "state", "updated_at"),
         UniqueConstraint("tenant_id", "created_by", "idempotency_key"),
         UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
+        UniqueConstraint("tenant_id", "project_id", "id", name="uq_runs_scope_id"),
         ForeignKeyConstraint(
             ["tenant_id", "project_id", "task_id"],
             ["tasks.tenant_id", "tasks.project_id", "tasks.id"],
