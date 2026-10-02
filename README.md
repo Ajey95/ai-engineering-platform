@@ -398,7 +398,9 @@ same HTTPS hostname, a private S3 bucket with CloudFront origin access control,
 and a trusted key group on the `private-media/*` behavior. Configure
 `AIP_PRIVATE_MEDIA_BUCKET`, `AIP_CLOUDFRONT_DISTRIBUTION_ID`,
 `AIP_CLOUDFRONT_KEY_PAIR_ID`, and a base64-encoded RSA private key in
-`AIP_CLOUDFRONT_PRIVATE_KEY_B64`; optionally set `AIP_PRIVATE_MEDIA_KMS_KEY_ID`.
+`AIP_CLOUDFRONT_PRIVATE_KEY_B64`. The current edge Terraform IAM policy
+supports SSE-S3; using `AIP_PRIVATE_MEDIA_KMS_KEY_ID` requires a reviewed KMS
+key policy and workload permissions.
 The signing key stays in the API secret manager, while the publisher/deletion
 worker uses an IAM role for S3 and CloudFront. The API does not serve hosted
 recording bytes from its local filesystem. Once a completed recording exists,
@@ -409,9 +411,11 @@ the operator paths are:
 .venv\Scripts\python.exe -m scripts.dispatch_private_media_deletions --serve
 ```
 
-The distribution, bucket policy, IAM roles, TLS hostname, cache behavior, and
-live upload/playback/deletion checks still require the chosen AWS account and
-region. This code path does not enable customer run admission by itself.
+The [edge Terraform module](infra/terraform/edge/README.md) defines the
+distribution, bucket policies, cache behaviors and scoped workload policies.
+It has only passed local provider-schema validation. DNS, TLS, IAM role
+attachments, a selected AWS account/region and live upload/playback/deletion
+checks remain. This code path does not enable customer run admission by itself.
 
 ## Provider model qualification
 

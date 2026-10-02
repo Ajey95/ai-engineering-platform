@@ -10,3 +10,8 @@ artifacts/
 *.db
 *.egg-info/
 *.tsbuildinfo
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json

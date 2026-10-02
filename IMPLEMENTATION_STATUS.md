@@ -96,6 +96,12 @@ The paid pilot release gate in PRD §27.2 has not been run.
   signed-cookie grant, browser refresh, and durable deletion/invalidation
   reconciliation. Tests use fake S3/CloudFront clients and a generated RSA key;
   no live AWS delivery, bucket policy or edge authorization has been qualified.
+- `infra/terraform/edge`: validated AWS provider v6.67 module for a shared
+  application hostname, uncached API and HTML, cached hashed web assets,
+  private media S3 origin with origin access control, signed-cookie key group,
+  separate bucket policies and scoped publisher/deletion IAM policies. It has
+  not been planned or applied to an AWS account and cannot establish edge
+  authorization without a live deployment.
 - `platform_app/recording_deletion.py` and migration `c53718b2a844`:
   a closed run can revoke one recording, remove its local raw WebM and HLS
   directory, keep transcript/screenshot, and retain a scoped deletion/audit
@@ -299,8 +305,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; controlled S3 publisher uploads verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
-| FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Private S3 upload exists, but CloudFront distribution, origin access control and live edge verification are absent. |
-| FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Edge/cache authorization, CORS, public behavior separation and live invalidation remain unverified. |
+| FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
+| FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
 | FR-DAT-01 | Partial | Nineteen Alembic revisions applied through `d8c107a4f0b5` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |

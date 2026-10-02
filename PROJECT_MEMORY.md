@@ -959,3 +959,13 @@ upload, serializing revocation with S3 writes; abandoned partial uploads still
 need a janitor and hosted qualification.
 The full Python suite passed 161 tests with 3 skips after this change, and
 scoped Ruff passed.
+
+2026-10-03 private edge IaC: `infra/terraform/edge` now owns a CloudFront
+distribution for the app hostname with HTTPS API forwarding, uncached HTML/API,
+cached hashed web assets, and a private S3 media origin gated by a trusted key
+group. OAC bucket policies restrict reads to that distribution, and separate
+publisher/deletion IAM policies scope writes, listing, deletion and edge
+invalidation. The private signing key stays outside Terraform state. Terraform
+AWS provider v6.67.0 initialized, `terraform fmt -check` passed and
+`terraform validate` passed. No account, region, DNS, certificate, load balancer
+or remote state backend is chosen, so no plan/apply or live edge proof exists.
