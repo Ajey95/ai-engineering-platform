@@ -819,3 +819,15 @@ producers remain absent. An uncommitted `memory.py` edit at turn start removed
 required functions and broke API import; its diff was saved under ignored
 `artifacts/memory_preexisting_2026-10-03.patch` before restoring the last
 committed file. No user-authored code was silently discarded.
+
+2026-10-03 provider error increment: a controlled WSL Docker run at commit
+`a098a82` completed the synthetic baseline/candidate workflow with one
+delivered outbox, ten tool effects, `REPRODUCED`, `REVIEW_READY`, PASSED verdict,
+hidden oracle PASS for candidate and both media READY. It used a predetermined
+provider response and is explicitly not a live autonomous repair. Native
+provider HTTP failures now return bounded codes for auth, access, model
+availability, rate limiting, timeout, overload, context overflow and invalid
+schema without carrying vendor response text. OpenAI refusal retains usage;
+the fixture patch path settles usage before rejecting refusal or truncation.
+Focused provider/patch/worker tests passed 22/22. Full Python suite passed
+142 tests, 3 skipped; Ruff passed. Live provider accounts remain unavailable.

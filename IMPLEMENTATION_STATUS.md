@@ -59,7 +59,11 @@ The paid pilot release gate in PRD §27.2 has not been run.
   OpenAI, Anthropic and Google, tested against controlled API responses;
   missing token usage fails closed. Anthropic cached token categories are
   included in input accounting and Google thinking tokens in output accounting.
-  No provider account has been used or qualified.
+  HTTP authentication, access, rate, timeout, overload, context and schema
+  failures now have distinct safe codes; provider response bodies are not
+  propagated in errors. A billed OpenAI refusal retains usage and is rejected
+  after settlement in the fixture patch path. No provider account has been
+  used or qualified.
 - `platform_app/browser_runner.py`, `verifier.py`: controlled fixture browser
   evidence and exact-tree named test receipts. The Docker development adapter
   ran all six baseline/candidate checks using Docker Engine in Ubuntu WSL;
@@ -102,7 +106,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 133 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 142 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -240,7 +244,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 
 | ID | Status | Evidence or remaining requirement |
 |---|---|---|
-| FR-MOD-01 | Partial | Native three-provider HTTP adapters and simulated-response tests; no live conformance. |
+| FR-MOD-01 | Partial | Native three-provider HTTP adapters and controlled-response tests now classify HTTP authentication, access, rate, timeout, overload, context and schema errors without leaking response bodies. OpenAI refusal is recognized and billed before rejection in the fixture patch path. No live conformance or full error taxonomy qualification. |
 | FR-MOD-02 | Partial | Operator live probe code checks text/tool/continuation/usage and exact attested metadata; admission checks revision and adapter digest. No account has been probed live, and full registry metadata remains. |
 | FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |

@@ -112,3 +112,53 @@ def test_anthropic_cache_categories_are_included_in_total_input():
     turn = AnthropicMessages("test-only", client).generate("claude-test", "i", "p", {}, 10)
     assert turn.usage["input_tokens"] == 18
     assert turn.usage["cache_creation_tokens"] == 5
+
+
+@pytest.mark.parametrize(("status", "vendor_code", "expected"), [
+    (401, None, "PROVIDER_AUTH_INVALID"),
+    (403, None, "PROVIDER_ACCESS_DENIED"),
+    (404, None, "PROVIDER_MODEL_UNAVAILABLE"),
+    (429, None, "PROVIDER_RATE_LIMITED"),
+    (503, None, "PROVIDER_OVERLOADED"),
+    (400, "context_length_exceeded", "PROVIDER_CONTEXT_OVERFLOW"),
+    (400, "invalid_json_schema", "PROVIDER_SCHEMA_INVALID"),
+])
+def test_http_failures_are_classified_without_leaking_provider_body(status, vendor_code, expected):
+    def respond(_request):
+        return httpx.Response(status, json={"error": {
+            "code": vendor_code, "message": "private-provider-detail",
+        }})
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    with pytest.raises(ProviderError) as failure:
+        OpenAIResponses("test-only", client).generate("model-a", "i", "p", {}, 10)
+    assert failure.value.code == expected
+    assert failure.value.status_code == status
+    assert "private-provider-detail" not in str(failure.value)
+
+
+def test_timeout_is_distinct_and_outcome_is_not_claimed():
+    def timeout(_request):
+        raise httpx.ReadTimeout("secret request details")
+
+    client = httpx.Client(transport=httpx.MockTransport(timeout))
+    with pytest.raises(ProviderError) as failure:
+        OpenAIResponses("test-only", client).generate("model-a", "i", "p", {}, 10)
+    assert failure.value.code == "PROVIDER_TIMEOUT"
+    assert "secret request details" not in str(failure.value)
+
+
+def test_openai_refusal_keeps_usage_for_settlement():
+    client = client_with_responses([{
+        "model": "model-a", "status": "completed",
+        "output": [{"type": "message", "content": [
+            {"type": "refusal", "refusal": "I cannot help"},
+        ]}],
+        "usage": {"input_tokens": 12, "output_tokens": 3},
+    }], [])
+    turn = OpenAIResponses("test-only", client).generate("model-a", "i", "p", {}, 10)
+    assert turn.stop_reason == "refusal"
+    assert turn.usage == {
+        "input_tokens": 12, "output_tokens": 3,
+        "reasoning_tokens": 0, "cache_read_tokens": 0,
+    }

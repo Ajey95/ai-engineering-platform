@@ -754,7 +754,7 @@ class DevelopmentWorker:
                         "worker.error",
                         {
                             "code": error.code
-                            if isinstance(error, ServiceError)
+                            if isinstance(error, (ServiceError, ProviderError))
                             else type(error).__name__,
                         },
                     )

@@ -267,5 +267,9 @@ def request_fixture_patch(
             db, run, worker_id, fence, action, reservation, model, turn.usage, digest, relative_ref
         )
         db.commit()
+    if turn.stop_reason.lower() in {"refusal", "safety", "prohibited_content", "spii"}:
+        raise ServiceError("PROVIDER_REFUSAL", "Provider refused the requested patch", 409)
+    if turn.stop_reason.lower() in {"incomplete", "max_tokens"}:
+        raise ServiceError("PROVIDER_OUTPUT_TRUNCATED", "Provider output was incomplete", 409)
     proposal = parse_patch_response(raw)
     return AgentPatchResult(proposal, relative_ref, turn.usage)

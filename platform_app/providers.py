@@ -19,7 +19,13 @@ from platform_app.tool_broker import CompletedToolCall, ToolCallAssembler, ToolD
 
 
 class ProviderError(Exception):
-    pass
+    def __init__(
+        self, message: str, *, code: str = "PROVIDER_RESPONSE_INVALID",
+        status_code: int | None = None,
+    ):
+        self.code = code
+        self.status_code = status_code
+        super().__init__(message)
 
 
 def _count(usage: dict, key: str, required: bool = False) -> int:
@@ -61,10 +67,37 @@ def _require_continuation(previous: ProviderTurn, provider: str, model: str) -> 
 def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> dict:
     try:
         response = client.post(url, headers=headers, json=payload, timeout=120)
-        response.raise_for_status()
+    except httpx.TimeoutException as error:
+        raise ProviderError("Provider response timed out", code="PROVIDER_TIMEOUT") from error
+    except httpx.TransportError as error:
+        raise ProviderError("Provider transport failed", code="PROVIDER_TRANSPORT") from error
+    if response.status_code >= 400:
+        status = response.status_code
+        codes = {
+            401: "PROVIDER_AUTH_INVALID", 403: "PROVIDER_ACCESS_DENIED",
+            404: "PROVIDER_MODEL_UNAVAILABLE", 408: "PROVIDER_TIMEOUT",
+            429: "PROVIDER_RATE_LIMITED", 500: "PROVIDER_OVERLOADED",
+            502: "PROVIDER_OVERLOADED", 503: "PROVIDER_OVERLOADED",
+            504: "PROVIDER_TIMEOUT", 529: "PROVIDER_OVERLOADED",
+        }
+        code = codes.get(status, "PROVIDER_BAD_REQUEST" if status < 500
+                         else "PROVIDER_HTTP_FAILURE")
+        if status == 400:
+            try:
+                error_body = response.json()
+                error_info = error_body.get("error", {}) if isinstance(error_body, dict) else {}
+                vendor_code = error_info.get("code") if isinstance(error_info, dict) else None
+            except ValueError:
+                vendor_code = None
+            if vendor_code in {"context_length_exceeded", "context_window_exceeded"}:
+                code = "PROVIDER_CONTEXT_OVERFLOW"
+            elif vendor_code in {"invalid_json_schema", "invalid_tool_schema"}:
+                code = "PROVIDER_SCHEMA_INVALID"
+        raise ProviderError("Provider rejected the request", code=code, status_code=status)
+    try:
         body = response.json()
-    except (httpx.HTTPError, ValueError) as error:
-        raise ProviderError(f"Provider request failed: {type(error).__name__}") from error
+    except ValueError as error:
+        raise ProviderError("Provider returned invalid JSON") from error
     if not isinstance(body, dict):
         raise ProviderError("Provider returned a non-object response")
     return body
@@ -136,9 +169,14 @@ class OpenAIResponses:
         prior_input = input_items if isinstance(input_items, list) else [
             {"role": "user", "content": input_items}
         ]
+        refused = any(
+            part.get("type") == "refusal"
+            for item in output if item.get("type") == "message"
+            for part in item.get("content", [])
+        )
         return ProviderTurn(
             self.provider, raw.get("model", model), text, calls,
-            raw.get("status", "unknown"),
+            "refusal" if refused else raw.get("status", "unknown"),
             {"input_tokens": _count(usage, "input_tokens", required=True),
              "output_tokens": _count(usage, "output_tokens", required=True),
              "reasoning_tokens": _count(details, "reasoning_tokens"),
