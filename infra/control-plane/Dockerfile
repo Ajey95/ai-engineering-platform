@@ -7,7 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
-RUN python -m pip install --no-cache-dir uv==0.11.3 \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir uv==0.11.3 \
     && useradd --uid 10001 --create-home --shell /usr/sbin/nologin aip
 
 COPY pyproject.toml uv.lock ./

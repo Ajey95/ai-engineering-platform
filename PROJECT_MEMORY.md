@@ -1160,3 +1160,17 @@ context and output hashes on replay. An empty file list is an explicit
 inconclusive proposal. Controlled provider/ledger tests and the full Python
 suite passed 235 tests with 4 skips; Ruff passed. This is not a live provider
 call or a deployed hosted worker; run admission remains closed.
+
+2026-10-03 hosted coordinator increment: `hosted_worker.py` connects ready
+GitHub source fetch, isolated baseline VM, bounded native model proposal,
+candidate archive, separate candidate VM, declared-check comparison and a
+hash-pinned review artifact. It synchronously revokes and confirms termination
+before the next VM; expired SQS attempts close inconclusively without replaying
+uncertain effects. `consume_hosted_dispatch.py` wires SQS relay/consumer to
+the worker. Hosted admission validates a ready repository connection, current
+model qualification, bounded repair paths and supported guest capabilities;
+`AIP_HOSTED_EXECUTION_ENABLED` remains false by default. The API and UI read
+hosted review receipts, patch diff and scoped S3 evidence tar with digest
+checks. Controlled coordinator/admission/evidence tests passed; the full
+Python suite passed 238 tests with 4 skips, Ruff and web build passed. This is
+still not a deployed/live-provider/live-VM qualification or 100% product.

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./aiplatform.db"
     environment: str = "development"
+    hosted_execution_enabled: bool = False
     dev_actor: str = "local-developer"
     dev_tenant: str = "local-tenant"
     dev_token: str = ""
@@ -23,6 +24,13 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     private_media_bucket: str = ""
     sandbox_artifact_bucket: str = ""
+    sandbox_envelope_key_b64: str = ""
+    sandbox_ami_id: str = ""
+    sandbox_instance_type: str = ""
+    sandbox_subnet_id: str = ""
+    sandbox_security_group_id: str = ""
+    sandbox_root_device_name: str = ""
+    run_queue_url: str = ""
     private_media_kms_key_id: str = ""
     cloudfront_key_pair_id: str = ""
     cloudfront_private_key_b64: str = ""

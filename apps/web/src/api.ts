@@ -47,6 +47,7 @@ export interface ModelEntry {
   model_id: string
   state: string
   qualified: boolean
+  hosted_execution_enabled: boolean
   fixture_only: boolean
   context_limit: number | null
   output_limit: number | null

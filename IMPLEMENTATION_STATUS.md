@@ -4,8 +4,10 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 235 tests with 4 skips after the bounded general native
-provider proposal path; scoped lint and local Alembic drift check passed.
+Python suite passed 238 tests with 4 skips after the hosted coordinator,
+guarded admission and evidence download additions; scoped lint and the web
+production build passed. Local Alembic drift check passed at the previous
+migration milestone; these additions did not change schema.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
 completed the WSL Docker synthetic fixture with a predetermined provider
@@ -390,7 +392,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Partial | Strict manifests now require identity/version, publisher, artifact digest, transport, reviewed JSON schemas, permission scopes, network destinations, credential types, runtime/output limits, side effect class and compatibility. Registry lifecycle records registration, artifact digest validation, enable/disable and events. External execution remains absent. |
 | FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
-| FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. A scoped SQS outbox relay/consumer is wired to the development worker and tested with a controlled client; no live queue or hosted customer worker exists. General tasks and live autonomous repair remain absent. |
+| FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with PostgreSQL checkpoints. A hosted coordinator now joins pinned Git fetch, separate baseline/candidate VM phases, one metered native proposal and a recorded declared-check review packet under a fenced run; an SQS consumer and stale-attempt closure are wired and controlled tests pass. No live queue, VM, repository or provider run has occurred. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. The run ledger detects three consecutive same-signature, same-result completed actions and fails visibly. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
@@ -406,12 +408,12 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; its pinned source archive now uses a bounded regular-file extractor. Hosted hostile-repository isolation remains unverified. |
-| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy and private artifact bucket. A Packer AMI template validates, and a replay-safe baseline handoff stages signed transport with bounded evidence upload and exact-result verification in controlled tests. No AMI build, applied network proof or live launch exists; hosted admission stays disabled. |
+| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy and private artifact bucket. A Packer AMI template validates; the hosted coordinator records two separate guest generations and requires confirmed termination between them. No AMI build, applied network proof or live launch exists; hosted admission is disabled by default behind an explicit qualification gate. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. Hosted authorized-origin and network policy qualification remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
-| FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. A controlled hosted handoff now records baseline and candidate guest phases in separate fake EC2 VMs and compares declared checks with exact tree/manifest pins; no live VM, live model or customer repository has been verified. |
+| FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. The hosted coordinator records baseline and candidate guest phases in separate fake EC2 VMs, compares declared checks with exact tree/manifest pins, and exposes a hash-verified review diff and scoped S3 evidence tar. The declared checks are explicitly labelled without an independent hidden oracle. No live VM, live model or customer repository has been verified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. A read-only GitHub probe checks identity, reported push permission, default branch and pull read access; its scoped operator command records readiness and the publication command rechecks it. The REST publisher writes a deterministic branch/draft PR through a durable intent and reconciles uncertain retries. Controlled HTTP tests passed; no live GitHub account, PR write qualification, general repository workflow or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
@@ -423,7 +425,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. Projects now list/add/disable scoped GitHub connections and show credential/verification readiness. Hosted browser sign-in has controlled OIDC code-flow tests and server-side sessions; desktop/mobile development QA passed. A verified static web publisher exists but has not deployed to S3. Full workspace/admin and live identity qualification remain absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. The run form now submits a bounded hosted repair scope when a qualified model and enabled hosted gate are available. The API/UI read hosted guest receipts and a hash-verified patch. Hosted browser sign-in has controlled OIDC tests; desktop/mobile development QA passed. A verified static web publisher exists but has not deployed to S3. Full workspace/admin and live identity qualification remain absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. A plugin resolver also checks exact tenant allowlist, enabled version/digest, schema and granted scopes. Hosted broker execution remains absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
@@ -463,12 +465,13 @@ synthetic local run is not a release qualification.
 ## What breaks first
 
 1. A run can reproduce and test a bounded patch on the trusted synthetic
-   fixture through a development worker. The provider path has only a
-   predetermined response proof; no provider adapter is live qualified and
-   no autonomous repair has been demonstrated.
+   fixture through a development worker. A general hosted coordinator has a
+   controlled two-VM integration test, but no provider adapter or customer
+   repository has been live qualified and no autonomous repair has been
+   demonstrated.
 2. Hosted security is incomplete: OIDC and project roles have local tests, but
-   no real issuer has been qualified. Per-run VM isolation and artifact edge
-   authority are absent; hosted run admission fails closed.
+   no real issuer has been qualified. The VM and edge definitions have not
+   been applied or challenged; hosted run admission is off by default.
 3. Durability is local only: PostgreSQL migration, admission race and a
    checkpointed phase restart passed. Full queue crash recovery and restore
    have not been exercised.
@@ -479,13 +482,13 @@ synthetic local run is not a release qualification.
 
 ## Next implementation sequence
 
-1. Expand the checkpointed fixture workflow to general repository tasks while
-   retaining the harness boundary and keeping hidden oracles inaccessible.
-2. Qualify each native provider adapter with a live account and execute the
-   workflow with real usage receipts.
-3. Complete hosted worker dispatch, checkpoint recovery, scoped identity
-   integration, graph projection and private artifact store.
-4. Add approved draft PR publication, hosted VM isolation, private ABR player
-   and CDN, then run every AC scenario and the §27.2 release gate.
+1. Build and apply the guest AMI, private network, queue and artifact store in
+   a selected AWS account; challenge the isolation boundary before admission.
+2. Qualify the native model adapters, GitHub connection and hosted identity
+   with live accounts, then execute a customer repository through both VMs.
+3. Complete hosted crash reconciliation, artifact/media publication, and
+   general patch publication with independent receipt review.
+4. Run the full benchmark, restore drills, every AC scenario and the §27.2
+   release gate before a paid pilot.
 
 No price, model snapshot, hosted capacity or performance claim has been made.

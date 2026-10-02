@@ -201,7 +201,7 @@ export default function App({ identity, onSignOut }: {
   const task = tasks.find(item => item.id === run?.task_id)
   const scopedRuns = selectedProject ? runs.filter(item => item.project_id === selectedProject) : runs
   const scopedTasks = selectedProject ? tasks.filter(item => item.project_id === selectedProject) : tasks
-  const runnableModels = models.filter(item => item.qualified || (
+  const runnableModels = models.filter(item => (item.qualified && item.hosted_execution_enabled) || (
     item.fixture_only && project?.fixture_case_id === 'form-submit-001'
   ))
   const reservedTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.reserved_usd, 0), [usage])
@@ -266,10 +266,14 @@ export default function App({ identity, onSignOut }: {
     const form = new FormData(event.currentTarget)
     try {
       const selectedModel = models.find(item => item.id === String(form.get('model')))
+      const repairPaths = String(form.get('repair_paths') ?? '').split(/[\n,]/)
+        .map(value => value.trim()).filter(Boolean)
       const reproduction = {
         scenario: String(form.get('scenario')),
         ...(selectedModel?.fixture_only && project?.fixture_case_id
           ? { fixture_case_id: project.fixture_case_id } : {}),
+        ...(!selectedModel?.fixture_only
+          ? { execution_profile: 'hosted_vm_v1', repair_paths: repairPaths } : {}),
       }
       const created = await api<Run>(`/tasks/${String(form.get('task_id'))}/runs`, {
         method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -521,7 +525,7 @@ export default function App({ identity, onSignOut }: {
     {dialog && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="panel-heading"><h2 id="dialog-title">{dialog === 'project' ? 'New project' : dialog === 'task' ? 'New bug report' : 'Start run'}</h2><button className="icon-button" aria-label="Close" onClick={() => setDialog(null)}><XCircle size={19} /></button></div>
       {dialog === 'project' && <form onSubmit={submitProject}><label>Name<input name="name" minLength={2} required placeholder="Web application" /></label><label>Repository URL<input name="repository_url" type="url" placeholder="https://github.com/organization/repository" /></label><label>Test URL<input name="test_url" type="url" placeholder="https://staging.example.com" /></label><label>Environment manifest (JSON)<textarea name="manifest" rows={5} defaultValue={'{"named_tests": {}}'} /></label><button className="primary-button" disabled={busy}>Create project</button></form>}
       {dialog === 'task' && <form onSubmit={submitTask}><label>Bug report<textarea name="report" rows={4} minLength={10} required placeholder="Describe the failure and reproduction steps" /></label><label>Expected behavior<textarea name="expected_behavior" rows={2} required /></label><label>Actual behavior<textarea name="actual_behavior" rows={2} required /></label><button className="primary-button" disabled={busy}>Submit report</button></form>}
-      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
+      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><label>Repair scope for hosted runs<input name="repair_paths" placeholder="src/app.py, src/routes.py" /><small>List up to four existing source files, separated by commas. The agent can edit only these files.</small></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
     </div></div>}
   </div>
 }

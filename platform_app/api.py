@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+import boto3
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import (
     FileResponse,
@@ -46,6 +47,8 @@ from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
 from platform_app.export_quota import reserve_export
 from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
+from platform_app.hosted_evidence import verified_guest_evidence
+from platform_app.hosted_reporting import hosted_review_packet, verified_hosted_artifact
 from platform_app.memory import (
     delete_fact,
     expire_fact,
@@ -75,6 +78,7 @@ from platform_app.models import (
     RepositoryConnection,
     Run,
     RunEvent,
+    SandboxLease,
     Task,
     Tenant,
     TenantMembership,
@@ -1347,6 +1351,34 @@ def review_packet(
 ):
     run = authorized_run(db, identity, run_id)
     task = require_task(db, identity[0], run.task_id)
+    if (run.config_snapshot or {}).get("execution_profile") == "hosted_vm_v1":
+        leases = db.scalars(select(SandboxLease).where(
+            SandboxLease.tenant_id == identity[0], SandboxLease.project_id == run.project_id,
+            SandboxLease.run_id == run.id,
+        ).order_by(SandboxLease.generation)).all()
+        verification = db.scalar(select(RunEvent).where(
+            RunEvent.tenant_id == identity[0], RunEvent.run_id == run.id,
+            RunEvent.event_type == "verification.completed",
+            RunEvent.payload["scope"].as_string() == "declared_guest_checks",
+        ).order_by(RunEvent.sequence.desc()).limit(1))
+        review = db.scalar(select(RunEvent).where(
+            RunEvent.tenant_id == identity[0], RunEvent.run_id == run.id,
+            RunEvent.event_type == "review.decision",
+        ).order_by(RunEvent.sequence.desc()).limit(1))
+        model_completed = db.scalar(select(ToolAction.id).where(
+            ToolAction.tenant_id == identity[0], ToolAction.run_id == run.id,
+            ToolAction.logical_action == "model.generate",
+            ToolAction.status == "COMPLETED",
+        ).limit(1)) is not None
+        spend_entries = db.scalars(select(BudgetEntry).where(
+            BudgetEntry.tenant_id == identity[0], BudgetEntry.run_id == run.id,
+            BudgetEntry.category.like("call:%"),
+        )).all()
+        return hosted_review_packet(
+            run, task, leases, verification, review, Path(settings().artifact_dir),
+            model_completed,
+            str(sum((entry.actual_usd for entry in spend_entries), start=0)),
+        )
     actions = db.scalars(
         select(ToolAction)
         .where(ToolAction.run_id == run.id, ToolAction.tenant_id == identity[0])
@@ -1510,6 +1542,29 @@ def review_packet(
     }
 
 
+@app.get("/v1/runs/{run_id}/guest-evidence/{phase}")
+def download_guest_evidence(
+    run_id: str,
+    phase: Literal["baseline", "candidate"],
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = authorized_run(db, identity, run_id)
+    if (run.config_snapshot or {}).get("execution_profile") != "hosted_vm_v1":
+        raise HTTPException(status_code=404)
+    bucket = settings().sandbox_artifact_bucket
+    if not bucket:
+        raise ServiceError("EVIDENCE_UNAVAILABLE", "Guest artifact store is unavailable", 503)
+    evidence = verified_guest_evidence(db, run, phase, boto3.client("s3"), bucket)
+    return Response(
+        evidence, media_type="application/x-tar",
+        headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'attachment; filename="aip-{phase}-evidence.tar"',
+        },
+    )
+
+
 @app.get("/v1/runs/{run_id}/review-packet/download")
 def download_review_packet(
     run_id: str,
@@ -1592,9 +1647,22 @@ def download_patch(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
+    run = authorized_run(db, identity, run_id)
+    if (run.config_snapshot or {}).get("execution_profile") == "hosted_vm_v1":
+        event = db.scalar(select(RunEvent).where(
+            RunEvent.tenant_id == identity[0], RunEvent.run_id == run.id,
+            RunEvent.event_type == "verification.completed",
+            RunEvent.payload["scope"].as_string() == "declared_guest_checks",
+        ).order_by(RunEvent.sequence.desc()).limit(1))
+        if event is None:
+            raise ServiceError("PATCH_UNAVAILABLE", "No verified candidate patch exists", 404)
+        artifact = verified_hosted_artifact(run, event, Path(settings().artifact_dir))
+        return PlainTextResponse(
+            artifact["diff"], media_type="text/x-diff",
+            headers={"Content-Disposition": f'attachment; filename="run-{run.id}.patch"'},
+        )
     if settings().environment != "development":
         raise HTTPException(status_code=404)
-    run = authorized_run(db, identity, run_id)
     action = db.scalar(
         select(ToolAction).where(
             ToolAction.run_id == run.id,
@@ -1631,7 +1699,14 @@ def list_models(
             "model_id": m.model_id,
             "state": m.state,
             "qualified": qualification_current(m),
-            "fixture_only": bool((m.capabilities or {}).get("database_fixture_only")),
+            "hosted_execution_enabled": (
+                settings().environment != "development"
+                and settings().hosted_execution_enabled
+            ),
+            "fixture_only": bool(
+                settings().environment == "development"
+                and (m.capabilities or {}).get("database_fixture_only")
+            ),
             "capabilities": m.capabilities,
             "context_limit": m.context_limit,
             "output_limit": m.output_limit,

@@ -2,12 +2,14 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from platform_app.config import settings
 from platform_app.db import utcnow
+from platform_app.environment_manifest import EnvironmentManifest
 from platform_app.model_qualification import qualification_current
 from platform_app.model_routing import (
     RoutingError,
@@ -20,6 +22,7 @@ from platform_app.models import (
     ModelEntry,
     OutboxEvent,
     Project,
+    RepositoryConnection,
     Run,
     RunEvent,
     Task,
@@ -114,8 +117,13 @@ def admit_run(
     db: Session, tenant_id: str, actor: str, task_id: str, key: str, body: RunCreate
 ) -> Run:
     set_safe_attributes(tenant_id=tenant_id, task_id=task_id)
-    # The development Docker adapter is not a customer sandbox security boundary.
-    if settings().environment != "development":
+    hosted_requested = body.reproduction.get("execution_profile") == "hosted_vm_v1"
+    hosted_enabled = settings().environment != "development" and (
+        settings().hosted_execution_enabled
+    )
+    if hosted_requested and not hosted_enabled:
+        raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
+    if settings().environment != "development" and not hosted_requested:
         raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
     task = require_task(db, tenant_id, task_id)
     try:
@@ -168,6 +176,44 @@ def admit_run(
         raise ServiceError("MODEL_UNAVAILABLE", "Selected model is not live qualified", 409)
     if not project.repository_url or not project.test_url or not project.environment_manifest:
         raise ServiceError("ENVIRONMENT_UNAVAILABLE", "Project setup is incomplete", 409)
+    repair_paths = None
+    if hosted_requested:
+        from platform_app.repository_connections import github_repository_ref
+
+        try:
+            manifest = EnvironmentManifest.model_validate(project.environment_manifest)
+            repository_ref = github_repository_ref(project.repository_url)
+        except (ValueError, ServiceError) as error:
+            raise ServiceError(
+                "ENVIRONMENT_UNAVAILABLE", "Hosted project setup is invalid", 409
+            ) from error
+        if manifest.external_destinations or manifest.environment_keys or manifest.postgres_fixture:
+            raise ServiceError(
+                "ENVIRONMENT_UNAVAILABLE", "Requested guest capability is not qualified", 409
+            )
+        repair_paths = body.reproduction.get("repair_paths")
+        if (
+            not isinstance(repair_paths, list) or not 1 <= len(repair_paths) <= 4
+            or any(
+                not isinstance(path, str) or not path or len(path) > 300
+                or path.startswith("/") or "\\" in path or ":" in path
+                or ".." in PurePosixPath(path).parts
+                or path != PurePosixPath(path).as_posix()
+                for path in repair_paths
+            ) or len(set(repair_paths)) != len(repair_paths)
+        ):
+            raise ServiceError("REPAIR_SCOPE_INVALID", "Repair paths must be bounded", 409)
+        connection = db.scalar(select(RepositoryConnection).where(
+            RepositoryConnection.tenant_id == tenant_id,
+            RepositoryConnection.project_id == project.id,
+            RepositoryConnection.provider == "github",
+            RepositoryConnection.repository_ref == repository_ref,
+            RepositoryConnection.status == "ready",
+        ))
+        if connection is None or not connection.credential_ref:
+            raise ServiceError(
+                "REPOSITORY_UNAVAILABLE", "Ready repository connection is required", 409
+            )
     try:
         check_admission_quota(db, tenant)
     except QuotaError as error:
@@ -194,6 +240,9 @@ def admit_run(
         "test_url": project.test_url,
         "environment_manifest": project.environment_manifest,
     }
+    if hosted_requested:
+        policy["execution_profile"] = "hosted_vm_v1"
+        policy["repair_paths"] = repair_paths
     try:
         policy["model_failover_routes"] = [
             route for route in validate_failover_routes(tenant.model_routing_policy or {})

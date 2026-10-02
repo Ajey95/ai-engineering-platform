@@ -6,13 +6,16 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from platform_app import service
 from platform_app.api import list_models
+from platform_app.config import Settings
 from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
     ModelEntry,
     OutboxEvent,
     Project,
+    RepositoryConnection,
     Run,
     RunEvent,
     Task,
@@ -181,6 +184,58 @@ def test_enabled_unqualified_model_cannot_admit_general_run(db):
     with pytest.raises(ServiceError) as error:
         admit_run(db, "tenant-a", "alice", "task-a", "unqualified-key", body)
     assert error.value.code == "MODEL_UNAVAILABLE"
+
+
+def test_hosted_admission_requires_gate_scope_and_ready_connection(db, monkeypatch):
+    disabled = Settings(
+        environment="production", hosted_execution_enabled=False,
+        database_url="postgresql+psycopg://unused:unused@localhost/unused",
+        oidc_issuer="https://issuer.example.test/", oidc_audience="aip",
+        oidc_jwks_url="https://issuer.example.test/keys",
+    )
+    enabled = disabled.model_copy(update={"hosted_execution_enabled": True})
+    monkeypatch.setattr(service, "settings", lambda: disabled)
+    monkeypatch.setattr(service, "qualification_current", lambda _: True)
+    project = db.get(Project, "project-a")
+    project.repository_url = "https://github.com/example/repo"
+    project.environment_manifest = {
+        "schema_version": "1.0", "language": "python", "python_version": "3.12",
+        "services": [{
+            "name": "app", "port": 8001, "health_path": "/health",
+            "command": {"argv": ["python", "app.py"], "timeout_seconds": 30},
+        }],
+        "named_tests": {"unit": {
+            "argv": ["python", "-c", "print('ok')"], "timeout_seconds": 30,
+        }},
+        "browser_scenario": {"steps": [{"action": "goto", "path": "/"}]},
+    }
+    db.commit()
+    body = RunCreate(
+        base_commit="a" * 40, selected_model_entry="qualified-model",
+        reproduction={"execution_profile": "hosted_vm_v1", "repair_paths": ["app.py"]},
+    )
+    with pytest.raises(ServiceError) as rejected:
+        admit_run(db, "tenant-a", "alice", "task-a", "hosted-key", body)
+    assert rejected.value.code == "EXECUTION_UNAVAILABLE"
+    monkeypatch.setattr(service, "settings", lambda: enabled)
+    with pytest.raises(ServiceError) as missing:
+        admit_run(db, "tenant-a", "alice", "task-a", "hosted-key", body)
+    assert missing.value.code == "REPOSITORY_UNAVAILABLE"
+    db.add(RepositoryConnection(
+        tenant_id="tenant-a", project_id="project-a", provider="github",
+        repository_ref="example/repo", credential_ref="env:AIP_TEST_GITHUB_TOKEN",
+        status="ready", created_by="alice",
+    ))
+    db.commit()
+    unsafe = body.model_copy(update={"reproduction": {
+        "execution_profile": "hosted_vm_v1", "repair_paths": ["../secrets"],
+    }})
+    with pytest.raises(ServiceError) as invalid:
+        admit_run(db, "tenant-a", "alice", "task-a", "unsafe-key", unsafe)
+    assert invalid.value.code == "REPAIR_SCOPE_INVALID"
+    run = admit_run(db, "tenant-a", "alice", "task-a", "hosted-key", body)
+    assert run.config_snapshot["execution_profile"] == "hosted_vm_v1"
+    assert run.config_snapshot["repair_paths"] == ["app.py"]
 
 
 def test_fixture_model_cannot_admit_unrelated_project(db):
