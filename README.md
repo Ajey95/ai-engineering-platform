@@ -49,6 +49,27 @@ uses Docker Engine in Ubuntu-24.04 WSL because Docker Desktop 4.67.0 fails at
 its `dockerInference` socket during startup. Docker Desktop's data was not reset.
 The WSL Engine has its own image and volume store.
 
+For an existing local SQLite file created before the paused-run columns were
+added, back it up and apply the additive development upgrade once:
+
+```powershell
+uv run python -m scripts.upgrade_local_sqlite
+```
+
+To make the local UI runnable without provider credentials, seed the reviewed
+synthetic form case and keep its development worker polling the durable outbox:
+
+```powershell
+uv run python -m scripts.seed_local_demo
+uv run python -m platform_app.development_worker --serve --runtime wsl
+```
+
+The Runs form labels this as a synthetic fixture and fills the pinned local
+commit. It can reproduce the bug and publish baseline evidence. With no live
+qualified provider, its honest result is `INCONCLUSIVE`; it does not make an
+autonomous repair or execute a customer repository. The seed and SQLite upgrade
+commands are idempotent.
+
 ```powershell
 uv sync --extra dev
 Copy-Item .env.example .env

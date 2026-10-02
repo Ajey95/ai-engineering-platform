@@ -290,3 +290,18 @@ restored in the worker. In-memory SDK tests confirmed parent/child lineage;
 run `06f0cb22-46ba-4c8f-999e-926281da6a3a` at `56261c0` reached
 REVIEW_READY with ten effects and media READY. No OTLP collector/export or
 hosted trace backend was tested; endpoint must be configured by an operator.
+
+2026-10-02 local demo continuation: the old SQLite file was missing the three
+paused-run columns and made `/v1/runs` return HTTP 500. The additive
+`scripts/upgrade_local_sqlite.py` backed it up under `artifacts/db-backups`
+before adding the columns; repeated execution reported current. The idempotent
+`scripts/seed_local_demo.py` created a labelled project/report/fixture model.
+The Runs form now includes the reviewed fixture ID and local pinned commit;
+`DevelopmentWorker --serve` polls the outbox. The active refreshed demo uses
+API `127.0.0.1:8099` and web `127.0.0.1:5174`; older processes on 8098/5173
+remain stale. Playwright admitted run
+`62d42f9f-487c-4419-92f9-f939978318e2`; the WSL Docker worker completed it
+as INCONCLUSIVE with baseline media READY and no provider call. Desktop/mobile
+Playwright checks showed persisted failure evidence, no page errors and no
+horizontal overflow. This is a reproducible synthetic demo, not full PRD
+completion.

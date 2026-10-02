@@ -14,6 +14,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -850,8 +851,19 @@ def main() -> int:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--artifacts", type=Path, default=Path(settings().artifact_dir))
     parser.add_argument("--runtime", choices=["native", "wsl"], default="wsl")
+    parser.add_argument("--serve", action="store_true", help="Poll the durable dispatch outbox")
+    parser.add_argument("--poll-seconds", type=float, default=2.0)
     args = parser.parse_args()
     worker = DevelopmentWorker(args.repository, args.artifacts, runtime=args.runtime)
+    if args.serve:
+        if not 0.2 <= args.poll_seconds <= 60:
+            parser.error("--poll-seconds must be between 0.2 and 60")
+        try:
+            while True:
+                if worker.process_next() is None:
+                    time.sleep(args.poll_seconds)
+        except KeyboardInterrupt:
+            return 0
     run_id = worker.process_next()
     print(json.dumps({"run_id": run_id, "status": "none" if run_id is None else "processed"}))
     return 0

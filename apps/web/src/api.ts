@@ -4,6 +4,7 @@ export interface Project {
   repository_url: string | null
   test_url: string | null
   created_at: string
+  fixture_case_id: string | null
 }
 
 export interface Task {

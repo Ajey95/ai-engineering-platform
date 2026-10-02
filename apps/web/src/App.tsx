@@ -62,6 +62,7 @@ export default function App() {
   const [memoryQuery, setMemoryQuery] = useState('')
   const [memoryFacts, setMemoryFacts] = useState<{ id: string; subject: string; statement: string; source_refs: string[]; verification_scope: string | null }[]>([])
   const [devEvaluation, setDevEvaluation] = useState<DevEvaluation | null>(null)
+  const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -75,6 +76,11 @@ export default function App() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  useEffect(() => {
+    void api<{ case_id: string; base_commit: string }>('/dev/fixture-info')
+      .then(setDevFixture).catch(() => setDevFixture(null))
+  }, [])
 
   useEffect(() => {
     if (page !== 'evaluations') return
@@ -110,7 +116,9 @@ export default function App() {
   const task = tasks.find(item => item.id === run?.task_id)
   const scopedRuns = selectedProject ? runs.filter(item => item.project_id === selectedProject) : runs
   const scopedTasks = selectedProject ? tasks.filter(item => item.project_id === selectedProject) : tasks
-  const qualifiedModels = models.filter(item => item.qualified)
+  const runnableModels = models.filter(item => item.qualified || (
+    item.fixture_only && project?.fixture_case_id === 'form-submit-001'
+  ))
   const reservedTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.reserved_usd, 0), [usage])
   const actualTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.actual_usd, 0), [usage])
 
@@ -146,11 +154,17 @@ export default function App() {
     event.preventDefault(); setBusy(true); setError('')
     const form = new FormData(event.currentTarget)
     try {
+      const selectedModel = models.find(item => item.id === String(form.get('model')))
+      const reproduction = {
+        scenario: String(form.get('scenario')),
+        ...(selectedModel?.fixture_only && project?.fixture_case_id
+          ? { fixture_case_id: project.fixture_case_id } : {}),
+      }
       const created = await api<Run>(`/tasks/${String(form.get('task_id'))}/runs`, {
         method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: jsonBody({ base_commit: String(form.get('base_commit')),
           selected_model_entry: String(form.get('model')),
-          mode: 'investigate_and_propose', reproduction: { scenario: String(form.get('scenario')) } }),
+          mode: 'investigate_and_propose', reproduction }),
       })
       setDialog(null); setSelectedRun(created.id); setPage('runs'); await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Run admission failed') }
@@ -225,7 +239,7 @@ export default function App() {
           {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select><ChevronDown size={14} /></div>
         <span className="top-separator" />
-        <div className="model-summary"><ShieldCheck size={17} /><span>{qualifiedModels.length ? `${qualifiedModels.length} enabled model${qualifiedModels.length > 1 ? 's' : ''}` : 'No qualified model'}</span></div>
+        <div className="model-summary"><ShieldCheck size={17} /><span>{models.some(item => item.qualified) ? `${models.filter(item => item.qualified).length} qualified model${models.filter(item => item.qualified).length > 1 ? 's' : ''}` : runnableModels.length ? 'Synthetic fixture only' : 'No qualified model'}</span></div>
         <div className="top-spacer" />
         {run && <><span className="run-chip">Run #{shortId(run.id)}</span><Status value={run.state} /></>}
         <span className="budget-summary">${actualTotal.toFixed(2)} actual · ${reservedTotal.toFixed(2)} reserved</span>
@@ -239,8 +253,9 @@ export default function App() {
           {project && <div className="content-panel"><div className="panel-heading"><h2>{project.name}</h2><button className="secondary-button" onClick={() => setDialog('task')}><Plus size={16} /> New report</button></div><div className="field-grid"><div><label>Repository</label><p>{project.repository_url || 'Not configured'}</p></div><div><label>Test URL</label><p>{project.test_url || 'Not configured'}</p></div></div><h3>Recent reports</h3>{scopedTasks.length ? scopedTasks.slice(0, 5).map(item => <div className="list-row" key={item.id}><span>{item.report}</span><small>{date(item.created_at)}</small></div>) : <p className="muted">No reports submitted.</p>}</div>}
         </section>}
         {page === 'runs' && <section className="page-section">
-          <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !qualifiedModels.length} title={!qualifiedModels.length ? 'No qualified model is enabled' : undefined}><Play size={16} /> Start run</button></div>
-          {!qualifiedModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
+          <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !runnableModels.length} title={!runnableModels.length ? 'No executable model is available' : undefined}><Play size={16} /> Start run</button></div>
+          {!runnableModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
+          {runnableModels.some(item => item.fixture_only) && <div className="notice"><CircleHelp size={18} /> The fixture model only reproduces the reviewed synthetic form bug. It is not a live provider or customer repository run.</div>}
           <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
         {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
@@ -267,7 +282,7 @@ export default function App() {
     {dialog && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="panel-heading"><h2 id="dialog-title">{dialog === 'project' ? 'New project' : dialog === 'task' ? 'New bug report' : 'Start run'}</h2><button className="icon-button" aria-label="Close" onClick={() => setDialog(null)}><XCircle size={19} /></button></div>
       {dialog === 'project' && <form onSubmit={submitProject}><label>Name<input name="name" minLength={2} required placeholder="Web application" /></label><label>Repository URL<input name="repository_url" type="url" placeholder="https://github.com/organization/repository" /></label><label>Test URL<input name="test_url" type="url" placeholder="https://staging.example.com" /></label><label>Environment manifest (JSON)<textarea name="manifest" rows={5} defaultValue={'{"named_tests": {}}'} /></label><button className="primary-button" disabled={busy}>Create project</button></form>}
       {dialog === 'task' && <form onSubmit={submitTask}><label>Bug report<textarea name="report" rows={4} minLength={10} required placeholder="Describe the failure and reproduction steps" /></label><label>Expected behavior<textarea name="expected_behavior" rows={2} required /></label><label>Actual behavior<textarea name="actual_behavior" rows={2} required /></label><button className="primary-button" disabled={busy}>Submit report</button></form>}
-      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required placeholder="40-character Git commit SHA" /></label><label>Qualified model<select name="model" required>{qualifiedModels.map(item => <option key={item.id} value={item.id}>{item.provider} · {item.model_id}</option>)}</select></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
+      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
     </div></div>}
   </div>
 }

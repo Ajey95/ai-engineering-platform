@@ -21,6 +21,7 @@ class ProjectRead(StrictModel):
     repository_url: str | None
     test_url: str | None
     created_at: datetime
+    fixture_case_id: str | None = None
 
 
 class TenantMembershipSet(StrictModel):

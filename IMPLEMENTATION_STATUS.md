@@ -68,6 +68,11 @@ The paid pilot release gate in PRD §27.2 has not been run.
   API checks the digest on every request and the Runs panel displays before
   and after screenshots.
 - `apps/web`: React screens reading real API data; no fabricated run success.
+- `scripts/seed_local_demo.py` and the Runs form now expose a clearly labelled
+  synthetic fixture model for a reviewed local project. The form includes the
+  fixture case ID and fills a local Git commit. A long-running development
+  worker can poll the durable dispatch outbox with `--serve`. This is a local
+  recorded demonstration path, not provider qualification.
 - The Runs review panel displays persisted baseline named/browser/oracle receipt
   status, command, exit, duration and tree hash where available. Model choices
   use the API qualification flag rather than `state=enabled` alone.
@@ -150,6 +155,16 @@ an operator endpoint and has not been exercised against a collector. A
 controlled Docker run `06f0cb22-46ba-4c8f-999e-926281da6a3a` at pinned
 commit `56261c0` retained the ten-effect PASS/FAIL/FAIL to PASS/PASS/PASS
 repair path and media READY under the tracing changes.
+The existing local SQLite file lacked the paused-run columns; a browser load
+returned HTTP 500 for `/v1/runs`. `scripts/upgrade_local_sqlite.py` backed up
+the file to `artifacts/db-backups` and added the three missing nullable columns.
+The API then returned 200 for runs/projects/tasks. In the refreshed local demo
+on ports 5174/8099, Playwright admitted synthetic run
+`62d42f9f-487c-4419-92f9-f939978318e2` from the Runs form. A polling WSL
+Docker worker reproduced the form failure and finished `INCONCLUSIVE` with
+baseline media READY, correctly without a live model. Desktop 1440px and mobile
+390px checks showed the persisted failure evidence, no page errors and no
+horizontal overflow. The older 5173/8098 processes still serve stale code.
 
 ## Requirement traceability
 
@@ -168,7 +183,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
 | FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |
-| FR-HAR-01 | Partial | Development outbox worker executes baseline and controlled-provider candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
+| FR-HAR-01 | Partial | Development outbox worker can poll continuously and executes baseline/controlled candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect; external system reconciliation absent. |
@@ -201,7 +216,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay and UI dedup code; reconnect/load test absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and local evidence evaluation screens; receipts, patch preview, reviewer decision and paused-input answer control are visible, full workspace/admin absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens now admit a clearly labelled local fixture with pinned commit and show its real worker evidence; full workspace/admin absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path now enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. Hosted broker and plugin authority absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |

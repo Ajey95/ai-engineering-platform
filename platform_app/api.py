@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import re
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -162,6 +163,24 @@ def authorized_run(
 @app.get("/v1/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/v1/dev/fixture-info")
+def dev_fixture_info(identity: tuple[str, str] = Depends(principal)):
+    if settings().environment != "development":
+        raise HTTPException(status_code=404)
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    commit = result.stdout.strip().lower()
+    if result.returncode or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise ServiceError("FIXTURE_UNAVAILABLE", "Local fixture revision is unavailable", 503)
+    return {"case_id": "form-submit-001", "base_commit": commit}
 
 
 def dev_evaluation_root() -> Path:
@@ -371,6 +390,12 @@ def create_project(
         repository_url=project.repository_url,
         test_url=project.test_url,
         created_at=project.created_at,
+        fixture_case_id=(
+            "form-submit-001"
+            if settings().environment == "development"
+            and project.environment_manifest.get("case_id") == "form-submit-001"
+            else None
+        ),
     )
 
 
@@ -391,6 +416,12 @@ def list_projects(
             repository_url=p.repository_url,
             test_url=p.test_url,
             created_at=p.created_at,
+            fixture_case_id=(
+                "form-submit-001"
+                if settings().environment == "development"
+                and p.environment_manifest.get("case_id") == "form-submit-001"
+                else None
+            ),
         )
         for p in rows
     ]
