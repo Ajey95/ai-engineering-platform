@@ -29,6 +29,7 @@ from platform_app.action_policy import (
     authorize_run_effect,
 )
 from platform_app.agent_patch import request_fixture_patch
+from platform_app.code_navigation import SnapshotNavigator
 from platform_app.config import settings
 from platform_app.db import SessionLocal, utcnow
 from platform_app.dev_sandbox import (
@@ -599,7 +600,9 @@ class DevelopmentWorker:
                     self.worker_id,
                     fence,
                     {"named": named, "browser": browser, "oracle": oracle_receipt},
-                    (workspace / "server.py").read_text(encoding="utf-8"),
+                    SnapshotNavigator(workspace, commit).read_excerpt(
+                        "server.py", max_lines=400
+                    )["text"],
                     self.artifact_root,
                     provider=self.patch_provider,
                 )

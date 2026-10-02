@@ -496,3 +496,12 @@ returned two diagnosis log references in its review packet, and both named
 and oracle authenticated downloads returned 200 with 984 and 7242 bytes.
 The isolated controlled verifier run is stored in its own SQLite DB and is
 not visible through the live PostgreSQL API.
+
+2026-10-02 pinned code navigation: `SnapshotNavigator` offers bounded file
+listing, text search, Python AST symbol lookup and file excerpts over an
+already isolated pinned snapshot. Paths reject traversal and links; reads
+carry commit, content SHA-256 and untrusted-source labels. The development
+worker uses it to read the fixture's small `server.py` before model context
+assembly. A test archives the trusted fixture from Git, verifies search and
+symbol provenance, and proves the hidden oracle outside the base scope is
+unreachable. Graph traversal and broad language indexing remain pending.
