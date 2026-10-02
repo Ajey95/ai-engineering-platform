@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     sandbox_security_group_id: str = ""
     sandbox_root_device_name: str = ""
     run_queue_url: str = ""
+    media_queue_url: str = ""
     private_media_kms_key_id: str = ""
     cloudfront_key_pair_id: str = ""
     cloudfront_private_key_b64: str = ""

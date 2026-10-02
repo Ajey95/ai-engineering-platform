@@ -1390,11 +1390,33 @@ def review_packet(
             "PUBLISHED" if published_receipt.get("status") == "PUBLISHED" else
             approval.status.upper() if approval else "DISABLED"
         )
+        deleted_labels = [
+            label for label in ("baseline", "candidate")
+            if deletion_for(db, run, label) is not None
+        ]
+        media_urls = {}
+        for label in ("baseline", "candidate"):
+            if label in deleted_labels:
+                continue
+            media = db.scalar(select(PrivateMediaPublication).where(
+                PrivateMediaPublication.tenant_id == run.tenant_id,
+                PrivateMediaPublication.project_id == run.project_id,
+                PrivateMediaPublication.run_id == run.id,
+                PrivateMediaPublication.label == label,
+                PrivateMediaPublication.status == "ready",
+            ))
+            if media is not None:
+                prefix = media_prefix(
+                    run.tenant_id, run.project_id, run.id,
+                    label, media.effect_hash,
+                )
+                media_urls[label] = f"/{prefix}master.m3u8"
         return hosted_review_packet(
             run, task, leases, verification, review, Path(settings().artifact_dir),
             model_completed,
             str(sum((entry.actual_usd for entry in spend_entries), start=0)),
             publication_status, published_receipt.get("pr_url"),
+            media_urls, deleted_labels,
         )
     actions = db.scalars(
         select(ToolAction)

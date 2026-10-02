@@ -1,7 +1,7 @@
 # Single-region pilot stack
 
 This root composes the trusted network, private sandbox network and bucket,
-SQS queues, private web/media edge, ECS API/coordinator/publication services,
+SQS queues, private web/media edge, ECS API/coordinator/publication/media services,
 Multi-AZ RDS PostgreSQL, EFS artifact volume, and DNS aliases. It is a
 deployment definition, not a deployed or qualified environment.
 
@@ -14,7 +14,8 @@ copy of `backend.hcl.example`. No credentials are stored in this repository.
 Deployment order:
 
 1. Select an account/region, private state bucket and domain. Build and
-   qualify the sandbox AMI and trusted image. Create regional and us-east-1
+   qualify the sandbox AMI, trusted control image and FFmpeg media image.
+   Create regional and us-east-1
    certificates plus the media public signing key.
 2. Supply CIDRs, secret ARNs and other variables. Keep `deploy_services=false`
    and `hosted_execution_enabled=false`. Initialize, plan, review the plan,
@@ -29,5 +30,6 @@ Deployment order:
    `hosted_execution_enabled=true`.
 
 The default root provisions no running ECS tasks and leaves hosted admission
-off. The stack does not yet provision Memgraph, Redis, media transcode workers
-or production alert collection, so it does not satisfy the full pilot gate.
+off. The stack does not yet provision Memgraph, Redis or production alert
+collection, and its media workers have only controlled replay evidence.
+It does not satisfy the full pilot gate.

@@ -4,8 +4,8 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 241 tests with 4 skips after bounded hosted retries and
-draft PR dispatch; scoped lint and the web production build passed. Local
+Python suite passed 242 tests with 4 skips after the hosted media job path;
+scoped lint and the web production build passed. Local
 PostgreSQL is at migration `e71d5a4b8c20` with no Alembic drift.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
@@ -94,14 +94,15 @@ not a live provider, customer repository, AWS or GitHub qualification.
   been pushed, deployed, or run against hosted PostgreSQL/OIDC.
 - `infra/terraform/trusted-network`, `control-plane` and `pilot` now define a
   two-zone trusted VPC with private NAT egress, ECS API/agent/publication
-  services, a TLS origin load balancer, Multi-AZ RDS PostgreSQL, a private
+  services, separate FFmpeg media/deletion services, a TLS origin load balancer,
+  Multi-AZ RDS PostgreSQL, a private
   EFS access point and DNS bindings to the existing queue/sandbox/edge
   modules. Per-workload execution roles inject only named Secrets Manager
   values, the image is pinned by digest, initial desired counts are zero and
   hosted admission defaults off. AWS provider 6.67.0 `fmt` and `validate`
   passed for the root and new modules. No account plan/apply, app DB bootstrap,
-  restore or live network/IAM qualification exists; Memgraph, media workers
-  and alert collection remain outside this stack.
+  restore or live network/IAM qualification exists; Memgraph and alert
+  collection remain outside this stack. The media image is defined but unbuilt.
 - Scoped GitHub repository connection records accept canonical HTTPS
   owner/repo identity and opaque `secret://` references. Maintainers can register
   or disable them; readers can list readiness without seeing the secret reference.
@@ -141,6 +142,13 @@ not a live provider, customer repository, AWS or GitHub qualification.
   approval transaction; a worker leases it and reconciles uncertain GitHub
   writes. Controlled publication and expiry tests passed. No live GitHub write
   has been attempted.
+- `platform_app/hosted_media.py`, `hosted_media_worker.py` and `media_queue.py`
+  now stage a digest-verified WebM from each verified guest archive, send a
+  durable outbox wakeup to the independent media SQS queue, encode HLS in a
+  separate worker, publish checksummed private objects and expose hosted
+  manifest links only after publication. A controlled fake guest/SQS/S3 replay
+  passed; the actual FFmpeg encoder already has a local development test, but
+  the new media image, AWS queue, EFS and CDN path are not live qualified.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
@@ -436,8 +444,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. The hosted coordinator records baseline and candidate guest phases in separate fake EC2 VMs, compares declared checks with exact tree/manifest pins, and exposes a hash-verified review diff and scoped S3 evidence tar. The declared checks are explicitly labelled without an independent hidden oracle. No live VM, live model or customer repository has been verified. |
 | FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
 | FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. The hosted path rechecks the model artifact, guest receipts and candidate built from the pinned commit. A durable publication outbox leases work and retries/reconciles uncertain writes; the UI exposes approval and published URL. Controlled HTTP and hosted replay tests passed; no live GitHub account or customer PR publication exists. |
-| FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS; independent queue/private object storage absent. |
-| FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; controlled S3 publisher uploads verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
+| FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS. The hosted worker now stages digest-verified guest WebM and queues baseline/final-candidate media separately through SQS/outbox; a separate FFmpeg worker is defined. Controlled end-to-end replay passed, but the media image and AWS queue have not been live exercised. |
+| FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; hosted media worker now uses the controlled S3 publisher to upload verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |

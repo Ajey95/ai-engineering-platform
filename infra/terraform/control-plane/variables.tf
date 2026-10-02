@@ -65,25 +65,34 @@ variable "image_uri" {
 
 variable "secret_environment" {
   type        = map(map(string))
-  description = "Per-workload ECS env name to existing Secrets Manager secret ARN. Keys: api, agent, publication."
+  description = "Per-workload ECS env name to existing Secrets Manager secret ARN. Keys: api, agent, publication, media, media_cleanup."
   validation {
-    condition = (alltrue([for workload in ["api", "agent", "publication"] :
+    condition = (alltrue([for workload in ["api", "agent", "publication", "media", "media_cleanup"] :
       contains(keys(var.secret_environment), workload)
       ]) && alltrue([for workload in keys(var.secret_environment) :
-      contains(["api", "agent", "publication"], workload)
+      contains(["api", "agent", "publication", "media", "media_cleanup"], workload)
       ]) && alltrue(flatten([for workload, secrets in var.secret_environment : [
         for name, arn in secrets :
         can(regex("^AIP_[A-Z0-9_]+$", name)) && startswith(arn, "arn:aws:secretsmanager:")
-      ]])) && alltrue([for workload in ["api", "agent", "publication"] :
+      ]])) && alltrue([for workload in ["api", "agent", "publication", "media", "media_cleanup"] :
       contains(keys(lookup(var.secret_environment, workload, {})), "AIP_DATABASE_URL")
       ]) && alltrue([for name in [
-      "AIP_OIDC_ISSUER", "AIP_OIDC_AUDIENCE", "AIP_OIDC_JWKS_URL",
-      "AIP_OIDC_CLIENT_ID", "AIP_OIDC_CLIENT_SECRET",
-      "AIP_OIDC_AUTHORIZATION_ENDPOINT", "AIP_OIDC_TOKEN_ENDPOINT",
-      "AIP_BROWSER_SESSION_SECRET", "AIP_CLOUDFRONT_PRIVATE_KEY_B64",
+        "AIP_OIDC_ISSUER", "AIP_OIDC_AUDIENCE", "AIP_OIDC_JWKS_URL",
+        "AIP_OIDC_CLIENT_ID", "AIP_OIDC_CLIENT_SECRET",
+        "AIP_OIDC_AUTHORIZATION_ENDPOINT", "AIP_OIDC_TOKEN_ENDPOINT",
+        "AIP_BROWSER_SESSION_SECRET", "AIP_CLOUDFRONT_PRIVATE_KEY_B64",
       ] : contains(keys(lookup(var.secret_environment, "api", {})), name)]) &&
     contains(keys(lookup(var.secret_environment, "agent", {})), "AIP_SANDBOX_ENVELOPE_KEY_B64"))
-    error_message = "Provide separate api, agent and publication secret maps with database, API OIDC/session and agent envelope settings."
+    error_message = "Provide separate API, agent, publication and media secret maps with database, API OIDC/session and agent envelope settings."
+  }
+}
+
+variable "media_image_uri" {
+  type        = string
+  description = "Immutable trusted FFmpeg worker image URI with @sha256 digest."
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.media_image_uri))
+    error_message = "media_image_uri must pin an OCI image digest."
   }
 }
 
@@ -103,6 +112,14 @@ variable "private_media_bucket_name" {
   type = string
 }
 
+variable "media_publisher_policy_arn" {
+  type = string
+}
+
+variable "media_deletion_policy_arn" {
+  type = string
+}
+
 variable "cloudfront_distribution_id" {
   type = string
 }
@@ -116,6 +133,14 @@ variable "agent_queue_arn" {
 }
 
 variable "agent_queue_url" {
+  type = string
+}
+
+variable "media_queue_arn" {
+  type = string
+}
+
+variable "media_queue_url" {
   type = string
 }
 

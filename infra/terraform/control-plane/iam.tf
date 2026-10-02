@@ -149,3 +149,27 @@ resource "aws_iam_role_policy" "agent" {
 
 # GitHub publication uses an injected token. The trusted task role has no
 # EC2/SQS/S3 authority; candidate bytes come from the private artifact volume.
+
+data "aws_iam_policy_document" "media_queue" {
+  statement {
+    sid       = "MediaQueue"
+    actions   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"]
+    resources = [var.media_queue_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "media_queue" {
+  name   = "media-queue"
+  role   = aws_iam_role.workload["media"].id
+  policy = data.aws_iam_policy_document.media_queue.json
+}
+
+resource "aws_iam_role_policy_attachment" "media_publisher" {
+  role       = aws_iam_role.workload["media"].name
+  policy_arn = var.media_publisher_policy_arn
+}
+
+resource "aws_iam_role_policy_attachment" "media_cleanup" {
+  role       = aws_iam_role.workload["media_cleanup"].name
+  policy_arn = var.media_deletion_policy_arn
+}

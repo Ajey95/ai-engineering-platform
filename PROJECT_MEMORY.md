@@ -1142,6 +1142,20 @@ used the existing provider binary in the workspace. An exact recursive
 cleanup of the temporary download directory was blocked by automatic review,
 so it is left ignored under `.terraform-tmp/`.
 
+2026-10-03 hosted media increment: verified guest evidence archives now stage
+only an approved browser WebM under the private artifact volume, keyed by
+tenant/run/phase with a SHA-256 receipt. The hosted coordinator queues the
+baseline and final candidate only. The media SQS/outbox transport uses exact
+event IDs and a visibility heartbeat; a separate worker leases the job,
+records a durable encode intent, writes deterministic HLS, publishes
+checksummed private S3 objects, and exposes a manifest only after the DB
+publication receipt. Deletion also removes staged hosted raw video. Terraform
+now includes two media encoders and a media deletion task with separate
+roles and a pinned FFmpeg image input. Controlled guest/SQS/S3 replay passed.
+Full Python suite: 242 passed, 4 skipped; Ruff, Terraform root/module
+validation and Alembic drift check passed. The FFmpeg media image is defined
+but unbuilt; no live AWS media queue, EFS, CDN or browser playback was tested.
+
 2026-10-03 guest AMI definition increment: `infra/sandbox-ami` pins a
 source Ubuntu 24.04 AMI input, Amazon Packer plugin 1.8.1, Node 24.21.0
 archive SHA-256, Python `uv.lock`, Playwright Chromium and uid 10001. The

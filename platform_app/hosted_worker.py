@@ -25,6 +25,7 @@ from platform_app.general_agent import request_general_patch
 from platform_app.general_patch import build_candidate_tree
 from platform_app.guest_comparison import compare_guest_observations
 from platform_app.hosted_baseline import seal_and_collect_baseline, stage_and_launch_baseline
+from platform_app.hosted_media import stage_hosted_recording
 from platform_app.model_qualification import qualification_current
 from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, SandboxLease
 from platform_app.providers import ProviderError
@@ -178,6 +179,13 @@ class HostedWorker:
             source, manifest, paths = self._inputs(run_id, fence)
             self._state(run_id, fence, "REPRODUCING")
             baseline = self._guest(run_id, fence, source, "baseline")
+            with self.session_factory() as db:
+                run = db.get(Run, run_id)
+                stage_hosted_recording(
+                    db, run, self.worker_id, fence,
+                    baseline, "baseline", self.artifact_root,
+                )
+                db.commit()
             checks = (baseline.result.get("baseline") or {}).get("browser") or {}
             if baseline.result.get("guest_exit_code") != 0 or checks.get("status") != "FAILED":
                 self._state(run_id, fence, "INCONCLUSIVE", "INCONCLUSIVE")
@@ -249,6 +257,13 @@ class HostedWorker:
                     self._state(run_id, fence, "PATCHING")
                     continue
                 break
+            with self.session_factory() as db:
+                run = db.get(Run, run_id)
+                stage_hosted_recording(
+                    db, run, self.worker_id, fence,
+                    observed, "candidate", self.artifact_root,
+                )
+                db.commit()
             target = self.artifact_root / run_id / "candidate"
             target.mkdir(parents=True, exist_ok=True)
             raw = json.dumps({**packet, "diagnosis": proposal.diagnosis,

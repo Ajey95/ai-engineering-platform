@@ -40,6 +40,8 @@ def hosted_review_packet(
     verification: RunEvent | None, review: RunEvent | None,
     artifact_root: Path, model_completed: bool, spend_usd: str,
     publication_status: str = "DISABLED", publication_url: str | None = None,
+    media_manifest_urls: dict[str, str] | None = None,
+    deleted_recording_labels: list[str] | None = None,
 ) -> dict:
     latest = {}
     for lease in sorted(leases, key=lambda item: item.generation):
@@ -96,6 +98,9 @@ def hosted_review_packet(
             "The verdict covers declared guest checks only; no independent hidden oracle was run."
         ] if verification else ["Candidate verification has not finished."],
         "actual_model_spend_usd": spend_usd, "media_status": run.media_status,
-        "media_manifest_urls": {}, "media_manifest_url": None,
-        "deleted_recording_labels": [], "config_snapshot": run.config_snapshot,
+        "media_manifest_urls": media_manifest_urls or {},
+        "media_manifest_url": (media_manifest_urls or {}).get("candidate")
+        or (media_manifest_urls or {}).get("baseline"),
+        "deleted_recording_labels": deleted_recording_labels or [],
+        "config_snapshot": run.config_snapshot,
     }

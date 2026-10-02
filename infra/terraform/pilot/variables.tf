@@ -70,6 +70,11 @@ variable "trusted_image_uri" {
   description = "Immutable trusted control-plane OCI image URI."
 }
 
+variable "media_image_uri" {
+  type        = string
+  description = "Immutable trusted FFmpeg worker OCI image URI."
+}
+
 variable "secret_environment" {
   type        = map(map(string))
   description = "Per-workload Secrets Manager ARNs; see control-plane module."

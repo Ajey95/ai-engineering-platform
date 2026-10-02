@@ -147,6 +147,10 @@ class FakeS3:
             entry = tarfile.TarInfo("test-unit.log")
             entry.size = len(log)
             archive.addfile(entry, io.BytesIO(log))
+            video = b"controlled browser recording"
+            clip = tarfile.TarInfo("browser/video.webm")
+            clip.size = len(video)
+            archive.addfile(clip, io.BytesIO(video))
         evidence = evidence_file.getvalue()
         observation = {
             "status": "BASELINE_RECORDED" if lease.phase == "baseline"
@@ -164,6 +168,7 @@ class FakeS3:
                 ) else "PASSED",
                 "tested_tree_sha256": tree, "post_browser_tree_sha256": tree,
                 "steps": [], "page_errors": [],
+                "recording": "video.webm",
             },
         }
         result = {
@@ -279,6 +284,11 @@ def test_hosted_pipeline_replays_full_control_path(tmp_path, monkeypatch, retry)
         run = db.get(Run, "run-a")
         assert (run.state, run.verdict) == ("REVIEW_READY", "PASSED")
         assert db.get(OutboxEvent, "dispatch-a").status == "delivered"
+        media_jobs = db.scalars(select(OutboxEvent).where(
+            OutboxEvent.topic == "media.transcode",
+        )).all()
+        assert {job.payload["label"] for job in media_jobs} == {"baseline", "candidate"}
+        assert run.media_status == "PROCESSING"
         leases = db.scalars(select(SandboxLease).order_by(SandboxLease.generation)).all()
         assert [lease.phase for lease in leases] == (
             ["baseline", "candidate", "candidate"] if retry

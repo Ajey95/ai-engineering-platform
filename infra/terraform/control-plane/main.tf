@@ -1,18 +1,19 @@
 locals {
   tags = merge(var.tags, { Application = "ai-engineering-platform", Boundary = "trusted" })
   common_environment = {
-    AIP_ENVIRONMENT               = "production"
-    AIP_ARTIFACT_DIR              = "/var/lib/aip/artifacts"
-    AIP_PUBLIC_BASE_URL           = var.public_base_url
-    AIP_HOSTED_EXECUTION_ENABLED  = tostring(var.hosted_execution_enabled)
-    AIP_RUN_QUEUE_URL             = var.agent_queue_url
-    AIP_SANDBOX_ARTIFACT_BUCKET   = var.sandbox_artifact_bucket_name
-    AIP_SANDBOX_AMI_ID            = var.sandbox_ami_id
-    AIP_SANDBOX_SUBNET_ID         = var.sandbox_subnet_id
-    AIP_SANDBOX_SECURITY_GROUP_ID = var.sandbox_security_group_id
-    AIP_SANDBOX_INSTANCE_TYPE     = var.sandbox_instance_type
-    AIP_SANDBOX_ROOT_DEVICE_NAME  = var.sandbox_root_device_name
-    AIP_PRIVATE_MEDIA_BUCKET      = var.private_media_bucket_name
+    AIP_ENVIRONMENT                = "production"
+    AIP_ARTIFACT_DIR               = "/var/lib/aip/artifacts"
+    AIP_PUBLIC_BASE_URL            = var.public_base_url
+    AIP_HOSTED_EXECUTION_ENABLED   = tostring(var.hosted_execution_enabled)
+    AIP_RUN_QUEUE_URL              = var.agent_queue_url
+    AIP_MEDIA_QUEUE_URL            = var.media_queue_url
+    AIP_SANDBOX_ARTIFACT_BUCKET    = var.sandbox_artifact_bucket_name
+    AIP_SANDBOX_AMI_ID             = var.sandbox_ami_id
+    AIP_SANDBOX_SUBNET_ID          = var.sandbox_subnet_id
+    AIP_SANDBOX_SECURITY_GROUP_ID  = var.sandbox_security_group_id
+    AIP_SANDBOX_INSTANCE_TYPE      = var.sandbox_instance_type
+    AIP_SANDBOX_ROOT_DEVICE_NAME   = var.sandbox_root_device_name
+    AIP_PRIVATE_MEDIA_BUCKET       = var.private_media_bucket_name
     AIP_CLOUDFRONT_DISTRIBUTION_ID = var.cloudfront_distribution_id
     AIP_CLOUDFRONT_KEY_PAIR_ID     = var.cloudfront_key_pair_id
   }
@@ -34,6 +35,18 @@ locals {
       memory  = 1024
       desired = 1
       command = ["python", "-m", "scripts.dispatch_publications", "--serve"]
+    }
+    media = {
+      cpu     = 2048
+      memory  = 4096
+      desired = 2
+      command = ["python", "-m", "scripts.dispatch_hosted_media", "--serve"]
+    }
+    media_cleanup = {
+      cpu     = 512
+      memory  = 1024
+      desired = 1
+      command = ["python", "-m", "scripts.dispatch_private_media_deletions", "--serve"]
     }
   }
 }
@@ -260,7 +273,7 @@ resource "aws_ecs_task_definition" "control" {
   }
   container_definitions = jsonencode([{
     name                   = each.key
-    image                  = var.image_uri
+    image                  = contains(["media", "media_cleanup"], each.key) ? var.media_image_uri : var.image_uri
     essential              = true
     command                = each.value.command
     readonlyRootFilesystem = true

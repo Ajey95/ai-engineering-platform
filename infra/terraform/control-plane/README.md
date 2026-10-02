@@ -1,7 +1,8 @@
 # Trusted ECS control plane (FR-DAT-01, FR-SBX-02, FR-SEC-03)
 
 This Terraform module defines two API tasks, two hosted coordinator tasks,
-one draft publication task, a TLS application load balancer, a Multi-AZ RDS
+one draft publication task, two media encoding tasks and one media deletion
+task, a TLS application load balancer, a Multi-AZ RDS
 PostgreSQL instance, and an encrypted EFS access point shared by trusted
 tasks. Task definitions pin an OCI image digest. All tasks run without public
 IPs; the supplied trusted VPC must provide controlled NAT egress for provider,
@@ -17,10 +18,13 @@ Before applying, create Secrets Manager secrets for at least
 `AIP_OIDC_JWKS_URL`, OIDC client ID/secret and authorization/token endpoints,
 `AIP_BROWSER_SESSION_SECRET`, `AIP_CLOUDFRONT_PRIVATE_KEY_B64` and
 `AIP_SANDBOX_ENVELOPE_KEY_B64`. Supply their ARNs through the separate
-`secret_environment.api`, `.agent` and `.publication` maps. API OIDC/session
+`secret_environment.api`, `.agent`, `.publication`, `.media` and
+`.media_cleanup` maps. API OIDC/session
 secrets belong only to `api`; the envelope and provider keys belong only to
 `agent`; GitHub credentials used for fetch and publication belong to both
-`agent` and `publication`. The app database URL must identify a dedicated application user
+`agent` and `publication`. Media tasks need only the database secret;
+the edge module grants their scoped S3 and CloudFront policies. The app
+database URL must identify a dedicated application user
 with the migrated schema, not the RDS master user. Populate that secret after
 RDS creation and before starting ECS services. `deploy_services` defaults
 to false so the first apply provisions infrastructure with zero running

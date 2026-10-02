@@ -42,6 +42,13 @@ def purge_local_recording(db: Session, run: Run, label: str, artifact_dir: str) 
         if not media.is_dir() or media.is_symlink() or media.is_junction():
             raise ValueError("Recording media target is not a regular directory")
         shutil.rmtree(media)
+    hosted_raw = _scoped_path(
+        root, Path("hosted-media") / run.tenant_id / run.id / label / "source.webm"
+    )
+    if hosted_raw.exists():
+        if not hosted_raw.is_file() or hosted_raw.is_symlink():
+            raise ValueError("Hosted raw recording is not a regular file")
+        hosted_raw.unlink()
 
     step = "browser" if label == "baseline" else "candidate_browser"
     action = db.scalar(
