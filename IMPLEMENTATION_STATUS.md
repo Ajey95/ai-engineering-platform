@@ -64,7 +64,9 @@ The paid pilot release gate in PRD §27.2 has not been run.
   a bounded ContextBundle with task constraints, permission boundaries, source
   revision and hashes, trust labels, scope and token estimates. It does not yet
   select repository excerpts or durable memory for general customer tasks.
-- `platform_app/memory.py`: version scoped canonical fact lifecycle and retrieval.
+- `platform_app/memory.py`, `graph_memory.py`: version scoped canonical fact
+  lifecycle, idempotent Memgraph projection from the PostgreSQL outbox, scoped
+  graph lookup with canonical rechecks and a degraded PostgreSQL fallback.
 - `platform_app/media.py`: actual FFmpeg HLS encode to a local private directory;
   the admitted worker publishes baseline and candidate media separately and
   the tenant-scoped development API serves the published effect.
@@ -95,8 +97,9 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 98 passing local tests and 2 skips (PostgreSQL checkpoint test needs
-  an explicit local URL; one Windows symlink privilege skip),
+- `tests/`: 102 passing local tests and 3 skips (PostgreSQL checkpoint and
+  Memgraph integration gates need explicit local URLs; one Windows symlink
+  privilege skip),
   including admission, fencing, interrupted
   tool calls, stale memory, token limits and real FFmpeg media output.
 - Playwright browser QA: project and report forms worked on desktop and mobile,
@@ -253,10 +256,10 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
 | FR-TOK-02 | Partial | Synthetic named-test and oracle output streams directly to complete artifact files with byte count and SHA-256 receipts; model context carries bounded, verified head/tail excerpts and references paired to completed tool action IDs. General DOM snapshot storage and provider tool-cycle compaction remain. |
 | FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path under a tenant row lock; overrun posts a cap breach event and missing usage or unqualified cache pricing fails closed. Live account and outage reconciliation unverified. |
-| FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
+| FR-MEM-01 | Partial | Verified/deleted canonical facts now project idempotently to Memgraph from PostgreSQL outbox events. API graph lookup rechecks canonical tenant/project/revision/status and falls back to PostgreSQL on outage, lag or mismatch. A scope rebuild command exists; hosted graph recovery/load qualification remains. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
 | FR-MEM-03 | Partial | Proposed/verified/deleted lifecycle; complete state and verifier absent. |
-| FR-MEM-04 | Partial | Scoped canonical lexical lookup now feeds bounded, provenance-labelled memory into fixture model context. Revoked or wrong-revision facts are excluded; connected traversal remains absent. |
+| FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; hosted hostile-repository isolation remains unverified. |
 | FR-SBX-02 | Missing | Per-run hosted VM and network isolation absent. |
 | FR-SBX-03 | Missing | Snapshot, revocation and orphan cleanup absent. |
@@ -272,7 +275,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
 | FR-DAT-01 | Partial | Nine Alembic revisions applied through `2d71e508a104` on local PostgreSQL; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant quota races denied overspend. Restore/hosted race qualification remains. |
-| FR-DAT-02 | Partial | Memory outbox in transaction; projection worker absent. |
+| FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
 | FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens now admit a clearly labelled local fixture with pinned commit and show its real worker evidence; full workspace/admin absent. |

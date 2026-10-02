@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     oidc_jwks_url: str = ""
     public_base_url: str = "http://localhost:8000"
     artifact_dir: str = "./artifacts"
+    memgraph_uri: str = ""
+    memgraph_user: str = ""
+    memgraph_password: str = ""
     dev_evaluation_dir: str = "./artifacts/evaluation-v2"
     otlp_traces_endpoint: str = ""
     max_run_spend_usd: float = Field(default=5.0, gt=0)

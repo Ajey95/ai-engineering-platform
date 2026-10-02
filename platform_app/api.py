@@ -26,6 +26,7 @@ from platform_app.auth import (
 )
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
+from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
 from platform_app.memory import delete_fact, scoped_lookup
 from platform_app.model_base import utcnow
 from platform_app.model_qualification import (
@@ -1214,9 +1215,25 @@ def get_memory(
     db: Session = Depends(db_session),
 ):
     require_project_role(db, identity, project_id)
-    facts = scoped_lookup(db, identity[0], project_id, source_revision, query)
+    graph = None
+    try:
+        if settings().memgraph_uri:
+            graph = MemgraphProjection(
+                settings().memgraph_uri,
+                settings().memgraph_user,
+                settings().memgraph_password,
+            )
+        retrieval_mode, facts = connected_lookup(
+            db, graph, identity[0], project_id, source_revision, query
+        )
+    except GraphUnavailable:
+        retrieval_mode = "canonical_degraded"
+        facts = scoped_lookup(db, identity[0], project_id, source_revision, query)
+    finally:
+        if graph is not None:
+            graph.close()
     return {
-        "retrieval_mode": "canonical_degraded",
+        "retrieval_mode": retrieval_mode,
         "facts": [
             {
                 "id": fact.id,

@@ -584,3 +584,17 @@ account exists, so ordinary auto requests fail closed. Migration
 `2d71e508a104` applied on local PostgreSQL with no schema drift. The full
 Python suite passed 98 tests with two skips; Ruff passed. The disposable
 PostgreSQL verifier passed migration roundtrip and its existing race probes.
+
+2026-10-02 Memgraph projection: added the Neo4j Bolt client dependency and
+`platform_app/graph_memory.py`. Canonical verified/deleted fact outbox events
+project current state idempotently into project, repository, source-revision,
+subject and fact nodes. A project-scope rebuild command removes and recreates
+derived records. `/v1/projects/{id}/memory` uses graph IDs only as hints and
+rechecks all returned facts in PostgreSQL; it reports `canonical_degraded`
+and uses canonical lookup on graph outage, pending projection or result
+mismatch. Local Memgraph Compose pulled and started; the opt-in real graph
+roundtrip passed verified projection, scoped query, deletion and rebuild.
+Pure outbox/fallback/API tests passed. The full Python suite passed 102 tests
+with three skips (two opt-in database gates and the Windows symlink privilege
+skip); Ruff and diff checks passed. Hosted graph recovery and load remain
+unverified.

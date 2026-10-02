@@ -225,6 +225,25 @@ $env:AIP_TEST_POSTGRES_URL='postgresql://aip:local_only@127.0.0.1:54329/aip'
 uv run pytest -q tests/test_fixture_workflow.py
 ```
 
+For local graph memory, start the Compose Memgraph service, set
+`AIP_MEMGRAPH_URI=bolt://127.0.0.1:7687` for the API and projection worker,
+and run the worker separately:
+
+```powershell
+wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker compose up -d memgraph'
+$env:AIP_MEMGRAPH_URI='bolt://127.0.0.1:7687'
+uv run python -m scripts.project_memory_graph --serve
+```
+
+PostgreSQL is authoritative. The memory API reports `canonical_degraded`
+while the graph is unavailable, behind its outbox, or mismatched with current
+canonical facts. After restoring a graph, stop its projection worker and run
+`scripts.project_memory_graph --rebuild-tenant TENANT_ID --rebuild-project PROJECT_ID`
+for each project before restarting it. The opt-in live graph gate uses
+`AIP_TEST_MEMGRAPH_URI=bolt://127.0.0.1:7687` with
+`uv run pytest -q tests/test_graph_memory.py`. This is a local projection
+path; graph high availability and hosted restore have not been qualified.
+
 The PostgreSQL verifier creates and drops a unique test database. It checks
 duplicate admission, resume, tenant constraints, migration roundtrip and
 simultaneous recording deletion with one final event. Its
