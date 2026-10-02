@@ -17,7 +17,7 @@ from platform_app.service import ServiceError, append_event
 
 _AWS_ID = re.compile(r"(?:ami|subnet|sg)-[0-9a-f]{8,17}\Z")
 _INSTANCE_ID = re.compile(r"i-[0-9a-f]{8,17}\Z")
-_INSTANCE_TYPE = re.compile(r"[a-z0-9]+\.[a-z0-9]+\Z")
+_INSTANCE_TYPES = frozenset({"m6i.large", "m7i.large"})
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class SandboxSpec:
             or not self.image_id.startswith("ami-")
             or not self.subnet_id.startswith("subnet-")
             or not self.security_group_id.startswith("sg-")
-            or not _INSTANCE_TYPE.fullmatch(self.instance_type)
+            or self.instance_type not in _INSTANCE_TYPES
             or self.root_device_name not in {"/dev/xvda", "/dev/sda1"}
             or not 8 <= self.disk_gib <= 100
             or not 60 <= self.ttl_seconds <= 1800

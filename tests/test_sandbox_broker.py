@@ -186,6 +186,9 @@ def test_public_ip_response_is_revoked_and_late_fence_cannot_launch(scoped_db):
 
 def test_sandbox_spec_rejects_public_or_unbounded_inputs():
     with pytest.raises(ValueError):
+        SandboxSpec("ami-12345678", "p5.48xlarge", "subnet-12345678",
+                    "sg-12345678", "/dev/xvda")
+    with pytest.raises(ValueError):
         SandboxSpec("ami-12345678", "m6i.large", "subnet-12345678",
                     "sg-12345678", "/dev/xvda", ttl_seconds=3600)
     with pytest.raises(ValueError):

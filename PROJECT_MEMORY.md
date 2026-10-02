@@ -1011,5 +1011,15 @@ broker/admission suite passed 19/19, the full Python suite passed 171 tests
 with 3 skips before that refresh-only correction, scoped Ruff passed, and
 `alembic check` found no drift. Fake EC2 confirms behavior; no actual VM was
 launched. Hosted admission remains disabled because guest execution,
-authenticated transport, network policy, snapshot handling and live account
+authenticated transport, applied network policy, snapshot handling and live account
 qualification are not implemented.
+
+2026-10-03 isolated sandbox network increment: a new
+`infra/terraform/sandbox-network` module defines a dedicated private IPv4 VPC,
+two or more subnets with no IGW/NAT route, no guest ingress, S3-prefix HTTPS
+egress only and a gateway endpoint policy restricted to sandbox input/output
+prefixes. `SandboxSpec` now admits only the reviewed `m6i.large` and
+`m7i.large` 2-vCPU guest classes. Terraform AWS provider 6.67.0 initialized
+from the cached signed provider lock, `terraform fmt -check` and `validate`
+passed; six sandbox broker tests and scoped Ruff passed. No AWS plan/apply,
+guest AMI, presigned object transport or live AC-15 network probe exists.

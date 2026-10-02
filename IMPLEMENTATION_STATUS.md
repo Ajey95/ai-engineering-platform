@@ -40,8 +40,14 @@ The paid pilot release gate in PRD §27.2 has not been run.
   lease in the run transaction; a cleanup worker can find a lost launch receipt
   by client token and retries termination until EC2 reports it complete.
   Callback fence checks reject a revoked VM. Controlled fake-EC2 tests passed;
-  no guest image, network policy, authenticated transport, live AWS launch or
+  no guest image, applied network policy, authenticated transport, live AWS launch or
   customer repository execution has been qualified.
+- `infra/terraform/sandbox-network` now defines a dedicated private IPv4 VPC,
+  two or more isolated subnets without an internet/NAT route, no inbound guest
+  rule, HTTPS egress only to the regional S3 prefix list, and an S3 endpoint
+  policy scoped to sandbox input/output prefixes. Terraform provider 6.67.0
+  initialized, format and validate passed. It has not been planned or applied
+  in a selected account, and no guest image or S3 capability transport exists.
 - `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
   code as a non-root image separate from the synthetic fixture runner. The
   WSL Docker build produced local image digest
@@ -319,7 +325,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MEM-03 | Partial | Six canonical states have scoped transition history, actor, reason and evidence. Environment observations receive a 24-hour validity window and the graph worker expires due facts in bounded batches before projection. A scoped paginated API and desktop/mobile UI expose states, sources and history with role-gated transitions. New accepted/rejected reviewer outcomes become verified decision records linked to the exact review event and labelled as review decisions, not proof of repair correctness. Stale verified replacements cannot supersede current facts. Independent corroboration, automatic regression invalidation and immutable-artifact pinning remain. |
 | FR-MEM-04 | Partial | Scoped canonical lexical lookup feeds bounded, provenance-labelled memory into fixture model context. A project/repository/source-revision/fact graph now supports scoped connected lookup with canonical rechecks; richer code symbol traversal and agent-facing graph tool remain absent. |
 | FR-SBX-01 | Partial | Development container ran synthetic named tests, browser and hidden oracle with bounded, non-root, no-network policy; hosted hostile-repository isolation remains unverified. |
-| FR-SBX-02 | Partial | A durable per-run EC2 intent, bounded private launch request and response isolation checks exist, but there is no guest image, network policy proof, authenticated guest transport or live launch. Hosted admission stays disabled. |
+| FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request and response isolation checks exist. Terraform defines a private no-NAT guest VPC and S3-only endpoint policy. No guest image, applied network proof, authenticated guest transport or live launch exists; hosted admission stays disabled. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; broader browser policy remains. |
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
