@@ -27,7 +27,7 @@ and release blockers.
   commit/file hashes, scoped evidence and explicit trust labels.
 - Synthetic test and oracle output streams to artifact files with byte counts
   and digests; the repair context includes bounded, verified excerpts and
-  references paired to completed tool action IDs.
+  references paired to completed tool action IDs and typed ToolResult records.
 - Local FFmpeg HLS encoding with staging and immutable publication.
 - A per-recording delete route and Review control for closed runs. It revokes
   local media access, removes that side's raw WebM and HLS files, and retains

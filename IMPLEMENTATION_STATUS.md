@@ -233,7 +233,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
-| FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |
+| FR-PLG-03 | Partial | Fixture context now serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. General plugin broker execution and authorized full-output retrieval remain. |
 | FR-HAR-01 | Partial | Development outbox worker can poll continuously and executes baseline/controlled candidate under a lease; LangGraph, live autonomous repair and PostgreSQL checkpointer absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |

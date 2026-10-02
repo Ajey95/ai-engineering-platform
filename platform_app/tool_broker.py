@@ -44,6 +44,48 @@ class ToolResult:
     truncated: bool = False
 
 
+def fixture_tool_result(
+    name: str, receipt: dict, output: dict | None, source_version: str
+) -> ToolResult:
+    """Expose only reviewed receipt fields; model-facing prose is deterministic."""
+    if name not in {"named", "browser", "oracle"}:
+        raise ToolCallError("Fixture tool is not registered")
+    status = receipt.get("status")
+    if status not in {"PASSED", "FAILED", "TIMEOUT", "INCONCLUSIVE", "ERROR"}:
+        raise ToolCallError("Fixture result status is invalid")
+    exit_code = receipt.get("exit_code")
+    if exit_code is not None and (not isinstance(exit_code, int) or isinstance(exit_code, bool)):
+        raise ToolCallError("Fixture exit code is invalid")
+    duration = receipt.get("duration_ms", 0)
+    if not isinstance(duration, int) or isinstance(duration, bool) or duration < 0:
+        raise ToolCallError("Fixture duration is invalid")
+    output_sha256 = receipt.get("output_sha256")
+    if output_sha256 is not None and (
+        not isinstance(output_sha256, str)
+        or len(output_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in output_sha256)
+    ):
+        raise ToolCallError("Fixture output digest is invalid")
+    if output is not None and (
+        not isinstance(output.get("artifact_ref"), str)
+        or not isinstance(output.get("bytes"), int)
+        or output["bytes"] < 0
+    ):
+        raise ToolCallError("Fixture output artifact is invalid")
+    return ToolResult(
+        status=status,
+        sanitized_summary=f"{name} result: {status.lower()}",
+        artifact_refs=(output["artifact_ref"],) if output else (),
+        structured_fields={"exit_code": exit_code, "output_sha256": output_sha256},
+        retryable=False,
+        duration_ms=duration,
+        byte_count=output["bytes"] if output else 0,
+        source_version=source_version,
+        side_effect_receipt=None,
+        truncated=bool(output and output["truncated"]),
+    )
+
+
 class ToolCallAssembler:
     """Never exposes executable arguments until a provider marks the call complete."""
 

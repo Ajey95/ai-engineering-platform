@@ -439,3 +439,15 @@ configured, so no hosted workflow execution has occurred. Local Python suite:
 84 passed, one Windows symlink privilege skip; Ruff, Alembic drift check and
 Node 24 web build passed. Docker Desktop's stale socket problem remains; the
 WSL Engine is the working project runtime.
+
+2026-10-02 typed fixture ToolResult: context assembly now converts completed
+baseline receipts into a deterministic sanitized ToolResult with status,
+structured fields, verified log artifact ref, byte count, duration and
+truncation flag. Model-facing call/result IDs stay paired. A focused test
+keeps a failed browser scenario FAILED even when an underlying HTTP response
+was 200, and rejects a status string carrying instructions. General plugin
+broker execution and authorized full-output retrieval are still pending.
+The controlled WSL replay `cd522708-0287-4ca8-9b0e-df1614e3b72e` at
+`ed52940` reached REVIEW_READY/PASSED with ten effects and both media sides
+READY after this change. Full Python suite: 86 passed, one Windows symlink
+privilege skip; Ruff passed.

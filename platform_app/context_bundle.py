@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 from platform_app.models import Run, Task, ToolAction
 from platform_app.service import ServiceError
 from platform_app.telemetry import tracer
+from platform_app.tool_broker import ToolCallError, fixture_tool_result
 
 
 def _digest(data: bytes) -> str:
@@ -131,11 +133,13 @@ def fixture_context_bundle(
                 raise ServiceError(
                     "EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409
                 ) from error
+        try:
+            typed_result = fixture_tool_result(name, receipt, output, run.base_commit)
+        except ToolCallError as error:
+            raise ServiceError("EFFECT_OUTCOME_UNKNOWN", str(error), 409) from error
         excerpt = json.dumps(
             {
-                "status": receipt.get("status"),
-                "exit_code": receipt.get("exit_code"),
-                "output_sha256": receipt.get("output_sha256"),
+                "tool_result": asdict(typed_result),
                 "tool_call_id": pair.id if pair else None,
                 "tool_result_for_call_id": pair.id if pair else None,
                 "output": output,
