@@ -73,7 +73,10 @@ function Empty({ title, description }: { title: string; description: string }) {
   return <div className="empty"><Layers3 size={30} aria-hidden="true" /><h3>{title}</h3><p>{description}</p></div>
 }
 
-export default function App() {
+export default function App({ identity, onSignOut }: {
+  identity: { tenant_id: string; subject: string; development: boolean }
+  onSignOut?: () => void
+}) {
   const [page, setPage] = useState<Page>('projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [repositoryConnections, setRepositoryConnections] = useState<RepositoryConnection[]>([])
@@ -383,7 +386,7 @@ export default function App() {
           <item.icon size={18} aria-hidden="true" /><span>{item.label}</span>
         </button>)}
       </nav>
-      <div className="sidebar-footer"><span className="avatar">LD</span><div><strong>Local development</strong><small>Fixture identity</small></div></div>
+      <div className="sidebar-footer"><span className="avatar">{identity.subject.slice(0, 2).toUpperCase()}</span><div><strong>{identity.development ? 'Local development' : identity.subject}</strong><small>{identity.tenant_id}</small></div></div>
     </aside>
     <div className="app-content">
       <header className="topbar">
@@ -398,6 +401,7 @@ export default function App() {
         {run && <><span className="run-chip">Run #{shortId(run.id)}</span><Status value={run.state} /></>}
         <span className="budget-summary">${actualTotal.toFixed(2)} actual · ${reservedTotal.toFixed(2)} reserved</span>
         <button type="button" className="icon-button" aria-label="Refresh workspace" onClick={() => void refresh()}><RefreshCw size={17} /></button>
+        {onSignOut && <button type="button" className="icon-button" aria-label="Sign out" onClick={onSignOut}><Square size={17} /></button>}
       </header>
       <main>
         {error && <div className="error-banner" role="alert"><XCircle size={18} />{error}<button type="button" aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}

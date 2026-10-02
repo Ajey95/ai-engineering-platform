@@ -54,6 +54,19 @@ class TenantMembership(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BrowserSession(Base):
+    __tablename__ = "browser_sessions"
+    __table_args__ = (
+        Index("ix_browser_sessions_tenant_subject", "tenant_id", "subject"),
+        Index("ix_browser_sessions_expires_at", "expires_at"),
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    subject: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("tenant_id", "id"),)

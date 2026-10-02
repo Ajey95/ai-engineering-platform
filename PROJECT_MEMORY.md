@@ -865,3 +865,21 @@ existing 5173 proxy returned health 200 and a PostgreSQL-backed pager summary
 with configured=false, zero pending and zero delivered. Desktop and mobile
 Chromium rendered the new pager state with no JS error or horizontal overflow.
 The worktree was clean after the commit.
+
+2026-10-03 hosted browser identity increment: added OIDC authorization-code
+login with PKCE and encrypted five-minute state, nonce/ID token validation,
+opaque PostgreSQL browser sessions, Secure/HttpOnly/SameSite cookies, CSRF
+header and origin checks, active membership rechecks and logout. The React
+workspace now gates on `/v1/auth/session` and offers issuer sign-in in hosted
+mode. Migration `c2a4d90871e6` was applied to local PostgreSQL and Alembic
+check found no drift. A controlled HTTPS issuer test passed including login,
+session, CSRF, origin rejection and logout. Full Python suite passed 150 tests,
+3 skipped; scoped Ruff and web build passed. Node 21.7.1 printed Vite's version
+warning but the build exited zero. No real issuer, public TLS or browser identity
+account is available, so hosted sign-in is not live qualified. Docker Desktop
+remains broken; WSL Docker Engine supports the local fixture path. API 8101 was
+restarted from current source; after its startup, the existing 5173 Vite proxy
+returned 200 for health and the development session. Headless Chromium loaded
+the workspace at 1440 and 390 pixels with no page errors or horizontal overflow.
+The in-app browser controller failed to load its request-header policy, so this
+UI check used local Playwright instead.

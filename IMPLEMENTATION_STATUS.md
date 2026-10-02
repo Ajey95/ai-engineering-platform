@@ -19,6 +19,12 @@ The paid pilot release gate in PRD §27.2 has not been run.
   manage memberships; a trusted operator can bootstrap the first owner. The
   disposable PostgreSQL test upgraded the membership schema and verified the
   bootstrap owner. A real OIDC issuer has not been connected or tested.
+- `platform_app/browser_auth.py`, migration `c2a4d90871e6`: hosted browser
+  authorization-code login with PKCE, encrypted short-lived state, nonce and
+  ID token checks, opaque PostgreSQL sessions, Secure/HttpOnly/SameSite cookies,
+  CSRF and origin checks, and logout. The React app gates the workspace on a
+  session and offers issuer sign-in. A controlled HTTPS test passed; real issuer,
+  public TLS and cross-browser qualification remain.
 - Migration `4fba39f6713d` replaces single-column foreign keys on core tenant
   records with tenant/project scoped constraints. Disposable PostgreSQL probes
   rejected cross-tenant project membership, task and run-event inserts; local
@@ -106,7 +112,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 149 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 150 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -283,17 +289,17 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted CloudFront authorization and bandwidth adaptation are unverified. |
 | FR-CDN-01 | Missing | CloudFront signed grants and private origin absent. |
 | FR-CDN-02 | Missing | Edge/cache authorization tests absent. |
-| FR-DAT-01 | Partial | Seventeen Alembic revisions applied through `f79e418c624a` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Eighteen Alembic revisions applied through `c2a4d90871e6` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |
-| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. Projects now list/add/disable scoped GitHub connections and show credential/verification readiness; desktop/mobile interaction QA passed with intercepted API calls. Full workspace/admin and live qualification remain absent. |
+| FR-UX-01 | Partial | Onboarding, reports, runs, review, usage and evidence screens admit a clearly labelled local fixture with pinned commit and show its real worker evidence. Projects now list/add/disable scoped GitHub connections and show credential/verification readiness. Hosted browser sign-in has controlled OIDC code-flow tests and server-side sessions; desktop/mobile development QA passed. Full workspace/admin and live identity qualification remain absent. |
 | FR-UX-02 | Partial | Responsive labelled controls inspected; accessibility audit and captions absent. |
 | FR-SEC-01 | Partial | The development fixture worker and model path enforce deterministic tenant/project/run, policy revision, action/version/class/target and tool-budget checks, with durable denials. A plugin resolver also checks exact tenant allowlist, enabled version/digest, schema and granted scopes. Hosted broker execution remains absent. |
 | FR-SEC-02 | Partial | Live development container probe denied metadata network, host drive and daemon socket access and confirmed non-root/read-only/capability limits; hosted hostile-repository VM tests absent. |
 | FR-SEC-03 | Partial | Provider keys are read only by the worker from its environment and are not returned by the frontend API; local tests exercise authorization boundaries. Hosted workload identity, encrypted secret references, rotation audit and the AC-24 injection challenge remain absent. |
 | FR-SEC-04 | Partial | Canonical memory tombstone/outbox plus local recording deletion, route revocation and raw/HLS cleanup; development startup reapplies its tombstones. Hosted object/cache/independent restore propagation absent. |
-| FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Immutable retention and live identity qualification absent. |
+| FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Hosted browser sessions use validated ID tokens, PKCE, server-side session storage, CSRF/origin checks and membership rechecks in controlled tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Partial | Owner-only operations API/UI show tenant-scoped 24-hour run states, verification and reviewer rates, queue/graph age, tool failures, media state, spend/reservations, export quota, durable active alerts and pager delivery backlog. Queue and graph thresholds have a separate persisted evaluator. Provider latency/errors, context size, token estimation error, sandbox utilization, ABR playback and hosted telemetry remain unavailable. |
 | FR-OPS-01 | Partial | The versioned catalog assigns owner, impact and runbook to five paging and five warning classes. A tenant-row-locked evaluator persists queue warnings only after repeated samples over ten minutes, resets after a monitoring gap, fires graph lag immediately and derives sticky budget-breach pages from canonical run events. Owner-only API/UI resolution requires a reason. A separate signed HTTPS webhook dispatcher uses durable retry state and an event ID idempotency key; controlled HTTP and PostgreSQL probes passed. The local evaluator runs continuously. Other alert inputs, live pager delivery, hosted egress/supervision, responder qualification and restore drill remain absent. |

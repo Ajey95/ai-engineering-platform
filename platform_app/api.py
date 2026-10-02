@@ -4,15 +4,17 @@ import json
 import re
 import subprocess
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import (
     FileResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     Response,
     StreamingResponse,
 )
@@ -30,6 +32,14 @@ from platform_app.auth import (
     require_tenant_membership,
     verify_bearer,
     visible_project_ids,
+)
+from platform_app.browser_auth import (
+    LOGIN_COOKIE,
+    SESSION_COOKIE,
+    browser_identity,
+    csrf_for,
+    finish_login,
+    start_login,
 )
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
@@ -51,6 +61,7 @@ from platform_app.model_qualification import (
 )
 from platform_app.models import (
     AuditEvent,
+    BrowserSession,
     BudgetEntry,
     MemoryFact,
     MemoryFactEvent,
@@ -171,6 +182,7 @@ def db_session():
 
 
 def principal(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_tenant_id: str | None = Header(default=None),
     db: Session = Depends(db_session),
@@ -180,13 +192,99 @@ def principal(
         if config.dev_token and authorization != f"Bearer {config.dev_token}":
             raise ServiceError("UNAUTHENTICATED", "Invalid bearer token", 401)
         return config.dev_tenant, config.dev_actor
-    if not authorization or not authorization.startswith("Bearer "):
-        raise ServiceError("UNAUTHENTICATED", "Bearer token is required", 401)
-    if not x_tenant_id or len(x_tenant_id) > 36:
-        raise ServiceError("UNAUTHENTICATED", "Workspace selection is required", 401)
-    subject = verify_bearer(authorization.removeprefix("Bearer "), config)
-    require_tenant_membership(db, x_tenant_id, subject)
-    return x_tenant_id, subject
+    if authorization:
+        if not authorization.startswith("Bearer "):
+            raise ServiceError("UNAUTHENTICATED", "Invalid authorization header", 401)
+        if not x_tenant_id or len(x_tenant_id) > 36:
+            raise ServiceError("UNAUTHENTICATED", "Workspace selection is required", 401)
+        subject = verify_bearer(authorization.removeprefix("Bearer "), config)
+        require_tenant_membership(db, x_tenant_id, subject)
+        return x_tenant_id, subject
+    origin = request.headers.get("origin")
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and (
+        origin != config.public_base_url.rstrip("/")
+    ):
+        raise ServiceError("CSRF_DENIED", "Browser origin is invalid", 403)
+    return browser_identity(
+        db, request.cookies.get(SESSION_COOKIE), config,
+        method=request.method, csrf=request.headers.get("x-aip-csrf"),
+    )
+
+
+@app.get("/v1/auth/start")
+def browser_login_start(tenant_id: str = Query(min_length=1, max_length=36)):
+    config = settings()
+    if config.environment == "development":
+        raise ServiceError("UNAVAILABLE", "Browser login is for hosted mode", 404)
+    try:
+        destination, cookie = start_login(config, tenant_id)
+    except ValueError as error:
+        raise ServiceError("AUTH_NOT_CONFIGURED", "Browser login is unavailable", 503) from error
+    response = RedirectResponse(destination, status_code=302)
+    response.set_cookie(
+        LOGIN_COOKIE, cookie, max_age=300, secure=True, httponly=True,
+        samesite="lax", path="/",
+    )
+    return response
+
+
+@app.get("/v1/auth/callback")
+def browser_login_callback(
+    request: Request,
+    code: str = Query(min_length=1, max_length=4096),
+    state: str = Query(min_length=1, max_length=200),
+    db: Session = Depends(db_session),
+):
+    config = settings()
+    if config.environment == "development":
+        raise ServiceError("UNAVAILABLE", "Browser login is for hosted mode", 404)
+    try:
+        token, session = finish_login(db, config, request.cookies.get(LOGIN_COOKIE), state, code)
+    except ValueError as error:
+        raise ServiceError("AUTH_NOT_CONFIGURED", "Browser login is unavailable", 503) from error
+    db.commit()
+    expires_at = session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    seconds = max(1, int((expires_at - utcnow()).total_seconds()))
+    response = RedirectResponse(config.public_base_url.rstrip("/") + "/", status_code=302)
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=seconds, secure=True, httponly=True,
+        samesite="strict", path="/",
+    )
+    response.delete_cookie(LOGIN_COOKIE, path="/", secure=True, httponly=True,
+                           samesite="lax")
+    return response
+
+
+@app.get("/v1/auth/session")
+def browser_session_status(request: Request, db: Session = Depends(db_session)):
+    config = settings()
+    if config.environment == "development":
+        return {"authenticated": True, "tenant_id": config.dev_tenant,
+                "subject": config.dev_actor, "csrf": None, "development": True}
+    token = request.cookies.get(SESSION_COOKIE)
+    tenant_id, subject = browser_identity(db, token, config)
+    return {"authenticated": True, "tenant_id": tenant_id, "subject": subject,
+            "csrf": csrf_for(token, config), "development": False}
+
+
+@app.post("/v1/auth/logout")
+def browser_logout(
+    request: Request,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and settings().environment != "development":
+        session = db.get(BrowserSession, hashlib.sha256(token.encode()).hexdigest())
+        if session and (session.tenant_id, session.subject) == identity:
+            db.delete(session)
+            db.commit()
+    response = JSONResponse({"authenticated": False})
+    response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True,
+                           samesite="strict")
+    return response
 
 
 def authorized_run(

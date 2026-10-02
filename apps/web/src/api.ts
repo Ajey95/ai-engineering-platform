@@ -112,10 +112,19 @@ export class ApiError extends Error {
   constructor(public code: string, message: string) { super(message) }
 }
 
+let csrfToken: string | null = null
+export const setCsrfToken = (value: string | null) => { csrfToken = value }
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase()
   const response = await fetch(`/v1${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? { 'X-AIP-CSRF': csrfToken } : {}),
+      ...(options.headers ?? {}),
+    },
   })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))

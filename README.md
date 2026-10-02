@@ -95,10 +95,12 @@ qualify; a read-only probe cannot prove those rights.
 No provider model is automatically qualified or enabled. The reviewed local
 fixture model is a separate synthetic-only exception; the UI labels it and
 cannot use it for customer repositories.
-Hosted API identity can start with an OIDC issuer, audience, JWKS URL and
-database memberships, but customer run admission remains disabled until the
-production sandbox is qualified. Hosted frontend login and private media
-delivery are not implemented.
+Hosted API identity supports OIDC bearer tokens and a browser authorization-code
+flow with PKCE. Browser sessions are opaque, stored server-side and protected by
+Secure, HttpOnly, SameSite cookies and a CSRF header. This flow has passed only
+controlled issuer tests; a real issuer has not been connected. Customer run
+admission remains disabled until the production sandbox is qualified. Private
+hosted media delivery is not implemented.
 
 ## Local setup
 
@@ -336,6 +338,18 @@ the first owner after migration:
 ```powershell
 .venv\Scripts\python.exe -m scripts.bootstrap_tenant --tenant-id <tenant-id> --tenant-name <name> --owner-subject <verified-oidc-subject>
 ```
+
+For browser sign-in, also set `AIP_PUBLIC_BASE_URL` to the public HTTPS origin,
+`AIP_OIDC_CLIENT_ID`, `AIP_OIDC_CLIENT_SECRET`,
+`AIP_OIDC_AUTHORIZATION_ENDPOINT`, `AIP_OIDC_TOKEN_ENDPOINT`, and a random
+`AIP_BROWSER_SESSION_SECRET` of at least 32 bytes. Register the exact
+`https://<public-origin>/v1/auth/callback` redirect URI with the issuer. The
+browser app asks for a workspace ID, redirects to the issuer, and verifies an
+ID token before creating an eight-hour maximum server-side session. The OIDC
+subject must already have an active membership in that workspace. The browser
+uses `/v1/auth/session` to obtain a per-session CSRF value and `/v1/auth/logout`
+to revoke the current session. The OIDC configuration is intentionally separate
+from the API bearer audience; the browser client ID is the ID token audience.
 
 The owner can manage tenant and project memberships through `/v1/memberships`
 and `/v1/projects/{id}/members`. Project reads and mutations check roles;
