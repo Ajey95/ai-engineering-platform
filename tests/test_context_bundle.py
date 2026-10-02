@@ -1,9 +1,10 @@
 import hashlib
+import json
 
 import pytest
 
 from platform_app.context_bundle import fixture_context_bundle
-from platform_app.models import Run, Task
+from platform_app.models import Run, Task, ToolAction
 from platform_app.service import ServiceError
 
 
@@ -44,3 +45,50 @@ def test_fixture_bundle_refuses_oversized_source():
     with pytest.raises(ServiceError) as error:
         fixture_context_bundle(run, task, {}, "x" * 50_001, "bounded")
     assert error.value.code == "CONTEXT_UNSATISFIABLE"
+
+
+def test_large_tool_output_is_bounded_and_paired_with_verified_artifact(tmp_path):
+    run, task = _records()
+    baseline = tmp_path / run.id / "baseline"
+    baseline.mkdir(parents=True)
+    raw = b"begin\n" + b"noisy line\n" * 1000 + b"FAILED assertion at end\n"
+    (baseline / "test-baseline.log").write_bytes(raw)
+    receipt = {
+        "status": "FAILED", "exit_code": 1, "output_file": "test-baseline.log",
+        "output_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    action = ToolAction(
+        id="action-named", tenant_id=run.tenant_id, run_id=run.id,
+        step_id="named", logical_action="fixture.named", effect_key="e" * 64,
+        arguments_hash="a" * 64, policy_result="allowed", status="COMPLETED",
+        receipt=receipt,
+    )
+    bundle = fixture_context_bundle(
+        run, task, {"named": receipt}, "source", "bounded", artifact_root=tmp_path,
+        tool_actions={"named": action},
+    )
+    excerpt = json.loads(bundle["source_items"][1]["excerpt"])
+    assert excerpt["tool_call_id"] == excerpt["tool_result_for_call_id"] == action.id
+    assert excerpt["output"]["artifact_ref"] == "run/baseline/test-baseline.log"
+    assert excerpt["output"]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert excerpt["output"]["truncated"] is True
+    assert "FAILED assertion" in excerpt["output"]["tail"]
+    assert len(bundle["source_items"][1]["excerpt"].encode()) < 6000
+
+    (baseline / "test-baseline.log").write_bytes(b"tampered")
+    with pytest.raises(ServiceError) as error:
+        fixture_context_bundle(
+            run, task, {"named": receipt}, "source", "bounded", artifact_root=tmp_path,
+            tool_actions={"named": action},
+        )
+    assert error.value.code == "EFFECT_OUTCOME_UNKNOWN"
+
+
+def test_unpaired_tool_result_is_rejected(tmp_path):
+    run, task = _records()
+    with pytest.raises(ServiceError) as error:
+        fixture_context_bundle(
+            run, task, {"named": {"status": "FAILED"}}, "source", "bounded",
+            artifact_root=tmp_path, tool_actions={},
+        )
+    assert error.value.code == "EFFECT_OUTCOME_UNKNOWN"

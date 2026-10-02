@@ -18,10 +18,10 @@ from platform_app.models import (
     Run,
     RunEvent,
     Task,
-    Tenant,
 )
 from platform_app.schemas import EventRead, RunCreate, RunRead
 from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
+from platform_app.tenant_quota import QuotaError, check_admission_quota, lock_tenant
 
 TERMINAL_STATES = {"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}
 
@@ -113,9 +113,10 @@ def admit_run(
     if settings().environment != "development":
         raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
     task = require_task(db, tenant_id, task_id)
-    tenant = db.get(Tenant, tenant_id)
-    if tenant is None or tenant.status != "active":
-        raise ServiceError("TENANT_DISABLED", "Tenant is not active", 403)
+    try:
+        tenant = lock_tenant(db, tenant_id)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 403) from error
     request_hash = canonical_hash(body.model_dump(mode="json"))
     existing = db.scalar(
         select(Run).where(
@@ -154,6 +155,10 @@ def admit_run(
         raise ServiceError("MODEL_UNAVAILABLE", "Selected model is not live qualified", 409)
     if not project.repository_url or not project.test_url or not project.environment_manifest:
         raise ServiceError("ENVIRONMENT_UNAVAILABLE", "Project setup is incomplete", 409)
+    try:
+        check_admission_quota(db, tenant)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 409) from error
     policy = {
         "prd_version": "1.0",
         "workflow_version": "0.1.0",

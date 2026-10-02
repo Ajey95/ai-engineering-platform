@@ -14,6 +14,7 @@ from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import set_safe_attributes, tracer
+from platform_app.tenant_quota import QuotaError, check_inference_reservation, lock_tenant
 from platform_app.token_budget import (
     BudgetError,
     PriceRule,
@@ -169,6 +170,11 @@ def reserve_model_call(
         check_cumulative_budget(policy, used_input, used_output, committed, reserved, plan)
     except BudgetError as error:
         raise ServiceError("BUDGET_EXHAUSTED", str(error), 409) from error
+    try:
+        tenant = lock_tenant(db, run.tenant_id)
+        warnings = check_inference_reservation(db, tenant, plan.max_liability_usd)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 409) from error
     action = authorize_run_effect(
         db,
         run,
@@ -211,6 +217,8 @@ def reserve_model_call(
             "reserved_usd": str(plan.max_liability_usd),
         },
     )
+    for scope in warnings:
+        append_event(db, run, "budget.warning", {"scope": scope, "threshold_percent": 80})
     return action, reservation, plan
 
 

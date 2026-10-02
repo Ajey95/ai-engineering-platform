@@ -28,6 +28,9 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(24), default="active")
     policy_revision: Mapped[str] = mapped_column(String(64), default="1.0")
+    daily_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=50)
+    monthly_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=500)
+    max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
 
 
 class TenantMembership(Base):
@@ -202,6 +205,7 @@ class OutboxEvent(Base):
 class BudgetEntry(Base):
     __tablename__ = "budget_ledger"
     __table_args__ = (
+        Index("ix_budget_ledger_tenant_category_created", "tenant_id", "category", "created_at"),
         ForeignKeyConstraint(
             ["tenant_id", "run_id"],
             ["runs.tenant_id", "runs.id"],

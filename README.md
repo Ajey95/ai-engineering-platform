@@ -12,6 +12,9 @@ and release blockers.
   usage and scoped canonical memory endpoints.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
+- Tenant daily/monthly inference caps and concurrent run admission limits,
+  serialized on the tenant row in PostgreSQL. A crossing of 80 percent emits
+  a run budget warning.
 - Fenced lease, state transition and tool effect ledger primitives.
 - A deterministic development effect policy checks tenant/project/run scope,
   reviewed action and version, target and tool budget before execution.
@@ -22,6 +25,9 @@ and release blockers.
 - Token envelope and spend preflight calculations.
 - A bounded, source-backed ContextBundle for the synthetic repair call, with
   commit/file hashes, scoped evidence and explicit trust labels.
+- Synthetic test logs remain in artifact files; the repair context includes
+  bounded, digest-verified excerpts and references paired to completed tool
+  action IDs.
 - Local FFmpeg HLS encoding with staging and immutable publication.
 - A per-recording delete route and Review control for closed runs. It revokes
   local media access, removes that side's raw WebM and HLS files, and retains
@@ -53,8 +59,8 @@ uses Docker Engine in Ubuntu-24.04 WSL because Docker Desktop 4.67.0 fails at
 its `dockerInference` socket during startup. Docker Desktop's data was not reset.
 The WSL Engine has its own image and volume store.
 
-For an existing local SQLite file created before the paused-run columns were
-added, back it up and apply the additive development upgrade once:
+For an existing local SQLite file created before paused-run or tenant quota
+columns were added, back it up and apply the additive development upgrade once:
 
 ```powershell
 uv run python -m scripts.upgrade_local_sqlite
@@ -73,6 +79,18 @@ commit. It can reproduce the bug and publish baseline evidence. With no live
 qualified provider, its honest result is `INCONCLUSIVE`; it does not make an
 autonomous repair or execute a customer repository. The seed and SQLite upgrade
 commands are idempotent.
+
+After PostgreSQL migrations, a trusted operator can set tenant quotas. The
+command audits changes and does nothing on an identical retry:
+
+```powershell
+$env:AIP_DATABASE_URL = 'postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE'
+uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4
+```
+
+The shown amounts are default examples, not a provider budget qualification.
+Inference caps count reserved upper-bound liability until usage is settled;
+daily and monthly periods use UTC. Other PRD resource quotas remain pending.
 
 ```powershell
 uv sync --extra dev

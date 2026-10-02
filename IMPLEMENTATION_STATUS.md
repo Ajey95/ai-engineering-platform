@@ -243,7 +243,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-CTX-02 | Missing | Scoped code navigation and graph traversal absent. |
 | FR-CTX-03 | Missing | Compaction and replay absent. |
 | FR-TOK-01 | Partial | Verified-limit envelope math tested; provider estimates absent. |
-| FR-TOK-02 | Missing | Large-output artifact excerpts and cycle pairing absent. |
+| FR-TOK-02 | Partial | Synthetic baseline test logs stay in artifact files; model context now carries SHA-256 verified, bounded head/tail excerpts and artifact references paired to completed tool action IDs. General DOM snapshot storage and provider tool-cycle compaction remain. |
 | FR-TOK-03 | Partial | Model call liability is reserved before provider HTTP and provider-reported usage settled for fixture path; missing usage and unqualified cache pricing fail closed. Live account and outage reconciliation unverified. |
 | FR-MEM-01 | Partial | Canonical records and outbox; Memgraph projection/fallback switch absent. |
 | FR-MEM-02 | Partial | Source revision filter; FileVersion/SymbolVersion graph absent. |
@@ -282,15 +282,16 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-EVL-03 | Missing | Change-triggered regression gates absent. |
 | FR-NFR-01 | Missing | Hosted load, availability and recovery measurements absent. |
 | FR-NFR-02 | Missing | Full degraded-mode service behavior absent. |
-| FR-CST-01 | Partial | Per-run reservation; tenant daily/monthly and resource caps absent. |
+| FR-CST-01 | Partial | Per-run reservation plus tenant daily/monthly inference caps and concurrent run admission caps. PostgreSQL tenant row locking passed two-request admission and reservation races; operator changes are audited and 80% threshold events emit. Sandbox/media/artifact/export quotas and hosted billing qualification remain. |
 
 ## Acceptance scenarios
 
 AC-01 is locally tested on SQLite and migrated PostgreSQL for duplicate
 admission, one reservation and one outbox row. AC-02 is tested at the
 standalone assembler boundary. AC-05 and
-AC-06 have ledger-level fencing/cancellation tests. AC-09 and AC-11 have pure
-token-plan checks. AC-12/13 have canonical memory tests. AC-21 has a real
+AC-06 have ledger-level fencing/cancellation tests. AC-09 has pure token-plan
+checks; AC-11 additionally has concurrent PostgreSQL tenant cap probes.
+AC-12/13 have canonical memory tests. AC-21 has a real
 FFmpeg encode and idempotency test. AC-27 has a live SSE disconnect/reconnect
 check with contiguous replay; hosted proxy/load behavior remains untested.
 AC-15 has a local

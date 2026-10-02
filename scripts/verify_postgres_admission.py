@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from platform_app.models import (
+    AuditEvent,
     BudgetEntry,
     ModelEntry,
     OutboxEvent,
@@ -41,7 +42,8 @@ from platform_app.models import (
 )
 from platform_app.run_ledger import claim_run, resume_input_run, transition
 from platform_app.schemas import RunCreate
-from platform_app.service import admit_run
+from platform_app.service import ServiceError, admit_run
+from platform_app.tenant_quota import QuotaError, check_inference_reservation, lock_tenant
 
 
 def main() -> int:
@@ -291,6 +293,86 @@ def main() -> int:
             postgres_resume = resumed.state == "QUEUED" and sorted(
                 event.status for event in dispatches
             ) == ["delivered", "pending"]
+        operator_command = [
+            sys.executable, "-m", "scripts.set_tenant_quotas",
+            "--tenant-id", "fixture-tenant",
+            "--daily-inference-cap-usd", "0.015",
+            "--monthly-inference-cap-usd", "0.015",
+            "--max-concurrent-runs", "2",
+        ]
+        operator_result = subprocess.run(
+            operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
+            capture_output=True, text=True, timeout=30,
+        )
+        if operator_result.returncode:
+            raise RuntimeError(f"Tenant quota update failed: {operator_result.stderr[-1000:]}")
+        operator_retry = subprocess.run(
+            operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
+            capture_output=True, text=True, timeout=30,
+        )
+        if operator_retry.returncode:
+            raise RuntimeError(f"Tenant quota retry failed: {operator_retry.stderr[-1000:]}")
+        with Session(engine) as session:
+            tenant = session.get(Tenant, "fixture-tenant")
+            quota_operator_audit = (
+                tenant.max_concurrent_runs == 2
+                and Decimal(tenant.daily_inference_cap_usd) == Decimal("0.015")
+                and session.scalar(select(func.count()).select_from(AuditEvent).where(
+                    AuditEvent.tenant_id == tenant.id,
+                    AuditEvent.action == "tenant.quotas.update",
+                )) == 1
+            )
+
+        admission_barrier = Barrier(2)
+
+        def admit_distinct(index: int) -> str:
+            admission_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    admitted = admit_run(
+                        session, "fixture-tenant", "fixture", "fixture-task",
+                        f"quota-race-{index}", body,
+                    )
+                    session.commit()
+                    return admitted.id
+                except ServiceError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(admit_distinct, index) for index in range(2)]
+            admission_results = [future.result(timeout=30) for future in futures]
+        postgres_run_quota_race = (
+            admission_results.count("RUN_CONCURRENCY_EXHAUSTED") == 1
+            and len([value for value in admission_results if value != "RUN_CONCURRENCY_EXHAUSTED"])
+            == 1
+        )
+
+        reservation_barrier = Barrier(2)
+
+        def reserve_tenant(index: int) -> str:
+            reservation_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    tenant = lock_tenant(session, "fixture-tenant")
+                    check_inference_reservation(session, tenant, Decimal("0.012"))
+                    session.add(BudgetEntry(
+                        tenant_id=tenant.id, run_id=ids[0], category=f"call:race-{index}",
+                        reserved_usd=Decimal("0.012"), actual_usd=Decimal(0),
+                        status="reserved",
+                    ))
+                    session.commit()
+                    return "reserved"
+                except QuotaError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(reserve_tenant, index) for index in range(2)]
+            reservation_results = [future.result(timeout=30) for future in futures]
+        postgres_inference_quota_race = sorted(reservation_results) == [
+            "TENANT_BUDGET_EXHAUSTED", "reserved"
+        ]
         # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
         # Both requests must return successfully while only one final event exists.
         import platform_app.api as api_module
@@ -375,6 +457,9 @@ def main() -> int:
             "schema_roundtrip": schema_roundtrip,
             "postgres_resume": postgres_resume,
             "postgres_recording_delete_race": postgres_recording_delete_race,
+            "postgres_run_quota_race": postgres_run_quota_race,
+            "postgres_inference_quota_race": postgres_inference_quota_race,
+            "quota_operator_audit": quota_operator_audit,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
             "cross_tenant_membership_denied": cross_tenant_membership_denied,
@@ -394,6 +479,9 @@ def main() -> int:
             and schema_roundtrip
             and postgres_resume
             and postgres_recording_delete_race
+            and postgres_run_quota_race
+            and postgres_inference_quota_race
+            and quota_operator_audit
             and all(v == 1 for v in counts.values())
             else 1
         )

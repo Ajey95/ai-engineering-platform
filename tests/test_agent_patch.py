@@ -126,6 +126,13 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         )
         db.commit()
         _, fence = claim_run(db, "run-a", "worker-one")
+        browser_receipt = {"status": "FAILED", "responses": [{"status": 500}]}
+        db.add(ToolAction(
+            tenant_id="tenant-a", run_id="run-a", step_id="browser",
+            logical_action="fixture.browser", effect_key="b" * 64,
+            arguments_hash="c" * 64, policy_result="allowed", status="COMPLETED",
+            receipt=browser_receipt,
+        ))
         db.commit()
 
     result = request_fixture_patch(
@@ -133,7 +140,7 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
         "run-a",
         "worker-one",
         fence,
-        {"browser": {"status": "FAILED", "responses": [{"status": 500}]}},
+        {"browser": browser_receipt},
         source.read_text(encoding="utf-8"),
         tmp_path,
         provider=adapter,

@@ -370,3 +370,32 @@ After commit `0a43f1b`, the PG API on 8101 was restarted from current source
 and the 5176 Vite server was restarted under supported bundled Node 24.19.0.
 Both API health and run `e53fe64f` HLS returned HTTP 200 after restart; the
 WSL Docker Engine reported 29.8.2. Keep 5176 as the user-facing demo URL.
+
+2026-10-02 tenant quota continuation: migration `eb8f0a7d36c4` adds UTC
+daily/monthly inference caps (default $50/$500) and concurrent run cap (default
+4). Admission and model reservations lock and refresh the tenant row before
+checking usage; settled actuals replace reservations, while pending calls
+retain upper-bound liability. Warnings emit on an 80% crossing. The trusted
+PostgreSQL operator CLI audits changes and identical retries are inert.
+Disposable PostgreSQL verification passed concurrent distinct-key admission
+and inference reservation races, migration roundtrip, CLI audit and existing
+deletion/ownership probes. The local PostgreSQL demo DB was upgraded to head;
+`alembic check` found no drift. The existing SQLite development DB was backed
+up and additively upgraded for tenant columns. Full Python suite passed 78,
+with one Windows symlink privilege skip, using a D: pytest temporary directory
+because C: had about 300 MB free. Resource caps beyond inference and run
+count, and hosted billing/provider qualification remain pending.
+
+2026-10-02 context excerpt continuation: `fixture_context_bundle` now verifies
+baseline tool receipts against completed ledger actions and reads test logs by
+safe run-scoped artifact path. It hashes the full file, checks the receipt
+digest, and supplies bounded head/tail text plus artifact ref and matching
+tool call/result ID. It rejects missing, tampered or unpaired evidence. The
+controlled WSL Docker verification run `5355bee2-42d7-4fa5-9a5e-56b88c023439`
+at pinned commit `7459696` reached REVIEW_READY/PASSED with ten completed
+effects and baseline/candidate media READY. Its provider response was a local
+HTTP fixture, so this verifies pipeline wiring only, not live model quality.
+After these changes the full Python suite passed 80 tests with one Windows
+symlink privilege skip; Ruff passed the edited Python files. The disposable
+PostgreSQL verifier again passed schema roundtrip, quota races, deletion race,
+owner bootstrap and tenant constraints.

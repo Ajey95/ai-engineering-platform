@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -20,6 +20,7 @@ from platform_app.models import (
 from platform_app.run_ledger import claim_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import ServiceError, admit_run, request_cancel
+from platform_app.tenant_quota import lock_tenant
 
 
 @pytest.fixture
@@ -91,6 +92,55 @@ def test_admission_is_atomic_and_idempotent(db):
     assert len(db.scalars(select(BudgetEntry)).all()) == 1
     assert len(db.scalars(select(OutboxEvent)).all()) == 1
     assert len(db.scalars(select(RunEvent)).all()) == 1
+
+
+def test_tenant_concurrent_run_cap_allows_idempotent_retry_and_releases_on_close(db):
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.max_concurrent_runs = 1
+    db.commit()
+    first = admit_run(db, "tenant-a", "alice", "task-a", "first-key", run_body())
+    db.commit()
+    assert admit_run(db, "tenant-a", "alice", "task-a", "first-key", run_body()).id == first.id
+    with pytest.raises(ServiceError) as error:
+        admit_run(db, "tenant-a", "alice", "task-a", "second-key", run_body())
+    assert error.value.code == "RUN_CONCURRENCY_EXHAUSTED"
+    first.state = "COMPLETED"
+    db.commit()
+    second = admit_run(db, "tenant-a", "alice", "task-a", "second-key", run_body())
+    db.commit()
+    assert second.id != first.id
+
+
+def test_tenant_spend_cap_blocks_new_admission(db):
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.daily_inference_cap_usd = Decimal("0.01")
+    tenant.monthly_inference_cap_usd = Decimal("0.02")
+    run = admit_run(db, "tenant-a", "alice", "task-a", "first-key", run_body())
+    db.flush()
+    db.add(
+        BudgetEntry(
+            tenant_id=tenant.id,
+            run_id=run.id,
+            category="call:old",
+            reserved_usd=Decimal("0.01"),
+            actual_usd=Decimal("0"),
+            status="reserved",
+        )
+    )
+    db.commit()
+    with pytest.raises(ServiceError) as error:
+        admit_run(db, "tenant-a", "alice", "task-a", "second-key", run_body())
+    assert error.value.code == "TENANT_BUDGET_EXHAUSTED"
+
+
+def test_locked_tenant_refreshes_cached_quota(db):
+    tenant = db.get(Tenant, "tenant-a")
+    assert Decimal(tenant.daily_inference_cap_usd) == Decimal("50")
+    db.execute(
+        text("UPDATE tenants SET daily_inference_cap_usd = :amount WHERE id = :tenant_id"),
+        {"amount": "0.015", "tenant_id": tenant.id},
+    )
+    assert Decimal(lock_tenant(db, tenant.id).daily_inference_cap_usd) == Decimal("0.015")
 
 
 def test_idempotency_key_cannot_be_reused_for_different_request(db):

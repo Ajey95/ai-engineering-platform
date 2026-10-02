@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
-from platform_app.models import Run, Task
+from platform_app.models import Run, Task, ToolAction
 from platform_app.service import ServiceError
 from platform_app.telemetry import tracer
 
@@ -40,6 +41,47 @@ def _item(
     }
 
 
+def _output_excerpt(root: Path, run_id: str, filename: str, expected_sha256: str) -> dict:
+    if Path(filename).name != filename or not filename or len(expected_sha256) != 64:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output reference is invalid", 409)
+    resolved_root = root.resolve(strict=True)
+    if (resolved_root / run_id).is_symlink():
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409)
+    baseline_path = resolved_root / run_id / "baseline"
+    if baseline_path.is_symlink():
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409)
+    baseline = baseline_path.resolve(strict=True)
+    if not baseline.is_relative_to(resolved_root):
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409)
+    artifact_path = baseline / filename
+    if artifact_path.is_symlink():
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409)
+    artifact = artifact_path.resolve(strict=True)
+    if not artifact.is_relative_to(baseline) or not artifact.is_file():
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409)
+    digest = hashlib.sha256()
+    head = b""
+    tail = b""
+    size = 0
+    with artifact.open("rb") as source:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+            size += len(chunk)
+            if len(head) < 2048:
+                head += chunk[: 2048 - len(head)]
+            tail = (tail + chunk)[-2048:]
+    if digest.hexdigest() != expected_sha256:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool output digest changed", 409)
+    return {
+        "artifact_ref": f"{run_id}/baseline/{filename}",
+        "sha256": expected_sha256,
+        "bytes": size,
+        "head": head.decode("utf-8", errors="replace"),
+        "tail": tail.decode("utf-8", errors="replace") if size > len(head) else "",
+        "truncated": size > 4096,
+    }
+
+
 @tracer.start_as_current_span("context.build")
 def fixture_context_bundle(
     run: Run,
@@ -48,6 +90,8 @@ def fixture_context_bundle(
     server_source: str,
     instruction: str,
     history: list[dict] | None = None,
+    artifact_root: Path | None = None,
+    tool_actions: dict[str, ToolAction] | None = None,
 ) -> dict:
     source_bytes = server_source.encode("utf-8")
     if len(source_bytes) > 50_000:
@@ -66,11 +110,36 @@ def fixture_context_bundle(
         )
     ]
     for name, receipt in sorted(baseline_receipts.items()):
+        pair = (tool_actions or {}).get(name)
+        if artifact_root is not None and (
+            pair is None
+            or pair.run_id != run.id
+            or pair.tenant_id != run.tenant_id
+            or pair.step_id != name
+            or pair.logical_action != f"fixture.{name}"
+            or pair.status != "COMPLETED"
+            or pair.receipt != receipt
+        ):
+            raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Tool call and result differ", 409)
+        output = None
+        if artifact_root is not None and receipt.get("output_file"):
+            try:
+                output = _output_excerpt(
+                    artifact_root, run.id, receipt["output_file"], receipt["output_sha256"]
+                )
+            except (OSError, KeyError, TypeError, ValueError) as error:
+                raise ServiceError(
+                    "EFFECT_OUTCOME_UNKNOWN", "Tool output is unavailable", 409
+                ) from error
         excerpt = json.dumps(
             {
                 "status": receipt.get("status"),
                 "exit_code": receipt.get("exit_code"),
                 "output_sha256": receipt.get("output_sha256"),
+                "tool_call_id": pair.id if pair else None,
+                "tool_result_for_call_id": pair.id if pair else None,
+                "output": output,
+                "steps": (receipt.get("steps") or [])[:5],
                 "responses": (receipt.get("responses") or [])[:5],
                 "page_errors": (receipt.get("page_errors") or [])[:5],
             },

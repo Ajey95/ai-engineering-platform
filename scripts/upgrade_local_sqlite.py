@@ -1,4 +1,4 @@
-"""Back up and add missing paused-run columns to an older development SQLite DB."""
+"""Back up and add missing columns to an older development SQLite DB."""
 
 from __future__ import annotations
 
@@ -15,6 +15,12 @@ RESUME_COLUMNS = {
     "resume_key": "VARCHAR(200)",
     "resume_input_hash": "VARCHAR(64)",
 }
+TENANT_COLUMNS = {
+    "daily_inference_cap_usd": "NUMERIC(12, 6) NOT NULL DEFAULT 50",
+    "monthly_inference_cap_usd": "NUMERIC(12, 6) NOT NULL DEFAULT 500",
+    "max_concurrent_runs": "INTEGER NOT NULL DEFAULT 4",
+}
+ADDITIVE_COLUMNS = {"runs": RESUME_COLUMNS, "tenants": TENANT_COLUMNS}
 
 
 def main() -> int:
@@ -25,11 +31,13 @@ def main() -> int:
     if not path.is_relative_to(workspace):
         raise SystemExit("Development database is outside this workspace")
     with sqlite3.connect(path, timeout=10) as source:
-        columns = {row[1] for row in source.execute("PRAGMA table_info(runs)")}
-        if not columns:
-            raise SystemExit("Runs table is missing")
-        missing = [name for name in RESUME_COLUMNS if name not in columns]
-        if not missing:
+        missing = {}
+        for table, definitions in ADDITIVE_COLUMNS.items():
+            columns = {row[1] for row in source.execute(f"PRAGMA table_info({table})")}
+            if not columns:
+                raise SystemExit(f"{table} table is missing")
+            missing[table] = [name for name in definitions if name not in columns]
+        if not any(missing.values()):
             print(json.dumps({"status": "current", "added_columns": []}))
             return 0
         backup_root = workspace / "artifacts" / "db-backups"
@@ -39,8 +47,11 @@ def main() -> int:
         with sqlite3.connect(backup) as destination:
             source.backup(destination)
         with source:
-            for name in missing:
-                source.execute(f"ALTER TABLE runs ADD COLUMN {name} {RESUME_COLUMNS[name]}")
+            for table, names in missing.items():
+                for name in names:
+                    source.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {ADDITIVE_COLUMNS[table][name]}"
+                    )
         print(
             json.dumps(
                 {

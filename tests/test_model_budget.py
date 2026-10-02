@@ -9,7 +9,16 @@ from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base
 from platform_app.model_budget import reserve_model_call, settle_model_call
-from platform_app.models import BudgetEntry, ModelEntry, Project, Run, Task, Tenant, ToolAction
+from platform_app.models import (
+    BudgetEntry,
+    ModelEntry,
+    Project,
+    Run,
+    RunEvent,
+    Task,
+    Tenant,
+    ToolAction,
+)
 from platform_app.run_ledger import claim_run
 from platform_app.service import ServiceError
 
@@ -179,3 +188,28 @@ def test_model_price_revision_drift_blocks_new_call(scope):
     with pytest.raises(ServiceError) as error:
         reserve_model_call(db, run, "worker-one", fence, model, "model-1", "Fix")
     assert error.value.code == "MODEL_REVISION_CHANGED"
+
+
+def test_tenant_inference_cap_blocks_reservation_before_tool_intent(scope):
+    db, run, model, fence = scope
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.daily_inference_cap_usd = Decimal("0.01")
+    with pytest.raises(ServiceError) as error:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-1", "Fix")
+    assert error.value.code == "TENANT_BUDGET_EXHAUSTED"
+    assert db.scalar(select(ToolAction)) is None
+    assert db.scalar(select(BudgetEntry)) is None
+
+
+def test_tenant_inference_80_percent_warning(scope):
+    db, run, model, fence = scope
+    tenant = db.get(Tenant, "tenant-a")
+    tenant.daily_inference_cap_usd = Decimal("0.014")
+    tenant.monthly_inference_cap_usd = Decimal("0.014")
+    _, reservation, _ = reserve_model_call(
+        db, run, "worker-one", fence, model, "model-1", "Fix"
+    )
+    db.commit()
+    assert Decimal(reservation.reserved_usd) <= Decimal("0.014")
+    warnings = db.scalars(select(RunEvent).where(RunEvent.event_type == "budget.warning")).all()
+    assert {event.payload["scope"] for event in warnings} == {"daily", "monthly"}

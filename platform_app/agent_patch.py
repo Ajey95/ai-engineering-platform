@@ -73,9 +73,14 @@ def _prompt(
     baseline_receipts: dict,
     server_source: str,
     history: list[dict],
+    artifact_root: Path,
+    tool_actions: dict[str, ToolAction],
 ) -> str:
     return json.dumps(
-        fixture_context_bundle(run, task, baseline_receipts, server_source, INSTRUCTION, history),
+        fixture_context_bundle(
+            run, task, baseline_receipts, server_source, INSTRUCTION, history,
+            artifact_root, tool_actions,
+        ),
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -132,7 +137,17 @@ def request_fixture_patch(
             }
             for event in reversed(resume_events)
         ]
-        prompt = _prompt(run, task, baseline_receipts, server_source, history)
+        baseline_actions = db.scalars(
+            select(ToolAction).where(
+                ToolAction.tenant_id == run.tenant_id,
+                ToolAction.run_id == run.id,
+                ToolAction.step_id.in_(list(baseline_receipts)),
+            )
+        ).all()
+        prompt = _prompt(
+            run, task, baseline_receipts, server_source, history, artifact_root,
+            {action.step_id: action for action in baseline_actions},
+        )
         action, reservation, plan = reserve_model_call(
             db,
             run,
