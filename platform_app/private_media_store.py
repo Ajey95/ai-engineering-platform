@@ -92,6 +92,15 @@ def publish_recording(
         raise ServiceError("MEDIA_STORE_UNAVAILABLE", "Private media bucket is invalid", 503)
     if label not in {"baseline", "candidate"}:
         raise ServiceError("INVALID_MEDIA_LABEL", "Unknown recording side", 400)
+    # Keep deletion serialized with the entire upload. A revocation cannot
+    # complete while this publisher can still write objects to its prefix.
+    locked = db.scalar(
+        select(Run).where(Run.id == run.id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked is None or locked.tenant_id != run.tenant_id:
+        raise ServiceError("MEDIA_NOT_READY", "Recording run is unavailable", 409)
+    run = locked
     if deletion_for(db, run, label) is not None:
         raise ServiceError("RECORDING_DELETED", "Recording access was revoked", 409)
     action = db.scalar(select(ToolAction).where(
@@ -181,10 +190,7 @@ def publish_recording(
     for name, value, content_type in files:
         _upload(client, config, prefix + name, value, content_type)
     _upload(client, config, prefix + "manifest.json", manifest, _CONTENT_TYPES[".json"])
-    # Serialize publication with deletion after all objects are verified.
-    locked = db.scalar(select(Run).where(Run.id == run.id).with_for_update()
-                       .execution_options(populate_existing=True))
-    if locked is None or locked.tenant_id != run.tenant_id or deletion_for(db, locked, label):
+    if deletion_for(db, locked, label):
         raise ServiceError("RECORDING_DELETED", "Recording was revoked during upload", 409)
     concurrent = db.scalar(select(PrivateMediaPublication).where(
         PrivateMediaPublication.tenant_id == run.tenant_id,

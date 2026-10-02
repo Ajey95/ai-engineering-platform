@@ -38,6 +38,8 @@ The paid pilot release gate in PRD §27.2 has not been run.
   Every new connection stays unverified until an authenticated integration probe
   exists. No customer checkout or publication is enabled by this record alone.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
+  Three consecutive completed actions with the same normalized signature and
+  stable result fields now fail the active run with a visible loop event.
 - `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
   claims a lease, archives the fixture and hidden oracle at the run's pinned
   commit, executes three isolated baseline checks, and stores effect intents
@@ -122,7 +124,7 @@ The paid pilot release gate in PRD §27.2 has not been run.
   decision. The API audits it, closes the run idempotently, and preserves the
   verification verdict separately from the review decision. Publication stays
   disabled and requires separate authorization.
-- `tests/`: 159 passing local tests and 3 skips (PostgreSQL checkpoint and
+- `tests/`: 161 passing local tests and 3 skips (PostgreSQL checkpoint and
   Memgraph integration gates need explicit local URLs; one Windows symlink
   privilege skip),
   including admission, fencing, interrupted
@@ -271,7 +273,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
 | FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. General tasks and live autonomous repair remain absent. |
-| FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. Active-time and hosted scope need qualification. |
+| FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. The run ledger detects three consecutive same-signature, same-result completed actions and fails visibly. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
 | FR-HAR-05 | Partial | Queued/paused/expired-lease cancellation closes; an active synthetic run was cancelled and its container exited; full provider cancellation untested. |
@@ -330,7 +332,8 @@ checks; AC-11 additionally has concurrent PostgreSQL tenant cap probes.
 AC-12/13 have canonical memory tests. AC-21 has a real
 FFmpeg encode and idempotency test. AC-27 has a live SSE disconnect/reconnect
 check with contiguous replay; hosted proxy/load behavior remains untested.
-AC-15 has a local
+AC-08 has a run-ledger unit test for three identical no-progress receipts; a
+general autonomous tool loop has not been exercised. AC-15 has a local
 development container restriction probe, not the hosted hostile-repository
 VM acceptance test. AC-30 has manual
 desktop/mobile browser inspection, not a full accessibility audit.

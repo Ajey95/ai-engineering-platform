@@ -277,3 +277,30 @@ def complete_tool_action(
             "status": receipt.get("status", "unknown"),
         },
     )
+    # Compare only stable result fields. Durations and artifact paths may vary
+    # between otherwise identical attempts and must not disguise a stuck loop.
+    db.flush()
+    recent = db.scalars(
+        select(ToolAction)
+        .where(ToolAction.run_id == run.id, ToolAction.status == "COMPLETED")
+        .order_by(ToolAction.completed_at.desc(), ToolAction.id.desc())
+        .limit(3)
+    ).all()
+    if len(recent) != 3 or run.state not in ACTIVE_STATES:
+        return
+    signatures = {(item.logical_action, item.arguments_hash) for item in recent}
+    progress_keys = (
+        "status", "exit_code", "output_sha256", "candidate_tree_sha256",
+        "patch_sha256", "result_sha256", "tree_sha256",
+    )
+    results = {
+        canonical_hash({key: (item.receipt or {}).get(key) for key in progress_keys})
+        for item in recent
+    }
+    if len(signatures) == 1 and len(results) == 1:
+        append_event(db, run, "run.loop_detected", {
+            "action": action.logical_action,
+            "signature_sha256": canonical_hash([action.logical_action, action.arguments_hash]),
+            "repetitions": 3,
+        })
+        transition(db, run, worker_id, fence, "FAILED", "INCONCLUSIVE")

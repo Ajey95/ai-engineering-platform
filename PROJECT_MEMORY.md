@@ -942,3 +942,20 @@ passed, 3 skipped; private media focused tests 4 passed after the last upload
 change; Ruff passed; the web production build passed; Alembic reported no new
 upgrade operations against local PostgreSQL. These are controlled local checks,
 not AWS edge or hosted execution qualification.
+
+2026-10-03 controlled Docker recheck at committed `ffcef2d285f95769f595d8b0bd69a586dbf6164f`:
+`scripts.verify_development_worker --controlled-provider --runtime wsl --image
+aip-dev-sandbox:0.1.1` passed for run
+`7eb01907-960d-4bc0-9e09-18a82c3581cb`. It reached REVIEW_READY/PASSED,
+delivered its dispatch, recorded 10 tool effects and both media READY. The
+provider response was predetermined, so this is a controlled fixture proof.
+
+The run ledger now compares three consecutive completed tool actions by
+logical action, arguments hash and stable result fields. An identical
+no-progress sequence emits `run.loop_detected` and fails the active run with
+an INCONCLUSIVE verdict. Focused ledger tests cover the guard and a changed
+result reset. Private media publication also holds the run row lock across
+upload, serializing revocation with S3 writes; abandoned partial uploads still
+need a janitor and hosted qualification.
+The full Python suite passed 161 tests with 3 skips after this change, and
+scoped Ruff passed.
