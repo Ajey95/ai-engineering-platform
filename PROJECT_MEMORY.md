@@ -1037,3 +1037,26 @@ standard queues and 14-day DLQs with bounded redrive; format and validate
 passed with AWS provider 6.67.0. Controlled queue tests passed and the full
 Python suite passed 177 tests with 3 skips; scoped Ruff passed. No live SQS,
 hosted customer consumer or production queue IAM role has been qualified.
+
+2026-10-03 post-transport local end-to-end recheck at commit
+`cb16fca92476eee6fe597d83f18930c053121f04`: the WSL Docker controlled
+provider verifier processed run `c5b04f72-3359-43e7-87d5-4674548e6ac0`
+to REVIEW_READY/PASSED with baseline PASS/FAIL/FAIL, candidate PASS/PASS/PASS,
+10 tool effects, delivered dispatch and both recordings READY. The response
+was predetermined (`autonomous_repair=false`), so this is a synthetic fixture
+proof, not autonomous customer repair. The local API `/v1/health` and Vite
+root returned HTTP 200. Headless Chromium loaded the Projects page and clicked
+Runs, Review, Memory, Evaluations, Operations, Usage and Settings with each
+expected heading and no page errors. It saved `artifacts/ui-current.png` for
+local review. These checks do not prove hosted identity, queues or providers.
+
+2026-10-03 archive boundary increment: `platform_app/safe_archive.py` now
+extracts only regular files/directories into an empty workspace. It rejects
+traversal, links, devices, duplicate/case-colliding and Windows-reserved paths,
+file-as-parent ambiguity, and excess compressed/expanded/file counts. The
+pinned fixture workflow uses it instead of direct `tarfile.extractall`.
+Focused archive/development-worker/code-navigation tests passed 17 with one
+skip, then archive edge tests passed 10 with one skip; scoped Ruff passed.
+The single skip is a Windows directory-symlink privilege limitation. Hosted
+customer source ingestion and guest execution remain unqualified.
+The full Python suite then passed 187 tests with 4 skips.

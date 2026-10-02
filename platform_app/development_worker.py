@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import subprocess
-import tarfile
 import tempfile
 import threading
 import time
@@ -55,6 +53,7 @@ from platform_app.run_ledger import (
     heartbeat,
     transition,
 )
+from platform_app.safe_archive import UnsafeArchive, extract_regular_tar
 from platform_app.service import ServiceError, append_event, request_cancel
 from platform_app.telemetry import (
     configure_telemetry,
@@ -141,29 +140,23 @@ def _pinned_fixture(repository: Path, commit: str, destination: Path) -> tuple[P
     )
     if archive.returncode:
         raise ServiceError("FIXTURE_UNAVAILABLE", "Pinned fixture commit is unavailable", 409)
-    with tarfile.open(fileobj=io.BytesIO(archive.stdout), mode="r:") as source:
-        for member in source.getmembers():
-            parts = Path(member.name).parts
-            allowed_parents = {
-                "benchmarks",
-                "benchmarks/fixtures",
-                FIXTURE_PATH,
-                "benchmarks/oracles",
-                "benchmarks/oracles/form-submit-001",
-            }
-            if (
-                (
-                    member.name not in allowed_parents
-                    and not member.name.startswith(FIXTURE_PATH + "/")
-                    and member.name != ORACLE_PATH
-                )
-                or ".." in parts
-                or not (member.isfile() or member.isdir())
-            ):
-                raise ServiceError(
-                    "FIXTURE_UNSAFE", "Fixture archive contains an unsafe entry", 409
-                )
-        source.extractall(destination, filter="data")
+    allowed_parents = {
+        "benchmarks", "benchmarks/fixtures", FIXTURE_PATH,
+        "benchmarks/oracles", "benchmarks/oracles/form-submit-001",
+    }
+    try:
+        extract_regular_tar(
+            archive.stdout, destination,
+            permitted=lambda name: (
+                name in allowed_parents
+                or name.startswith(FIXTURE_PATH + "/")
+                or name == ORACLE_PATH
+            ),
+        )
+    except UnsafeArchive as error:
+        raise ServiceError(
+            "FIXTURE_UNSAFE", "Fixture archive contains an unsafe entry", 409
+        ) from error
     root = destination / FIXTURE_PATH
     return root / "manifest.json", root / "base", destination / ORACLE_PATH
 
