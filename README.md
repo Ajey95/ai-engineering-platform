@@ -190,6 +190,17 @@ python -m scripts.verify_postgres_admission
 python -m scripts.verify_dev_container_security
 ```
 
+The latest migration reserves `aip_workflow` for LangGraph checkpoints. The
+development worker initializes the checkpointer tables there and resumes a
+failed phase by run ID after reclaiming the run lease. Its SQLite-only test
+mode uses an in-memory checkpointer; use PostgreSQL for durable local runs.
+The optional checkpoint integration gate is:
+
+```powershell
+$env:AIP_TEST_POSTGRES_URL='postgresql://aip:local_only@127.0.0.1:54329/aip'
+uv run pytest -q tests/test_fixture_workflow.py
+```
+
 The PostgreSQL verifier creates and drops a unique test database. It checks
 duplicate admission, resume, tenant constraints, migration roundtrip and
 simultaneous recording deletion with one final event. Its

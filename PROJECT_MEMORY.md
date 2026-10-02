@@ -565,3 +565,9 @@ global no-store middleware applies. The packet references independently
 authorized evidence URLs; it is not a self-contained archive. Tests verify
 packet equality and denial for another tenant. Frontend TypeScript/Vite build
 passed, though the shell's Node 21 emits Vite's unsupported-version warning.
+Committed as `60e4224`. API 8101 and the WSL-backed worker were restarted from
+this revision. API health and the authorized review packet download for the
+persisted local demo run returned HTTP 200; the download was 5,175 bytes with
+an attachment filename. Vite 5176 returned HTTP 200. The PostgreSQL admission
+verifier also passed migration roundtrip at `4bc7f793d66a`, resume, quota
+races, recording deletion race and tenant scope probes.
