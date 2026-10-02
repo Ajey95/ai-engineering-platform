@@ -406,3 +406,36 @@ day/month, and emits `budget.breached` if an overrun crosses a cap. A disabled
 tenant can still settle an in-flight provider liability. Tests cover period
 reset, overrun and disabled-tenant settlement. Python suite: 83 passed, one
 Windows symlink privilege skip; Ruff and disposable PostgreSQL verifier passed.
+
+2026-10-02 verifier log streaming: synthetic named tests and hidden oracle now
+stream combined stdout/stderr to their artifact files instead of buffering all
+output in Python memory. Receipts hash file bytes and record `output_bytes`.
+A focused binary-output test wrote 100,000 bytes, verified full preservation
+and matching digest; existing timeout tests passed. The sandbox image rebuild
+and controlled end-to-end replay were pending at this checkpoint.
+
+2026-10-02 Docker disk recovery and regression workflow: a full WSL browser
+image rebuild downloaded a changed Python base and browser packages until C:
+reached zero free bytes, causing WSL filesystem I/O errors. The build was
+stopped and WSL shut down. Automatic approval review rejected recursive
+deletion of generated C: pytest folders; those exact folders were moved into
+ignored `artifacts/pytest-c-cache-recovery`. Two inactive Terraform provider
+temp files were moved into ignored `artifacts/c-temp-recovery`. The inactive
+Puppeteer cache was moved into ignored `artifacts/c-cache-recovery/puppeteer`
+and a junction left at its original C: path. C: then had about 740 MB free.
+WSL Docker Engine 29.8.2 and PostgreSQL were restarted, followed by the PG
+worker; web 5176, API health, and existing HLS returned 200. Do not run another
+full browser image rebuild on this C: allocation until storage is relocated.
+
+A code-only image `aip-dev-sandbox:0.1.1` was built from the existing base with
+the new verifier file. Controlled WSL run
+`388e8941-78ce-4fab-bbeb-7c9b5ab4b2ae` at commit `4e30b55` reached
+REVIEW_READY/PASSED with ten effects and both media sides READY. The live
+development worker now uses image 0.1.1. A native Linux UID 1000 fixture
+probe passed artifact writes from an unprivileged container. Workflow
+`.github/workflows/quality.yml` defines push/PR Python, web, PostgreSQL and
+controlled sandbox jobs using verified action versions; no GitHub remote is
+configured, so no hosted workflow execution has occurred. Local Python suite:
+84 passed, one Windows symlink privilege skip; Ruff, Alembic drift check and
+Node 24 web build passed. Docker Desktop's stale socket problem remains; the
+WSL Engine is the working project runtime.

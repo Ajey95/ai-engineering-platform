@@ -1,4 +1,4 @@
-"""Verify admitted synthetic runs against real WSL containers.
+"""Verify admitted synthetic runs against real development containers.
 
 The optional controlled provider mode uses a predetermined HTTP response. It
 tests the protocol, not a live provider account or autonomous diagnosis.
@@ -32,6 +32,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--controlled-provider", action="store_true")
     parser.add_argument("--resume-probe", action="store_true")
+    parser.add_argument("--runtime", choices=("wsl", "native"), default="wsl")
+    parser.add_argument("--image", default="aip-dev-sandbox:0.1.0")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     target = root / "artifacts" / "worker-verification" / uuid4().hex[:12]
@@ -155,7 +157,10 @@ def main() -> int:
         adapter = OpenAIResponses(
             "controlled-response-only", client=httpx.Client(transport=httpx.MockTransport(respond))
         )
-    worker = DevelopmentWorker(root, target, session_factory=factory, patch_provider=adapter)
+    worker = DevelopmentWorker(
+        root, target, session_factory=factory, patch_provider=adapter, runtime=args.runtime,
+        image=args.image,
+    )
     processed = worker.process_next()
     with factory() as db:
         run = db.get(Run, run_id)

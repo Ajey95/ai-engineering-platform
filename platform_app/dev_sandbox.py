@@ -43,6 +43,14 @@ def _mount_source(path: Path, runtime: str) -> str:
     return f"/mnt/{drive}/{resolved.relative_to(resolved.anchor).as_posix()}"
 
 
+def _container_identity(runtime: str) -> tuple[int, int]:
+    # Native Linux bind mounts retain host ownership. Match the unprivileged
+    # runner so the sandbox can read its pinned workspace and write evidence.
+    if runtime == "native" and hasattr(os, "getuid") and os.getuid() != 0:
+        return os.getuid(), os.getgid()
+    return 10001, 10001
+
+
 def prepare_workspace(source: Path, destination: Path) -> None:
     """Copy only ordinary files and directories; reject links and reparse points."""
     source = source.resolve(strict=True)
@@ -80,13 +88,15 @@ def _container_base_command(
             continue
         if not path.resolve(strict=True).exists():
             raise ValueError("Sandbox inputs must exist")
+    uid, gid = _container_identity(runtime)
     command = [
         *_docker_prefix(runtime, wsl_distro), "run", "--rm", "--init", "--name", name,
         "--network", "none", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--pids-limit", "256",
         "--cpus", "2", "--memory", "4g", "--shm-size", "1g",
+        "--user", f"{uid}:{gid}", "--env", "HOME=/home/pwuser",
         "--tmpfs", "/tmp:rw,nosuid,size=1073741824",
-        "--tmpfs", "/home/pwuser:rw,nosuid,size=67108864,uid=10001,gid=10001",
+        "--tmpfs", f"/home/pwuser:rw,nosuid,size=67108864,uid={uid},gid={gid}",
         "--mount", f"type=bind,src={_mount_source(workspace, runtime)},dst=/workspace,readonly",
         "--mount", (
             f"type=bind,src={_mount_source(manifest, runtime)},"

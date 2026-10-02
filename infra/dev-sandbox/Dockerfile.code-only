@@ -1,0 +1,8 @@
+# Local development refresh from an existing sandbox image. The full Dockerfile
+# remains the reproducible build for CI and new machines.
+ARG BASE_IMAGE=aip-dev-sandbox:0.1.0
+FROM ${BASE_IMAGE}
+
+COPY platform_app/browser_runner.py /opt/platform/browser_runner.py
+COPY platform_app/verifier.py /opt/platform/verifier.py
+COPY platform_app/container_verifier.py /opt/platform/container_verifier.py

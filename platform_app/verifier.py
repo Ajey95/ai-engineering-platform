@@ -41,6 +41,16 @@ def tree_hash(workspace: Path) -> str:
     return digest.hexdigest()
 
 
+def _output_receipt(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as source:
+        while chunk := source.read(65536):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
 def run_named_test(
     manifest: dict,
     name: str,
@@ -59,28 +69,25 @@ def run_named_test(
     tested_tree_hash = tree_hash(workspace)
     started = datetime.now(UTC).isoformat()
     tick = time.monotonic()
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            errors="replace",
-        )
-        exit_code = completed.returncode
-        status = "PASSED" if exit_code == 0 else "FAILED"
-        output = completed.stdout + "\n" + completed.stderr
-    except subprocess.TimeoutExpired as error:
-        exit_code = None
-        status = "TIMEOUT"
-        output = f"Test timed out after {timeout_seconds} seconds: {error}"
+    output_path = artifacts / f"test-{name}.log"
+    with output_path.open("wb") as output:
+        try:
+            completed = subprocess.run(
+                command, cwd=workspace, stdout=output, stderr=subprocess.STDOUT,
+                timeout=timeout_seconds,
+            )
+            exit_code = completed.returncode
+            status = "PASSED" if exit_code == 0 else "FAILED"
+        except subprocess.TimeoutExpired:
+            exit_code = None
+            status = "TIMEOUT"
+            output.write(f"\nTest timed out after {timeout_seconds} seconds\n".encode())
     after_hash = tree_hash(workspace)
     if tested_tree_hash != after_hash:
         status = "INCONCLUSIVE"
-        output += "\nWorkspace changed while the test was running."
-    output_path = artifacts / f"test-{name}.log"
-    output_path.write_text(output, encoding="utf-8")
+        with output_path.open("ab") as output:
+            output.write(b"\nWorkspace changed while the test was running.\n")
+    output_sha256, output_bytes = _output_receipt(output_path)
     receipt = {
         "schema_version": "1.0",
         "case_id": manifest["case_id"],
@@ -94,7 +101,8 @@ def run_named_test(
         "exit_code": exit_code,
         "status": status,
         "output_file": output_path.name,
-        "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+        "output_sha256": output_sha256,
+        "output_bytes": output_bytes,
     }
     (artifacts / f"test-{name}.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     return receipt
@@ -115,29 +123,26 @@ def run_hidden_oracle(
     command = ["python", "-m", "pytest", "-q", str(oracle.resolve())]
     tick = time.monotonic()
     started = datetime.now(UTC).isoformat()
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=workspace,
-            env={**os.environ, "PYTHONPATH": str(workspace.resolve())},
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=timeout_seconds,
-        )
-        exit_code = completed.returncode
-        status = "PASSED" if exit_code == 0 else "FAILED"
-        output = completed.stdout + "\n" + completed.stderr
-    except subprocess.TimeoutExpired:
-        exit_code = None
-        status = "TIMEOUT"
-        output = f"Oracle timed out after {timeout_seconds} seconds"
+    log = artifacts / "oracle.log"
+    with log.open("wb") as output:
+        try:
+            completed = subprocess.run(
+                command, cwd=workspace,
+                env={**os.environ, "PYTHONPATH": str(workspace.resolve())},
+                stdout=output, stderr=subprocess.STDOUT, timeout=timeout_seconds,
+            )
+            exit_code = completed.returncode
+            status = "PASSED" if exit_code == 0 else "FAILED"
+        except subprocess.TimeoutExpired:
+            exit_code = None
+            status = "TIMEOUT"
+            output.write(f"\nOracle timed out after {timeout_seconds} seconds\n".encode())
     after_hash = tree_hash(workspace)
     if after_hash != tested_tree_hash:
         status = "INCONCLUSIVE"
-        output += "\nWorkspace changed while oracle ran."
-    log = artifacts / "oracle.log"
-    log.write_text(output, encoding="utf-8")
+        with log.open("ab") as output:
+            output.write(b"\nWorkspace changed while oracle ran.\n")
+    output_sha256, output_bytes = _output_receipt(log)
     receipt = {
         "schema_version": "1.0",
         "case_id": manifest["case_id"],
@@ -151,7 +156,8 @@ def run_hidden_oracle(
         "exit_code": exit_code,
         "status": status,
         "output_file": log.name,
-        "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest(),
+        "output_sha256": output_sha256,
+        "output_bytes": output_bytes,
     }
     (artifacts / "oracle.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     return receipt

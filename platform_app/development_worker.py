@@ -851,10 +851,15 @@ def main() -> int:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--artifacts", type=Path, default=Path(settings().artifact_dir))
     parser.add_argument("--runtime", choices=["native", "wsl"], default="wsl")
+    parser.add_argument("--image", default="aip-dev-sandbox:0.1.0")
     parser.add_argument("--serve", action="store_true", help="Poll the durable dispatch outbox")
     parser.add_argument("--poll-seconds", type=float, default=2.0)
     args = parser.parse_args()
-    worker = DevelopmentWorker(args.repository, args.artifacts, runtime=args.runtime)
+    if args.image.startswith("-") or any(character.isspace() for character in args.image):
+        parser.error("--image must be a Docker image reference")
+    worker = DevelopmentWorker(
+        args.repository, args.artifacts, runtime=args.runtime, image=args.image
+    )
     if args.serve:
         if not 0.2 <= args.poll_seconds <= 60:
             parser.error("--poll-seconds must be between 0.2 and 60")

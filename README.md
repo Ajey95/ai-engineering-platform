@@ -25,9 +25,9 @@ and release blockers.
 - Token envelope and spend preflight calculations.
 - A bounded, source-backed ContextBundle for the synthetic repair call, with
   commit/file hashes, scoped evidence and explicit trust labels.
-- Synthetic test logs remain in artifact files; the repair context includes
-  bounded, digest-verified excerpts and references paired to completed tool
-  action IDs.
+- Synthetic test and oracle output streams to artifact files with byte counts
+  and digests; the repair context includes bounded, verified excerpts and
+  references paired to completed tool action IDs.
 - Local FFmpeg HLS encoding with staging and immutable publication.
 - A per-recording delete route and Review control for closed runs. It revokes
   local media access, removes that side's raw WebM and HLS files, and retains
@@ -116,7 +116,8 @@ SQLite file. This mode is for synthetic data only.
 
 For the current verified local session, use `http://127.0.0.1:5176/`. Its API
 is on port 8101, backed by local PostgreSQL, and the polling development worker
-uses the WSL Docker Engine. The older 5173–5175 sessions may serve earlier
+uses the WSL Docker Engine with code-only image `aip-dev-sandbox:0.1.1`.
+The older 5173–5175 sessions may serve earlier
 code or a separate SQLite database. The Review screen can
 delete one closed run's baseline or candidate recording independently of the
 run transcript. `DELETE /v1/runs/{run_id}/recordings/{label}` is idempotent;
@@ -135,6 +136,22 @@ hidden oracle and artifact directory. In WSL mode, named tests, browser actions
 and the hidden oracle run in separate development containers. The oracle is
 mounted only for its verifier invocation. These containers are for synthetic
 fixtures; they are not the hosted customer VM boundary.
+
+The repository includes `.github/workflows/quality.yml` for push/PR Python,
+web, PostgreSQL and controlled sandbox gates. It has not run on GitHub because
+this checkout has no remote. The sandbox verifier accepts `--runtime native`
+for an unprivileged Linux runner and `--image` for a local code-only refresh.
+On this Windows host, check C: space before rebuilding the full browser image.
+When the base image already exists, a small development refresh can be built
+without redownloading browser dependencies:
+
+```powershell
+wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.1 .'
+uv run python -m scripts.verify_development_worker --controlled-provider --image aip-dev-sandbox:0.1.1
+```
+
+The code-only image inherits the locally installed base image; CI uses the
+reproducible full Dockerfile.
 
 For this workspace on Windows, install and start the WSL Engine, then build the
 development image:

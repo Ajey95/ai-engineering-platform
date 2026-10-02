@@ -55,6 +55,8 @@ def test_dev_container_has_no_network_or_host_privileges(tmp_path: Path):
     assert "--read-only" in command
     assert "--privileged" not in command
     assert "/var/run/docker.sock" not in " ".join(command)
+    user_index = command.index("--user")
+    assert command[user_index + 1] != "0:0"
     if os.name == "nt":
         wsl_command = docker_browser_command(
             "aip-dev-sandbox:0.1.0", workspace, manifest, artifacts,
