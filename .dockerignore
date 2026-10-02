@@ -1,0 +1,15 @@
+.git
+.venv
+artifacts
+apps/web/node_modules
+apps/web/dist
+infra/terraform/**/.terraform
+*.db
+*.pyc
+__pycache__
+.pytest_cache
+.ruff_cache
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json

@@ -980,3 +980,21 @@ changes (3 passed). The actual Node 24.19 Vite build succeeded; local build
 inspection found one 408-byte index and three assets totalling 883,413 bytes.
 Ruff and Terraform validation passed. No AWS account or deployed web origin is
 available for a live publish/playback test.
+
+The private media deletion dispatcher now processes a bounded set of pending
+events per poll in ascending attempt count. A failed old event no longer
+monopolizes the queue ahead of a fresh deletion. Focused private-media and web
+publisher tests passed 8/8 and scoped Ruff passed; live S3/CloudFront replay
+still needs the selected AWS account.
+
+2026-10-03 control-plane image: `infra/control-plane/Dockerfile` built with
+locked Python dependencies in the functioning Ubuntu WSL Docker Engine as
+`aip-control-plane:0.1.1`, image digest
+`sha256:8c7c46b3f0f550d92410bff41bc37f6393a2d91cfbd0584478a00e7fb77af4b5`
+(1,142,363,898 bytes). A temporary container ran as UID 10001 with read-only
+root, all capabilities dropped, no-new-privileges, PID/memory/CPU bounds and
+tmpfs for SQLite/artifacts. Inside health returned ok; from Windows loopback
+health returned 200, unauthenticated `/v1/projects` 401 and the smoke bearer
+token returned an empty list. The container was stopped. This proves a local
+container runtime, not ECS, live OIDC, a hosted DB or customer sandbox. Docker
+Desktop remains broken; the WSL Engine remains the working runtime.

@@ -8,12 +8,23 @@ import time
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from platform_app.config import settings
 from platform_app.db import SessionLocal
 from platform_app.models import OutboxEvent
 from platform_app.private_media_deletion import process_private_media_deletion
 from platform_app.service import ServiceError
+
+
+def pending_event_ids(db: Session, limit: int = 100) -> list[str]:
+    """Retry old failures without letting one bad event starve new deletions."""
+    return list(db.scalars(
+        select(OutboxEvent.id).where(
+            OutboxEvent.topic == "private_media.delete",
+            OutboxEvent.status == "pending",
+        ).order_by(OutboxEvent.attempts, OutboxEvent.created_at, OutboxEvent.id).limit(limit)
+    ))
 
 
 def main() -> int:
@@ -32,16 +43,21 @@ def main() -> int:
     cloudfront = boto3.client("cloudfront")
     while True:
         with SessionLocal() as db:
-            event = db.scalar(
-                select(OutboxEvent).where(
-                    OutboxEvent.topic == "private_media.delete",
-                    OutboxEvent.status == "pending",
-                ).order_by(OutboxEvent.created_at).with_for_update(skip_locked=True).limit(1)
-            )
-            if event is None:
-                if not args.serve:
-                    return 0
-            else:
+            ids = pending_event_ids(db)
+        if not ids and not args.serve:
+            return 0
+        incomplete = False
+        for event_id in ids:
+            with SessionLocal() as db:
+                event = db.scalar(
+                    select(OutboxEvent).where(
+                        OutboxEvent.id == event_id,
+                        OutboxEvent.topic == "private_media.delete",
+                        OutboxEvent.status == "pending",
+                    ).with_for_update(skip_locked=True)
+                )
+                if event is None:
+                    continue
                 try:
                     complete = process_private_media_deletion(
                         db, config, event, s3, cloudfront
@@ -50,8 +66,7 @@ def main() -> int:
                     event.attempts += 1
                     db.commit()
                     print(f"Private media deletion retry: {type(error).__name__}", flush=True)
-                    if not args.serve:
-                        return 2
+                    incomplete = True
                 else:
                     db.commit()
                     print(
@@ -59,9 +74,10 @@ def main() -> int:
                         f"{'complete' if complete else 'edge pending'}",
                         flush=True,
                     )
-                    if not args.serve and not complete:
-                        return 2
+                    incomplete |= not complete
         if not args.serve:
+            if incomplete:
+                return 2
             continue
         time.sleep(args.poll_seconds)
 

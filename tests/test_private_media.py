@@ -34,6 +34,7 @@ from platform_app.private_media_deletion import process_private_media_deletion
 from platform_app.private_media_store import publish_recording
 from platform_app.recording_deletion import reconcile_local_recording_deletions
 from platform_app.service import ServiceError
+from scripts.dispatch_private_media_deletions import pending_event_ids
 
 
 def _config() -> tuple[Settings, rsa.RSAPrivateKey]:
@@ -314,4 +315,27 @@ def test_remote_deletion_waits_for_edge_invalidation_and_survives_local_reconcil
             call["InvalidationBatch"]["CallerReference"] == deletion.id
             for call in cloudfront.calls
         )
+    engine.dispose()
+
+
+def test_private_deletion_dispatch_prioritizes_untried_events():
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all([
+            OutboxEvent(
+                id="old-failing", tenant_id="tenant-a", topic="private_media.delete",
+                payload={}, status="pending", attempts=3,
+            ),
+            OutboxEvent(
+                id="new-pending", tenant_id="tenant-a", topic="private_media.delete",
+                payload={}, status="pending", attempts=0,
+            ),
+            OutboxEvent(
+                id="other-topic", tenant_id="tenant-a", topic="run.dispatch",
+                payload={}, status="pending", attempts=0,
+            ),
+        ])
+        db.commit()
+        assert pending_event_ids(db) == ["new-pending", "old-failing"]
     engine.dispose()

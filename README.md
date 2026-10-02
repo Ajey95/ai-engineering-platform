@@ -110,6 +110,10 @@ admission remains disabled until the production sandbox is qualified. Hosted
 private media code is present, but its AWS origin, edge policy and playback have
 not been qualified with a live account.
 
+The [control-plane image](infra/control-plane/README.md) packages the locked
+API and trusted worker code as a non-root container. A local read-only Docker
+smoke test passed; no hosted control plane has been deployed.
+
 ## Local setup
 
 Requirements: Python 3.12, `uv`, Node 22.12 or newer, npm, and FFmpeg for media tests.

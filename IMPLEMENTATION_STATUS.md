@@ -32,6 +32,13 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - Hosted run admission returns `EXECUTION_UNAVAILABLE` until a customer VM
   sandbox is implemented; the development Docker adapter remains isolated to
   synthetic fixtures.
+- `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
+  code as a non-root image separate from the synthetic fixture runner. The
+  WSL Docker build produced local image digest
+  `sha256:8c7c46b3f0f550d92410bff41bc37f6393a2d91cfbd0584478a00e7fb77af4b5`.
+  A read-only, capability-dropped smoke container returned health 200,
+  unauthenticated projects 401 and token-authorized empty projects. It has not
+  been pushed, deployed, or run against hosted PostgreSQL/OIDC.
 - Scoped GitHub repository connection records accept canonical HTTPS
   owner/repo identity and opaque `secret://` references. Maintainers can register
   or disable them; readers can list readiness without seeing the secret reference.
@@ -95,7 +102,9 @@ The paid pilot release gate in PRD §27.2 has not been run.
   S3 upload with SHA-256 verification and encryption, a scoped CloudFront
   signed-cookie grant, browser refresh, and durable deletion/invalidation
   reconciliation. Tests use fake S3/CloudFront clients and a generated RSA key;
-  no live AWS delivery, bucket policy or edge authorization has been qualified.
+  deletion dispatch prioritizes untried events so one failing event does not
+  starve later revocations. No live AWS delivery, bucket policy or edge
+  authorization has been qualified.
 - `infra/terraform/edge`: validated AWS provider v6.67 module for a shared
   application hostname, uncached API and HTML, cached hashed web assets,
   private media S3 origin with origin access control, signed-cookie key group,
