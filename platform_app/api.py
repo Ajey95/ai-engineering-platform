@@ -66,6 +66,7 @@ from platform_app.models import (
     TenantMembership,
     ToolAction,
 )
+from platform_app.operations import operations_snapshot
 from platform_app.publication import approve_draft_pr
 from platform_app.recording_deletion import (
     deletion_for,
@@ -1456,6 +1457,15 @@ def register_model(
         raise ServiceError(error.code, str(error), 409) from error
     db.commit()
     return {"id": model.id, "state": model.state}
+
+
+@app.get("/v1/operations/summary")
+def operations_summary(
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    return operations_snapshot(db, identity[0])
 
 
 @app.get("/v1/usage")

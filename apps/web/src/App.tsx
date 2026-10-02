@@ -7,7 +7,7 @@ import {
 import { api, jsonBody, type CheckReceipt, type ModelEntry, type Project, type RepositoryConnection, type ReviewPacket, type Run, type RunEvent, type Task } from './api'
 const MediaPlayer = lazy(() => import('./MediaPlayer'))
 
-type Page = 'projects' | 'runs' | 'review' | 'memory' | 'evaluations' | 'usage' | 'settings'
+type Page = 'projects' | 'runs' | 'review' | 'memory' | 'evaluations' | 'operations' | 'usage' | 'settings'
 type DevEvaluation = {
   case_id: string; qualification_scope: string; autonomous_repair: boolean
   candidate_origin: string; verdict: string
@@ -25,6 +25,18 @@ type MemoryRecord = {
   history: { status: MemoryStatus; previous_status: MemoryStatus | null; actor: string
     reason: string; evidence_ref: string | null; created_at: string }[]
 }
+type OperationsSummary = {
+  window_start: string; observed_at: string
+  runs: { by_state: Record<string, number>; closed_by_verdict: Record<string, number>
+    closed_count: number; reviewed_count: number; verification_pass_rate: number | null
+    inconclusive_rate: number | null; review_acceptance_rate: number | null }
+  queue: { queued_count: number; oldest_age_seconds: number | null }
+  graph: { pending_count: number; oldest_age_seconds: number | null }
+  tools: { by_policy_result: Record<string, number>; failed_count: number }
+  media: { by_status: Record<string, number> }
+  inference_budget: { reserved_usd: string; actual_usd: string }
+  warnings_now: string[]; unavailable: string[]
+}
 
 const nav: { id: Page; label: string; icon: typeof FolderGit2 }[] = [
   { id: 'projects', label: 'Projects', icon: FolderGit2 },
@@ -32,6 +44,7 @@ const nav: { id: Page; label: string; icon: typeof FolderGit2 }[] = [
   { id: 'review', label: 'Review', icon: ClipboardList },
   { id: 'memory', label: 'Memory', icon: BookOpen },
   { id: 'evaluations', label: 'Evaluations', icon: Gauge },
+  { id: 'operations', label: 'Operations', icon: ShieldCheck },
   { id: 'usage', label: 'Usage', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
@@ -75,6 +88,8 @@ export default function App() {
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([])
   const [memoryRecordsMore, setMemoryRecordsMore] = useState(false)
   const [devEvaluation, setDevEvaluation] = useState<DevEvaluation | null>(null)
+  const [operations, setOperations] = useState<OperationsSummary | null>(null)
+  const [operationsError, setOperationsError] = useState('')
   const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
 
   const refresh = useCallback(async () => {
@@ -111,6 +126,17 @@ export default function App() {
     void api<DevEvaluation>('/dev/evaluation').then(value => {
       if (active) setDevEvaluation(value)
     }).catch(() => { if (active) setDevEvaluation(null) })
+    return () => { active = false }
+  }, [page])
+
+  useEffect(() => {
+    if (page !== 'operations') return
+    let active = true
+    void api<OperationsSummary>('/operations/summary').then(value => {
+      if (active) { setOperations(value); setOperationsError('') }
+    }).catch(cause => {
+      if (active) { setOperations(null); setOperationsError(cause instanceof Error ? cause.message : 'Operations unavailable') }
+    })
     return () => { active = false }
   }, [page])
 
@@ -381,6 +407,25 @@ export default function App() {
           <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
         {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} decideReview={decideReview} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
+        {page === 'operations' && <section className="page-section">
+          <div className="page-heading"><div><h1>Operations</h1><p>Owner-only snapshot of persisted control-plane activity.</p></div></div>
+          {operationsError && <div className="notice">{operationsError}</div>}
+          {operations && <>
+            <p className="muted">Last 24 hours · observed {date(operations.observed_at)}. Verification rates use closed runs; reviewer acceptance uses decided reviews.</p>
+            <div className="ops-grid ops-metrics-grid">
+              <div className="content-panel ops-metric"><small>Closed runs</small><strong>{operations.runs.closed_count}</strong><span>Passed verification {operations.runs.verification_pass_rate === null ? 'unavailable' : `${(operations.runs.verification_pass_rate * 100).toFixed(1)}%`} · inconclusive {operations.runs.inconclusive_rate === null ? 'unavailable' : `${(operations.runs.inconclusive_rate * 100).toFixed(1)}%`}</span><span>Reviewer acceptance {operations.runs.review_acceptance_rate === null ? 'unavailable' : `${(operations.runs.review_acceptance_rate * 100).toFixed(1)}%`} of {operations.runs.reviewed_count} decided</span></div>
+              <div className="content-panel ops-metric"><small>Runnable queue</small><strong>{operations.queue.queued_count}</strong><span>Oldest {operations.queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.queue.oldest_age_seconds / 60)} min`}</span></div>
+              <div className="content-panel ops-metric"><small>Graph projection backlog</small><strong>{operations.graph.pending_count}</strong><span>Oldest {operations.graph.oldest_age_seconds === null ? 'none' : `${Math.round(operations.graph.oldest_age_seconds)} sec`}</span></div>
+              <div className="content-panel ops-metric"><small>Inference budget</small><strong>${Number(operations.inference_budget.actual_usd).toFixed(2)}</strong><span>${Number(operations.inference_budget.reserved_usd).toFixed(2)} outstanding reservations</span></div>
+            </div>
+            <div className="ops-grid">
+              <div className="content-panel"><h2>Run states</h2>{Object.entries(operations.runs.by_state).length ? Object.entries(operations.runs.by_state).map(([state, count]) => <div className="list-row" key={state}><span>{state.replaceAll('_', ' ')}</span><strong>{count}</strong></div>) : <p className="muted">No runs in this window.</p>}</div>
+              <div className="content-panel"><h2>Tools and media</h2><div className="list-row"><span>Failed tool effects</span><strong>{operations.tools.failed_count}</strong></div>{Object.entries(operations.tools.by_policy_result).map(([policy, count]) => <div className="list-row" key={policy}><span>Tool policy: {policy}</span><strong>{count}</strong></div>)}{Object.entries(operations.media.by_status).map(([status, count]) => <div className="list-row" key={status}><span>Media: {status}</span><strong>{count}</strong></div>)}</div>
+            </div>
+            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warnings_now.length ? operations.warnings_now.map(item => <p className="ops-warning" key={item}>{item.replaceAll('_', ' ')}</p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These are snapshot checks, not sustained alerts or a paging service.</p></div>
+            <div className="content-panel"><h2>Metrics awaiting instrumentation</h2><p className="muted">{operations.unavailable.map(item => item.replaceAll('_', ' ')).join(' · ')}</p></div>
+          </>}
+        </section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
         {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
         {page === 'memory' && <section className="page-section">

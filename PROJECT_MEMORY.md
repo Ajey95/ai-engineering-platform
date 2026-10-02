@@ -736,3 +736,22 @@ the exact `review.decision` event. Its verification scope explicitly says it
 is a human review decision, not independent repair validation. Review
 idempotence prevents duplicate facts. Focused service/publication/memory tests
 passed 11/11. Automated invalidation after a later regression remains absent.
+
+2026-10-02 operations snapshot: added an owner-only tenant-scoped
+`/v1/operations/summary` API and Operations page. It aggregates persisted
+24-hour run states, passed-verification/inconclusive rates among closed runs,
+reviewer acceptance among decided reviews, current queued run
+and graph outbox age, tool policy/failure counts, media statuses, call-only
+actual spend and outstanding inference reservations. A cancelled run retaining
+PASSED verdict does not count as success. Queue >5 minutes and graph lag >60
+seconds appear as current snapshot warnings, not sustained pager alerts.
+Provider latency/errors, context/token metrics, sandbox utilization and ABR
+playback are labelled unavailable. Owner/tenant aggregate tests passed; mocked
+desktop/mobile Chromium views had no JS error or horizontal overflow. Hosted
+metrics/alerting and runbooks remain absent.
+The local PostgreSQL API was restarted on 8101; the live operations endpoint
+returned 200 with three closed runs, zero queued runs and five explicitly
+unavailable metric families. Chromium then loaded that real API page at desktop
+and mobile widths without JS errors or horizontal overflow. The metric was
+refined to distinguish passed verification from reviewer acceptance; a
+cancelled run with PASSED verdict is never counted as a verified close.
