@@ -13,6 +13,8 @@ and release blockers.
 - Transactional run admission with an idempotency key, a budget reservation,
   a durable event and a dispatch outbox row.
 - Fenced lease, state transition and tool effect ledger primitives.
+- A deterministic development effect policy checks tenant/project/run scope,
+  reviewed action and version, target and tool budget before execution.
 - JSON schema tool-call assembler that discards incomplete arguments.
 - Token envelope and spend preflight calculations.
 - A bounded, source-backed ContextBundle for the synthetic repair call, with
@@ -24,6 +26,8 @@ and release blockers.
 - Native non-streaming OpenAI, Anthropic and Google API adapters with provider
   continuation preservation and encrypted state envelopes. No live provider
   account has been qualified.
+- Operator commands register model entries as unqualified and probe a chosen
+  provider account before enabling an entry. No account has been probed here.
 - React workspace with project onboarding, report submission, run history,
   review and usage views. It reads real API records; no fake run evidence is shown.
 
@@ -133,6 +137,34 @@ with `EXECUTION_UNAVAILABLE` until a customer sandbox is implemented. The
 bootstrap command is an operator action; `--owner-subject` must come from a
 verified identity. This local implementation has not been tested against a
 real issuer or deployed identity provider.
+
+## Provider model qualification
+
+An operator can register an exact provider/model/revision with
+`python -m scripts.register_model --definition <model.json> --operator <identity>`.
+The definition uses the `ModelRegister` fields in `platform_app/schemas.py`:
+provider, model ID, registry revision, context and output limits, price revision
+and input/output prices per million tokens. Declared capabilities remain
+untrusted and the new entry stays `registered`.
+
+Create a separate JSON attestation with matching `registry_revision`,
+`context_limit`, `output_limit`, `price_revision`, `price_per_m_input` and
+`price_per_m_output`, plus `limits_source_url`, `pricing_source_url` and an
+ISO `effective_date`. A trusted operator must check those sources and values;
+the command records their URLs but does not independently verify their content.
+Set the matching `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GOOGLE_API_KEY` in the
+operator environment or secret manager, then run:
+
+```powershell
+python -m scripts.qualify_model --model-entry-id <entry-id> --attestation <metadata.json> --operator <identity> --enable
+```
+
+The command makes three small native API requests to verify text, a schema
+checked tool call, continuation and usage. It records a resolved model,
+revision, adapter digest and model registry lifecycle events. A failed probe
+leaves the entry unavailable; changed model metadata or adapter code invalidates
+qualification. These commands have only been tested with controlled responses.
+No provider account or model has been qualified live on this machine.
 
 To exercise the admitted-run worker against the trusted synthetic baseline:
 

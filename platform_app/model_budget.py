@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from platform_app.action_policy import ActionIntent, authorize_run_effect
+from platform_app.config import settings
+from platform_app.model_qualification import qualification_current
 from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
@@ -59,7 +61,12 @@ def reserve_model_call(
         raise ServiceError("RUN_CANCELLED", "Cancellation stops model calls", 409)
     if model.id != run.model_entry_id or model.state != "enabled":
         raise ServiceError("MODEL_UNAVAILABLE", "Run model changed or is disabled", 409)
-    if not model.validated_at or not (model.capabilities or {}).get("live_qualified"):
+    controlled_fixture = bool(
+        settings().environment == "development"
+        and model.validated_at
+        and (model.capabilities or {}).get("controlled_provider_fixture") is True
+    )
+    if not qualification_current(model) and not controlled_fixture:
         raise ServiceError("MODEL_UNAVAILABLE", "Live provider qualification is required", 409)
     snapshot = run.config_snapshot
     if (

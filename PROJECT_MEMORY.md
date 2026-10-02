@@ -267,3 +267,16 @@ symlink privilege skip; scoped Ruff clean. Controlled Docker run
 authorized effects, PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and
 media READY after PAUSED_INPUT resume. The provider response remained
 predetermined; no live model or hosted security qualification occurred.
+
+2026-10-02 model qualification continuation: added operator registration and
+live probe commands. Registration stores declared capabilities without
+authority. The probe requires exact operator-attested context/output limits,
+prices and source URLs, then checks native text, one schema validated tool call,
+continuation, usage and resolved model. Qualification is invalidated by model
+metadata or provider adapter digest drift; lifecycle events use new migration
+`b8c6d3259e41`. No provider account was available, so only controlled probe
+tests ran. Local PostgreSQL upgraded with no drift; disposable migration
+roundtrip and admission/resume checks passed. Controlled Docker run
+`09cbf973-dfb2-43ad-8c4c-64dd0b42c463` at `de8de42` reached REVIEW_READY
+with PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and media READY after
+resume. The controlled provider flag is now distinct from live qualification.

@@ -37,6 +37,14 @@ The paid pilot release gate in PRD §27.2 has not been run.
   before native provider HTTP, settle reported usage, persist raw response and
   patch digest, and enforce a single-file fixture patch schema. The provider
   accounts have not been live qualified.
+- `platform_app/model_qualification.py`, `scripts/register_model.py` and
+  `scripts/qualify_model.py`: operator registration leaves declared capabilities
+  untrusted; a live probe can check native text, schema validated tool call,
+  continuation, reported usage and resolved model. It requires operator
+  attestation of limit/price source URLs and exact values. Qualification is
+  invalidated by model metadata or adapter code digest drift. Lifecycle events
+  are recorded in `model_registry_events`. Only controlled probes have run;
+  no account credentials or live qualification were available.
 - `platform_app/tool_broker.py`: completed and schema validated tool calls only.
 - `platform_app/providers.py`: native HTTP request and continuation adapters for
   OpenAI, Anthropic and Google, tested against controlled API responses;
@@ -128,6 +136,11 @@ the effect ledger and audit log. A controlled Docker run
 resumed input and reached `REVIEW_READY` with ten authorized effects,
 PASS/FAIL/FAIL baseline, PASS/PASS/PASS candidate and media READY. The model
 response was predetermined; this is not live autonomous repair.
+After separating the controlled fixture flag from live qualification, run
+`09cbf973-dfb2-43ad-8c4c-64dd0b42c463` at pinned commit `de8de42`
+again reached `REVIEW_READY` with ten authorized effects, the same baseline
+and candidate statuses and media READY. The local PostgreSQL schema and a
+disposable migration roundtrip reached `b8c6d3259e41` with no drift.
 
 ## Requirement traceability
 
@@ -137,12 +150,12 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | ID | Status | Evidence or remaining requirement |
 |---|---|---|
 | FR-MOD-01 | Partial | Native three-provider HTTP adapters and simulated-response tests; no live conformance. |
-| FR-MOD-02 | Partial | Admission requires a live qualification marker plus validation time or a scoped development fixture flag; live qualification workflow, revision probes and full metadata missing. |
+| FR-MOD-02 | Partial | Operator live probe code checks text/tool/continuation/usage and exact attested metadata; admission checks revision and adapter digest. No account has been probed live, and full registry metadata remains. |
 | FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
 | FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
 | FR-MOD-05 | Missing | Qualified automatic routing absent. |
 | FR-MOD-06 | Missing | Authorized cross-provider failover absent. |
-| FR-MOD-07 | Partial | Registry state exists; lifecycle validation and audit absent. |
+| FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |
 | FR-PLG-01 | Missing | Full manifest and lifecycle absent. |
 | FR-PLG-02 | Missing | MCP allowlist and isolated execution absent. |
 | FR-PLG-03 | Partial | Typed ToolResult exists; broker execution/output artifact path absent. |

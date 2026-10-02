@@ -71,7 +71,7 @@ def main() -> int:
                 model_id="fixture-only",
                 registry_revision="fixture",
                 state="enabled",
-                capabilities={"live_qualified": True}
+                capabilities={"database_fixture_only": True, "controlled_provider_fixture": True}
                 if args.controlled_provider
                 else {"database_fixture_only": True},
                 validated_at=datetime.now(UTC) if args.controlled_provider else None,
@@ -105,8 +105,12 @@ def main() -> int:
             transition(db, paused, "preflight-worker", fence, "PAUSED_INPUT")
             db.commit()
             resume_input_run(
-                db, "fixture-tenant", run_id, "fixture-verifier",
-                "Use the valid form submission scenario", "resume-probe-key-001",
+                db,
+                "fixture-tenant",
+                run_id,
+                "fixture-verifier",
+                "Use the valid form submission scenario",
+                "resume-probe-key-001",
             )
             db.commit()
 
@@ -155,18 +159,16 @@ def main() -> int:
     processed = worker.process_next()
     with factory() as db:
         run = db.get(Run, run_id)
-        outboxes = db.scalars(select(OutboxEvent).where(
-            OutboxEvent.topic == "run.dispatch"
-        )).all()
+        outboxes = db.scalars(select(OutboxEvent).where(OutboxEvent.topic == "run.dispatch")).all()
         actions = db.scalars(select(ToolAction).where(ToolAction.run_id == run_id)).all()
         packet = review_packet(run_id, ("fixture-tenant", "fixture-verifier"), db)
         result = {
             "run_id": run_id,
             "pinned_commit": commit,
             "processed_run_id": processed,
-            "outbox_status": "delivered" if all(
-                event.status == "delivered" for event in outboxes
-            ) else "incomplete",
+            "outbox_status": "delivered"
+            if all(event.status == "delivered" for event in outboxes)
+            else "incomplete",
             "outbox_count": len(outboxes),
             "resume_probe": args.resume_probe,
             "state": run.state,
@@ -210,9 +212,8 @@ def main() -> int:
             and result["verdict"] == ("PASSED" if args.controlled_provider else "INCONCLUSIVE")
             and result["tool_statuses"] == expected
             and result["media_status"] == "READY"
-            and set(result["media_manifest_urls"]) == (
-                {"baseline", "candidate"} if args.controlled_provider else {"baseline"}
-            )
+            and set(result["media_manifest_urls"])
+            == ({"baseline", "candidate"} if args.controlled_provider else {"baseline"})
             and result["reproduction_status"] == "REPRODUCED"
             and result["autonomous_repair"] is False
             and (

@@ -85,7 +85,7 @@ def test_native_provider_patch_is_reserved_and_settled_from_usage(tmp_path):
                 model_id="live-model",
                 registry_revision="rev-a",
                 state="enabled",
-                capabilities={"live_qualified": True},
+                capabilities={"controlled_provider_fixture": True},
                 validated_at=datetime.now(UTC),
                 context_limit=32000,
                 output_limit=4000,

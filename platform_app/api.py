@@ -26,6 +26,11 @@ from platform_app.auth import (
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.memory import delete_fact, scoped_lookup
+from platform_app.model_qualification import (
+    QualificationError,
+    qualification_current,
+    register_model_entry,
+)
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
@@ -139,7 +144,9 @@ def principal(
 
 
 def authorized_run(
-    db: Session, identity: tuple[str, str], run_id: str,
+    db: Session,
+    identity: tuple[str, str],
+    run_id: str,
     roles: frozenset[str] = READ_ROLES,
 ) -> Run:
     run = require_run(db, identity[0], run_id)
@@ -253,10 +260,7 @@ def run_media(
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
     artifact_root = Path(settings().artifact_dir).resolve()
-    root = (
-        artifact_root
-        / "private-media" / run.tenant_id / f"{run.id}_{label}" / "media"
-    )
+    root = artifact_root / "private-media" / run.tenant_id / f"{run.id}_{label}" / "media"
     pointer_path = root / "ready.json"
     if not pointer_path.is_file():
         raise HTTPException(status_code=404)
@@ -300,21 +304,23 @@ def run_screenshot(
     if label not in {"baseline", "candidate"}:
         raise HTTPException(status_code=404)
     step = "browser" if label == "baseline" else "candidate_browser"
-    action = db.scalar(select(ToolAction).where(
-        ToolAction.run_id == run.id,
-        ToolAction.tenant_id == identity[0],
-        ToolAction.step_id == step,
-        ToolAction.status == "COMPLETED",
-    ))
+    action = db.scalar(
+        select(ToolAction).where(
+            ToolAction.run_id == run.id,
+            ToolAction.tenant_id == identity[0],
+            ToolAction.step_id == step,
+            ToolAction.status == "COMPLETED",
+        )
+    )
     receipt = action.receipt if action else None
     if not receipt or receipt.get("final_screenshot") != "final.png":
         raise HTTPException(status_code=404)
     digest = receipt.get("screenshot_sha256")
     if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
         raise HTTPException(status_code=404)
-    relative = Path(run.id) / (
-        "baseline" if label == "baseline" else "candidate/evidence"
-    ) / "final.png"
+    relative = (
+        Path(run.id) / ("baseline" if label == "baseline" else "candidate/evidence") / "final.png"
+    )
     artifact_root = Path(settings().artifact_dir).resolve()
     selected = (artifact_root / relative).resolve()
     if (
@@ -344,10 +350,14 @@ def create_project(
     db.add(project)
     db.flush()
     if settings().environment != "development":
-        db.add(ProjectMembership(
-            tenant_id=tenant_id, project_id=project.id,
-            subject=identity[1], role="maintainer",
-        ))
+        db.add(
+            ProjectMembership(
+                tenant_id=tenant_id,
+                project_id=project.id,
+                subject=identity[1],
+                role="maintainer",
+            )
+        )
     db.commit()
     db.refresh(project)
     return ProjectRead(
@@ -387,9 +397,12 @@ def list_tenant_memberships(
     db: Session = Depends(db_session),
 ):
     require_owner(db, identity)
-    rows = db.scalars(select(TenantMembership).where(
-        TenantMembership.tenant_id == identity[0]
-    ).order_by(TenantMembership.subject).limit(500)).all()
+    rows = db.scalars(
+        select(TenantMembership)
+        .where(TenantMembership.tenant_id == identity[0])
+        .order_by(TenantMembership.subject)
+        .limit(500)
+    ).all()
     return [{"subject": row.subject, "role": row.role, "status": row.status} for row in rows]
 
 
@@ -406,27 +419,43 @@ def set_tenant_membership(
     if tenant is None:
         raise ServiceError("NOT_FOUND", "Workspace not found", 404)
     require_owner(db, identity)
-    row = db.scalar(select(TenantMembership).where(
-        TenantMembership.tenant_id == identity[0], TenantMembership.subject == subject
-    ))
-    if row is not None and row.role == "owner" and row.status == "active" and (
-        body.role != "owner" or body.status != "active"
+    row = db.scalar(
+        select(TenantMembership).where(
+            TenantMembership.tenant_id == identity[0], TenantMembership.subject == subject
+        )
+    )
+    if (
+        row is not None
+        and row.role == "owner"
+        and row.status == "active"
+        and (body.role != "owner" or body.status != "active")
     ):
-        owner_count = db.scalar(select(func.count()).select_from(TenantMembership).where(
-            TenantMembership.tenant_id == identity[0],
-            TenantMembership.role == "owner", TenantMembership.status == "active",
-        ))
+        owner_count = db.scalar(
+            select(func.count())
+            .select_from(TenantMembership)
+            .where(
+                TenantMembership.tenant_id == identity[0],
+                TenantMembership.role == "owner",
+                TenantMembership.status == "active",
+            )
+        )
         if owner_count <= 1:
             raise ServiceError("LAST_OWNER", "The last owner cannot be disabled", 409)
     if row is None:
         row = TenantMembership(tenant_id=identity[0], subject=subject)
         db.add(row)
     row.role, row.status = body.role, body.status
-    db.add(AuditEvent(
-        tenant_id=identity[0], actor=identity[1], action="membership.tenant_set",
-        target_ref=subject, arguments_hash=canonical_hash(body.model_dump()),
-        policy_revision=tenant.policy_revision, outcome="allowed",
-    ))
+    db.add(
+        AuditEvent(
+            tenant_id=identity[0],
+            actor=identity[1],
+            action="membership.tenant_set",
+            target_ref=subject,
+            arguments_hash=canonical_hash(body.model_dump()),
+            policy_revision=tenant.policy_revision,
+            outcome="allowed",
+        )
+    )
     db.commit()
     return {"subject": row.subject, "role": row.role, "status": row.status}
 
@@ -439,10 +468,15 @@ def list_project_memberships(
 ):
     require_owner(db, identity)
     require_project_role(db, identity, project_id)
-    rows = db.scalars(select(ProjectMembership).where(
-        ProjectMembership.tenant_id == identity[0],
-        ProjectMembership.project_id == project_id,
-    ).order_by(ProjectMembership.subject).limit(500)).all()
+    rows = db.scalars(
+        select(ProjectMembership)
+        .where(
+            ProjectMembership.tenant_id == identity[0],
+            ProjectMembership.project_id == project_id,
+        )
+        .order_by(ProjectMembership.subject)
+        .limit(500)
+    ).all()
     return [{"subject": row.subject, "role": row.role, "status": row.status} for row in rows]
 
 
@@ -463,22 +497,28 @@ def set_project_membership(
     require_project_role(db, identity, project_id)
     if body.status == "active":
         require_tenant_membership(db, identity[0], subject)
-    row = db.scalar(select(ProjectMembership).where(
-        ProjectMembership.tenant_id == identity[0],
-        ProjectMembership.project_id == project_id,
-        ProjectMembership.subject == subject,
-    ))
-    if row is None:
-        row = ProjectMembership(
-            tenant_id=identity[0], project_id=project_id, subject=subject
+    row = db.scalar(
+        select(ProjectMembership).where(
+            ProjectMembership.tenant_id == identity[0],
+            ProjectMembership.project_id == project_id,
+            ProjectMembership.subject == subject,
         )
+    )
+    if row is None:
+        row = ProjectMembership(tenant_id=identity[0], project_id=project_id, subject=subject)
         db.add(row)
     row.role, row.status = body.role, body.status
-    db.add(AuditEvent(
-        tenant_id=identity[0], actor=identity[1], action="membership.project_set",
-        target_ref=f"{project_id}:{subject}", arguments_hash=canonical_hash(body.model_dump()),
-        policy_revision=tenant.policy_revision, outcome="allowed",
-    ))
+    db.add(
+        AuditEvent(
+            tenant_id=identity[0],
+            actor=identity[1],
+            action="membership.project_set",
+            target_ref=f"{project_id}:{subject}",
+            arguments_hash=canonical_hash(body.model_dump()),
+            policy_revision=tenant.policy_revision,
+            outcome="allowed",
+        )
+    )
     db.commit()
     return {"subject": row.subject, "role": row.role, "status": row.status}
 
@@ -622,9 +662,7 @@ def resume_run(
     db: Session = Depends(db_session),
 ):
     authorized_run(db, identity, run_id, WRITE_ROLES)
-    run = resume_input_run(
-        db, identity[0], run_id, identity[1], body.input_text, idempotency_key
-    )
+    run = resume_input_run(db, identity[0], run_id, identity[1], body.input_text, idempotency_key)
     db.commit()
     db.refresh(run)
     return run_read(run)
@@ -639,7 +677,12 @@ def review_decision(
 ):
     authorized_run(db, identity, run_id, REVIEW_ROLES)
     run = record_review_decision(
-        db, identity[0], run_id, identity[1], body.decision, body.reason,
+        db,
+        identity[0],
+        run_id,
+        identity[1],
+        body.decision,
+        body.reason,
         reviewer_authorized=True,
     )
     db.commit()
@@ -755,9 +798,12 @@ def review_packet(
         action.logical_action == "model.generate" and action.status == "COMPLETED"
         for action in actions
     )
-    review_event = db.scalar(select(RunEvent).where(
-        RunEvent.run_id == run.id, RunEvent.event_type == "review.decision"
-    ).order_by(RunEvent.sequence.desc()).limit(1))
+    review_event = db.scalar(
+        select(RunEvent)
+        .where(RunEvent.run_id == run.id, RunEvent.event_type == "review.decision")
+        .order_by(RunEvent.sequence.desc())
+        .limit(1)
+    )
     provider_mode = (candidate_patch or {}).get("provider_mode")
     media_urls = {}
     for label in ("baseline", "candidate"):
@@ -766,15 +812,12 @@ def review_packet(
         if media_receipt.get("status") == "READY" and isinstance(master, str):
             parts = Path(master).parts
             if len(parts) >= 2 and re.fullmatch(r"[0-9a-f]{64}", parts[-2]):
-                media_urls[label] = (
-                    f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
-                )
+                media_urls[label] = f"/v1/runs/{run.id}/media/{label}/{parts[-2]}/master.m3u8"
     screenshot_urls = {
         label: f"/v1/runs/{run.id}/screenshot/{label}"
-        for label, receipt in (
-            ("baseline", baseline_browser), ("candidate", candidate_browser)
-        )
-        if receipt and receipt.get("final_screenshot") == "final.png"
+        for label, receipt in (("baseline", baseline_browser), ("candidate", candidate_browser))
+        if receipt
+        and receipt.get("final_screenshot") == "final.png"
         and isinstance(receipt.get("screenshot_sha256"), str)
     }
     spend_entries = db.scalars(
@@ -857,16 +900,20 @@ def download_patch(
     if settings().environment != "development":
         raise HTTPException(status_code=404)
     run = authorized_run(db, identity, run_id)
-    action = db.scalar(select(ToolAction).where(
-        ToolAction.run_id == run.id,
-        ToolAction.tenant_id == identity[0],
-        ToolAction.step_id == "candidate_patch",
-        ToolAction.status == "COMPLETED",
-    ))
+    action = db.scalar(
+        select(ToolAction).where(
+            ToolAction.run_id == run.id,
+            ToolAction.tenant_id == identity[0],
+            ToolAction.step_id == "candidate_patch",
+            ToolAction.status == "COMPLETED",
+        )
+    )
     if action is None or action.receipt is None:
         raise ServiceError("PATCH_UNAVAILABLE", "No verified candidate patch exists", 404)
     diff = verified_fixture_diff(
-        run, action.receipt, Path(settings().artifact_dir).resolve(),
+        run,
+        action.receipt,
+        Path(settings().artifact_dir).resolve(),
         Path(__file__).resolve().parents[1],
     )
     return PlainTextResponse(
@@ -888,11 +935,7 @@ def list_models(
             "provider": m.provider,
             "model_id": m.model_id,
             "state": m.state,
-            "qualified": bool(
-                m.state == "enabled"
-                and m.validated_at
-                and (m.capabilities or {}).get("live_qualified")
-            ),
+            "qualified": qualification_current(m),
             "fixture_only": bool((m.capabilities or {}).get("database_fixture_only")),
             "capabilities": m.capabilities,
             "context_limit": m.context_limit,
@@ -910,10 +953,10 @@ def register_model(
 ):
     if settings().environment != "development":
         raise ServiceError("TOOL_DENIED", "Model registration requires administrator identity", 403)
-    if db.get(ModelEntry, body.id):
-        raise ServiceError("MODEL_EXISTS", "Model entry already exists", 409)
-    model = ModelEntry(**body.model_dump(), state="registered")
-    db.add(model)
+    try:
+        model = register_model_entry(db, body, identity[1])
+    except QualificationError as error:
+        raise ServiceError(error.code, str(error), 409) from error
     db.commit()
     return {"id": model.id, "state": model.state}
 
@@ -923,8 +966,10 @@ def usage(
     identity: tuple[str, str] = Depends(principal),
     db: Session = Depends(db_session),
 ):
-    query = select(BudgetEntry).join(Run, BudgetEntry.run_id == Run.id).where(
-        BudgetEntry.tenant_id == identity[0], Run.tenant_id == identity[0]
+    query = (
+        select(BudgetEntry)
+        .join(Run, BudgetEntry.run_id == Run.id)
+        .where(BudgetEntry.tenant_id == identity[0], Run.tenant_id == identity[0])
     )
     if not is_owner(db, identity):
         visible = visible_project_ids(db, identity) or set()

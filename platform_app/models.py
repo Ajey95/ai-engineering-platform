@@ -60,9 +60,7 @@ class Project(Base):
 class ProjectMembership(Base):
     __tablename__ = "project_memberships"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"]
-        ),
+        ForeignKeyConstraint(["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"]),
         UniqueConstraint("tenant_id", "project_id", "subject"),
         CheckConstraint(
             "role IN ('maintainer', 'contributor', 'reviewer', 'viewer')",
@@ -85,7 +83,8 @@ class Task(Base):
         UniqueConstraint("tenant_id", "id"),
         UniqueConstraint("tenant_id", "project_id", "id", name="uq_tasks_scope_id"),
         ForeignKeyConstraint(
-            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            ["tenant_id", "project_id"],
+            ["projects.tenant_id", "projects.id"],
             name="fk_tasks_project_scope",
         ),
     )
@@ -111,7 +110,8 @@ class Run(Base):
             name="fk_runs_task_scope",
         ),
         ForeignKeyConstraint(
-            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            ["tenant_id", "project_id"],
+            ["projects.tenant_id", "projects.id"],
             name="fk_runs_project_scope",
         ),
     )
@@ -146,7 +146,8 @@ class RunEvent(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "sequence"),
         ForeignKeyConstraint(
-            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
             name="fk_run_events_run_scope",
         ),
     )
@@ -177,7 +178,8 @@ class BudgetEntry(Base):
     __tablename__ = "budget_ledger"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
             name="fk_budget_ledger_run_scope",
         ),
     )
@@ -222,12 +224,25 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ModelRegistryEvent(Base):
+    __tablename__ = "model_registry_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_entry_id: Mapped[str] = mapped_column(ForeignKey("model_entries.id"), index=True)
+    actor: Mapped[str] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(40))
+    registry_revision: Mapped[str] = mapped_column(String(100))
+    metadata_hash: Mapped[str] = mapped_column(String(64))
+    outcome: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ToolAction(Base):
     __tablename__ = "tool_actions"
     __table_args__ = (
         UniqueConstraint("effect_key"),
         ForeignKeyConstraint(
-            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            ["tenant_id", "run_id"],
+            ["runs.tenant_id", "runs.id"],
             name="fk_tool_actions_run_scope",
         ),
     )
@@ -250,7 +265,8 @@ class MemoryFact(Base):
     __table_args__ = (
         Index("ix_memory_scope_revision", "tenant_id", "project_id", "source_revision", "status"),
         ForeignKeyConstraint(
-            ["tenant_id", "project_id"], ["projects.tenant_id", "projects.id"],
+            ["tenant_id", "project_id"],
+            ["projects.tenant_id", "projects.id"],
             name="fk_memory_facts_project_scope",
         ),
     )

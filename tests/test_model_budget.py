@@ -51,7 +51,7 @@ def scope():
                 model_id="live-model",
                 registry_revision="rev-a",
                 state="enabled",
-                capabilities={"live_qualified": True},
+                capabilities={"controlled_provider_fixture": True},
                 validated_at=datetime.now(UTC),
                 context_limit=32000,
                 output_limit=4000,

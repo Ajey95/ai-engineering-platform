@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from platform_app.config import settings
 from platform_app.db import utcnow
+from platform_app.model_qualification import qualification_current
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
@@ -107,9 +108,7 @@ def admit_run(
 ) -> Run:
     # The development Docker adapter is not a customer sandbox security boundary.
     if settings().environment != "development":
-        raise ServiceError(
-            "EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503
-        )
+        raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted sandbox has not been qualified", 503)
     task = require_task(db, tenant_id, task_id)
     tenant = db.get(Tenant, tenant_id)
     if tenant is None or tenant.status != "active":
@@ -141,7 +140,7 @@ def admit_run(
         )
     project = require_project(db, tenant_id, task.project_id)
     capabilities = model.capabilities or {}
-    live_qualified = bool(model.validated_at and capabilities.get("live_qualified"))
+    live_qualified = qualification_current(model)
     fixture_only = (
         settings().environment == "development"
         and body.reproduction.get("fixture_case_id") == "form-submit-001"
@@ -245,12 +244,17 @@ def request_cancel(db: Session, run: Run, actor: str) -> None:
 
 
 def record_review_decision(
-    db: Session, tenant_id: str, run_id: str, actor: str,
-    decision: str, reason: str = "", reviewer_authorized: bool = False,
+    db: Session,
+    tenant_id: str,
+    run_id: str,
+    actor: str,
+    decision: str,
+    reason: str = "",
+    reviewer_authorized: bool = False,
 ) -> Run:
-    run = db.scalar(select(Run).where(
-        Run.id == run_id, Run.tenant_id == tenant_id
-    ).with_for_update())
+    run = db.scalar(
+        select(Run).where(Run.id == run_id, Run.tenant_id == tenant_id).with_for_update()
+    )
     if run is None or (run.created_by != actor and not reviewer_authorized):
         raise ServiceError("NOT_FOUND", "Run not found", 404)
     if decision not in {"accepted", "rejected"}:
@@ -258,24 +262,40 @@ def record_review_decision(
     reason = reason.strip()
     if decision == "rejected" and len(reason) < 5:
         raise ServiceError("REASON_REQUIRED", "Rejection needs a reason", 400)
-    prior = db.scalar(select(RunEvent).where(
-        RunEvent.run_id == run.id, RunEvent.event_type == "review.decision"
-    ).order_by(RunEvent.sequence.desc()).limit(1))
+    prior = db.scalar(
+        select(RunEvent)
+        .where(RunEvent.run_id == run.id, RunEvent.event_type == "review.decision")
+        .order_by(RunEvent.sequence.desc())
+        .limit(1)
+    )
     if run.state == "COMPLETED" and prior is not None:
         if prior.payload.get("decision") == decision and prior.payload.get("reason") == reason:
             return run
         raise ServiceError("REVIEW_CLOSED", "Review decision has already been recorded", 409)
     if run.state != "REVIEW_READY" or run.verdict != "PASSED":
         raise ServiceError("REVIEW_NOT_READY", "Only verified review-ready runs can be closed", 409)
-    append_event(db, run, "review.decision", {
-        "decision": decision, "reason": reason, "actor": actor,
-    })
+    append_event(
+        db,
+        run,
+        "review.decision",
+        {
+            "decision": decision,
+            "reason": reason,
+            "actor": actor,
+        },
+    )
     run.state = "COMPLETED"
     append_event(db, run, "run.state_changed", {"state": "COMPLETED", "verdict": run.verdict})
     append_event(db, run, "run.closed", {"state": "COMPLETED", "verdict": run.verdict})
-    db.add(AuditEvent(
-        tenant_id=tenant_id, actor=actor, action="review.decide", target_ref=run.id,
-        arguments_hash=canonical_hash({"decision": decision, "reason": reason}),
-        policy_revision=run.config_snapshot.get("policy_version", "1.0"), outcome="allowed",
-    ))
+    db.add(
+        AuditEvent(
+            tenant_id=tenant_id,
+            actor=actor,
+            action="review.decide",
+            target_ref=run.id,
+            arguments_hash=canonical_hash({"decision": decision, "reason": reason}),
+            policy_revision=run.config_snapshot.get("policy_version", "1.0"),
+            outcome="allowed",
+        )
+    )
     return run

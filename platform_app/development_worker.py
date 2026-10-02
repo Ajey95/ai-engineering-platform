@@ -37,6 +37,7 @@ from platform_app.dev_sandbox import (
     run_verifier_fixture,
 )
 from platform_app.media import MediaError, encode_hls, sha256_file
+from platform_app.model_qualification import qualification_current
 from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, ToolAction
 from platform_app.patch_workspace import PatchError, PatchProposal, materialize_candidate
 from platform_app.providers import ProviderError
@@ -562,8 +563,14 @@ class DevelopmentWorker:
                     model = db.get(ModelEntry, run.model_entry_id)
                     qualified = bool(
                         model
-                        and model.validated_at
-                        and (model.capabilities or {}).get("live_qualified")
+                        and (
+                            qualification_current(model)
+                            or (
+                                model.validated_at
+                                and (model.capabilities or {}).get("controlled_provider_fixture")
+                                is True
+                            )
+                        )
                     )
                 if not qualified:
                     stop = (
