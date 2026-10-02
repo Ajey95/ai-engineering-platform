@@ -9,7 +9,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from platform_app.db import utcnow
-from platform_app.models import BudgetEntry, OutboxEvent, Run, RunEvent, ToolAction
+from platform_app.models import (
+    BudgetEntry,
+    ExportCharge,
+    OutboxEvent,
+    Run,
+    RunEvent,
+    Tenant,
+    ToolAction,
+)
 
 
 def _age(now: datetime, created_at: datetime | None) -> int | None:
@@ -85,6 +93,13 @@ def operations_snapshot(
     actual = db.scalar(select(func.coalesce(func.sum(BudgetEntry.actual_usd), 0)).where(
         *call_budget,
     ))
+    day_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
+    export_bytes = db.scalar(select(func.coalesce(func.sum(ExportCharge.bytes_count), 0)).where(
+        ExportCharge.tenant_id == tenant_id,
+        ExportCharge.created_at >= day_start,
+        ExportCharge.created_at < day_start + timedelta(days=1),
+    )) or 0
+    tenant = db.get(Tenant, tenant_id)
     queue_age = _age(now, oldest_queued)
     graph_age = _age(now, oldest_graph)
     warnings = []
@@ -108,6 +123,10 @@ def operations_snapshot(
         "media": {"by_status": media},
         "inference_budget": {
             "reserved_usd": str(Decimal(reserved)), "actual_usd": str(Decimal(actual)),
+        },
+        "exports": {
+            "used_bytes_today": export_bytes,
+            "daily_cap_bytes": tenant.daily_export_cap_bytes,
         },
         "warnings_now": warnings,
         "unavailable": [

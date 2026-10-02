@@ -755,3 +755,24 @@ unavailable metric families. Chromium then loaded that real API page at desktop
 and mobile widths without JS errors or horizontal overflow. The metric was
 refined to distinguish passed verification from reviewer acceptance; a
 cancelled run with PASSED verdict is never counted as a verified close.
+
+2026-10-02 export quota: Alembic `a9db61e2c7f4` adds a positive tenant daily
+export cap (100 MB default) and a run-scoped export ledger. The evidence ZIP
+route verifies and assembles content first, then locks the tenant row, checks
+the UTC-day cap, records bytes and archive SHA-256, and commits before serving.
+Excess downloads return 429 and the 80% crossing creates an audit warning.
+The trusted tenant quota CLI accepts an optional export cap. Focused API and
+quota tests passed; local PostgreSQL upgraded to the new head with no detected
+Alembic drift. The disposable migration roundtrip, quota operator audit and
+two-request PostgreSQL export race all passed, allowing exactly one 60-byte
+export under a 100-byte cap. A live local evidence ZIP returned HTTP 200 with
+13,723 bytes and created one ledger row with matching byte count and SHA-256.
+The owner Operations page now displays daily export use/cap; a mobile Chromium
+check against the real API had no JS error or horizontal overflow. Sandbox,
+media and artifact storage quotas remain absent.
+The final full Python suite passed 130 tests with three skips, Ruff passed for
+application/tests/scripts and the new migration, web build passed, and Alembic
+reported no drift. The user's existing `http://127.0.0.1:5173/` address was
+not listening, so a Vite development server was started there with its `/v1`
+proxy targeting API 8101; `/v1/health` returned `ok`. The earlier 5176 server
+also remains available. No scheduled task was created.

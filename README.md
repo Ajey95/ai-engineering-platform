@@ -49,6 +49,11 @@ qualify; a read-only probe cannot prove those rights.
 - Tenant daily/monthly inference caps and concurrent run admission limits,
   serialized on the tenant row in PostgreSQL. A crossing of 80 percent emits
   a run budget warning.
+- Evidence ZIP exports have a per-tenant daily byte cap (100 MB default). Each
+  successful response records its size and SHA-256 in a scoped export ledger;
+  excess requests return 429 and crossing 80 percent writes an audit warning.
+  The trusted `scripts.set_tenant_quotas` command accepts
+  `--daily-export-cap-bytes` for an operator change.
 - Fenced lease, state transition and tool effect ledger primitives.
 - A deterministic development effect policy checks tenant/project/run scope,
   reviewed action and version, target and tool budget before execution.

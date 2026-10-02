@@ -1,4 +1,4 @@
-"""Set tenant inference and run quotas from a trusted PostgreSQL operator shell."""
+"""Set tenant inference, run and export quotas from a trusted PostgreSQL shell."""
 
 from __future__ import annotations
 
@@ -35,12 +35,20 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _export_bytes(value: str) -> int:
+    number = _positive_int(value)
+    if number > 2_000_000_000:
+        raise argparse.ArgumentTypeError("Export cap exceeds supported integer range")
+    return number
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tenant-id", required=True)
     parser.add_argument("--daily-inference-cap-usd", required=True, type=_money)
     parser.add_argument("--monthly-inference-cap-usd", required=True, type=_money)
     parser.add_argument("--max-concurrent-runs", required=True, type=_positive_int)
+    parser.add_argument("--daily-export-cap-bytes", type=_export_bytes)
     args = parser.parse_args()
     if args.monthly_inference_cap_usd < args.daily_inference_cap_usd:
         parser.error("Monthly inference cap must be at least the daily cap")
@@ -59,16 +67,23 @@ def main() -> int:
                 "daily_inference_cap_usd": format(tenant.daily_inference_cap_usd, ".6f"),
                 "monthly_inference_cap_usd": format(tenant.monthly_inference_cap_usd, ".6f"),
                 "max_concurrent_runs": tenant.max_concurrent_runs,
+                "daily_export_cap_bytes": tenant.daily_export_cap_bytes,
             }
             after = {
                 "daily_inference_cap_usd": format(args.daily_inference_cap_usd, ".6f"),
                 "monthly_inference_cap_usd": format(args.monthly_inference_cap_usd, ".6f"),
                 "max_concurrent_runs": args.max_concurrent_runs,
+                "daily_export_cap_bytes": (
+                    args.daily_export_cap_bytes
+                    if args.daily_export_cap_bytes is not None
+                    else tenant.daily_export_cap_bytes
+                ),
             }
             if before != after:
                 tenant.daily_inference_cap_usd = args.daily_inference_cap_usd
                 tenant.monthly_inference_cap_usd = args.monthly_inference_cap_usd
                 tenant.max_concurrent_runs = args.max_concurrent_runs
+                tenant.daily_export_cap_bytes = after["daily_export_cap_bytes"]
                 db.add(
                     AuditEvent(
                         tenant_id=tenant.id,

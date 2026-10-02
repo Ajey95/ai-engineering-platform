@@ -24,6 +24,9 @@ JsonType = JSON().with_variant(JSONB, "postgresql")
 
 class Tenant(Base):
     __tablename__ = "tenants"
+    __table_args__ = (
+        CheckConstraint("daily_export_cap_bytes > 0", name="ck_tenant_export_cap_positive"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(24), default="active")
@@ -31,6 +34,7 @@ class Tenant(Base):
     daily_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=50)
     monthly_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=500)
     max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
+    daily_export_cap_bytes: Mapped[int] = mapped_column(Integer, default=100_000_000)
     model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
     plugin_allowlist: Mapped[list] = mapped_column(JsonType, default=list)
 
@@ -299,6 +303,25 @@ class BudgetEntry(Base):
     reserved_usd: Mapped[float] = mapped_column(Numeric(12, 6))
     actual_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     status: Mapped[str] = mapped_column(String(20), default="reserved")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExportCharge(Base):
+    __tablename__ = "export_ledger"
+    __table_args__ = (
+        Index("ix_export_ledger_tenant_created", "tenant_id", "created_at"),
+        CheckConstraint("bytes_count > 0", name="ck_export_ledger_bytes_positive"),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_export_ledger_run_scope",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    actor: Mapped[str] = mapped_column(String(200))
+    bytes_count: Mapped[int] = mapped_column(Integer)
+    archive_sha256: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

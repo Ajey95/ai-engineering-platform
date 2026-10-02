@@ -25,9 +25,11 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from platform_app.export_quota import reserve_export
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
+    ExportCharge,
     ModelEntry,
     OutboxEvent,
     Project,
@@ -299,6 +301,7 @@ def main() -> int:
             "--daily-inference-cap-usd", "0.015",
             "--monthly-inference-cap-usd", "0.015",
             "--max-concurrent-runs", "2",
+            "--daily-export-cap-bytes", "100",
         ]
         operator_result = subprocess.run(
             operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
@@ -316,6 +319,7 @@ def main() -> int:
             tenant = session.get(Tenant, "fixture-tenant")
             quota_operator_audit = (
                 tenant.max_concurrent_runs == 2
+                and tenant.daily_export_cap_bytes == 100
                 and Decimal(tenant.daily_inference_cap_usd) == Decimal("0.015")
                 and session.scalar(select(func.count()).select_from(AuditEvent).where(
                     AuditEvent.tenant_id == tenant.id,
@@ -373,6 +377,32 @@ def main() -> int:
         postgres_inference_quota_race = sorted(reservation_results) == [
             "TENANT_BUDGET_EXHAUSTED", "reserved"
         ]
+        export_barrier = Barrier(2)
+
+        def export_tenant(index: int) -> str:
+            export_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    reserve_export(
+                        session, "fixture-tenant", ids[0], "fixture", 60,
+                        f"{index}" * 64,
+                    )
+                    session.commit()
+                    return "exported"
+                except QuotaError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(export_tenant, index) for index in range(2)]
+            export_results = [future.result(timeout=30) for future in futures]
+        with Session(engine) as session:
+            export_rows = session.scalar(select(func.count(ExportCharge.id)).where(
+                ExportCharge.tenant_id == "fixture-tenant",
+            ))
+        postgres_export_quota_race = sorted(export_results) == [
+            "EXPORT_QUOTA_EXHAUSTED", "exported"
+        ] and export_rows == 1
         # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
         # Both requests must return successfully while only one final event exists.
         import platform_app.api as api_module
@@ -459,6 +489,7 @@ def main() -> int:
             "postgres_recording_delete_race": postgres_recording_delete_race,
             "postgres_run_quota_race": postgres_run_quota_race,
             "postgres_inference_quota_race": postgres_inference_quota_race,
+            "postgres_export_quota_race": postgres_export_quota_race,
             "quota_operator_audit": quota_operator_audit,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
@@ -481,6 +512,7 @@ def main() -> int:
             and postgres_recording_delete_race
             and postgres_run_quota_race
             and postgres_inference_quota_race
+            and postgres_export_quota_race
             and quota_operator_audit
             and all(v == 1 for v in counts.values())
             else 1

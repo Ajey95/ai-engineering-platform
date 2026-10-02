@@ -34,6 +34,7 @@ from platform_app.auth import (
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
+from platform_app.export_quota import reserve_export
 from platform_app.graph_memory import GraphUnavailable, MemgraphProjection, connected_lookup
 from platform_app.memory import (
     delete_fact,
@@ -110,6 +111,7 @@ from platform_app.service import (
     run_read,
 )
 from platform_app.telemetry import configure_telemetry, extract_trace, set_safe_attributes, tracer
+from platform_app.tenant_quota import QuotaError
 
 
 @asynccontextmanager
@@ -1383,6 +1385,14 @@ def download_evidence_bundle(
         archive = build_evidence_bundle(packet, artifacts)
     except BundleError as error:
         raise ServiceError("EVIDENCE_TOO_LARGE", str(error), 409) from error
+    try:
+        reserve_export(
+            db, identity[0], run.id, identity[1], len(archive),
+            hashlib.sha256(archive).hexdigest(),
+        )
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 429) from error
+    db.commit()
     return Response(
         archive, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="aip-evidence-{run.id}.zip"'},

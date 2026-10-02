@@ -10,6 +10,7 @@ from platform_app.config import Settings
 from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
+    ExportCharge,
     OutboxEvent,
     Project,
     Run,
@@ -73,6 +74,10 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             tenant_id="tenant-a", run_id="passed", category="call:two",
             reserved_usd=1, actual_usd=0, status="reserved", created_at=now,
         ))
+        db.add(ExportCharge(
+            tenant_id="tenant-a", run_id="passed", actor="owner",
+            bytes_count=1234, archive_sha256="a" * 64, created_at=now,
+        ))
         db.commit()
         snapshot = operations_snapshot(db, "tenant-a", now=now)
         assert snapshot["runs"]["by_state"] == {
@@ -88,6 +93,9 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["tools"] == {"by_policy_result": {"denied": 1}, "failed_count": 1}
         assert snapshot["inference_budget"] == {
             "reserved_usd": "1.000000", "actual_usd": "1.250000",
+        }
+        assert snapshot["exports"] == {
+            "used_bytes_today": 1234, "daily_cap_bytes": 100_000_000,
         }
         assert snapshot["warnings_now"] == [
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",

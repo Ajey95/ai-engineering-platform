@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from platform_app import api
 from platform_app.db import Base
-from platform_app.models import Project, Run, Task, Tenant, ToolAction
+from platform_app.models import ExportCharge, Project, Run, Task, Tenant, ToolAction
 
 
 def test_evidence_download_is_scoped_and_hash_verified(tmp_path, monkeypatch):
@@ -78,6 +78,13 @@ def test_evidence_download_is_scoped_and_hash_verified(tmp_path, monkeypatch):
                 assert json.loads(archive.read("review-packet.json"))["run_id"] == run_id
                 manifest = json.loads(archive.read("bundle-manifest.json"))
                 assert manifest["files"][0]["sha256"] == hashlib.sha256(original).hexdigest()
+            charge = db.query(ExportCharge).one()
+            assert charge.bytes_count == len(bundle.content)
+            assert charge.archive_sha256 == hashlib.sha256(bundle.content).hexdigest()
+            db.get(Tenant, "local-tenant").daily_export_cap_bytes = len(bundle.content) + 100
+            db.commit()
+            assert client.get(f"/v1/runs/{run_id}/evidence-bundle").status_code == 429
+            assert db.query(ExportCharge).count() == 1
             assert client.get(url.replace("named", "unknown")).status_code == 404
             api.app.dependency_overrides[api.principal] = lambda: ("other-tenant", "actor")
             assert client.get(url).status_code == 404
