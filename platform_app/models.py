@@ -353,6 +353,12 @@ class SandboxLease(Base):
 
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
+    __table_args__ = (
+        Index(
+            "ix_outbox_dispatch_publish",
+            "topic", "status", "queue_published_at", "created_at",
+        ),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     tenant_id: Mapped[str] = mapped_column(
         ForeignKey("tenants.id", name="fk_outbox_events_tenant"), index=True
@@ -362,6 +368,7 @@ class OutboxEvent(Base):
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    queue_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BudgetEntry(Base):

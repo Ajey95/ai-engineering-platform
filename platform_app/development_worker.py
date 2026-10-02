@@ -764,18 +764,18 @@ class DevelopmentWorker:
             self._stop.set()
             watcher.join(timeout=2)
 
-    def process_next(self) -> str | None:
+    def process_next(self, event_id: str | None = None) -> str | None:
         self.recover_stale()
         with self.session_factory() as db:
+            query = select(OutboxEvent).where(
+                OutboxEvent.topic == "run.dispatch",
+                OutboxEvent.status == "pending",
+            )
+            if event_id is not None:
+                query = query.where(OutboxEvent.id == event_id)
             events = db.scalars(
-                select(OutboxEvent)
-                .where(
-                    OutboxEvent.topic == "run.dispatch",
-                    OutboxEvent.status == "pending",
-                )
-                .order_by(OutboxEvent.created_at)
-                .with_for_update(skip_locked=True)
-                .limit(100)
+                query.order_by(OutboxEvent.created_at)
+                .with_for_update(skip_locked=True).limit(100)
             ).all()
             event = None
             for candidate in events:

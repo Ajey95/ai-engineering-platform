@@ -63,6 +63,15 @@ The paid pilot release gate in PRD §27.2 has not been run.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
+- `platform_app/queue_dispatch.py`, `queue_consumer.py`, migration
+  `b6714d7c2a09` and `infra/terraform/queues` add a separate SQS transport
+  receipt for run outbox events, encrypted standard queues/DLQs, bounded
+  long polling and visibility heartbeat. A lost send receipt can republish the
+  same event ID; the consumer rechecks tenant and canonical event status and
+  deletes only after processing reaches a terminal outbox status. Controlled
+  duplicate, mismatch and retry tests passed. Only the synthetic development
+  worker is wired to this transport; no AWS queue or hosted customer worker
+  has been exercised.
 - `platform_app/development_worker.py`: development-only `run.dispatch` consumer;
   claims a lease, archives the fixture and hidden oracle at the run's pinned
   commit, executes three isolated baseline checks, and stores effect intents
@@ -309,7 +318,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-PLG-01 | Partial | Strict manifests now require identity/version, publisher, artifact digest, transport, reviewed JSON schemas, permission scopes, network destinations, credential types, runtime/output limits, side effect class and compatibility. Registry lifecycle records registration, artifact digest validation, enable/disable and events. External execution remains absent. |
 | FR-PLG-02 | Partial | Remote MCP endpoints must be exact public HTTPS origins in a reviewed allowlist; untrusted or remotely referenced JSON schemas are rejected. Remote MCP versions cannot be enabled until transport qualification. MCP discovery, credential audience enforcement and isolated runtime execution remain absent. |
 | FR-PLG-03 | Partial | Fixture context serializes a typed ToolResult with deterministic sanitized summary, status, structured fields, verified log artifact ref, byte count, duration and explicit truncation. An authenticated run-scoped endpoint verifies full log SHA-256 before download; general plugin broker execution remains. |
-| FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. General tasks and live autonomous repair remain absent. |
+| FR-HAR-01 | Partial | Development fixture runs through a four-phase LangGraph with synchronous PostgreSQL checkpoints in `aip_workflow`; failed-phase recovery was tested across connections and the controlled container path passed. A scoped SQS outbox relay/consumer is wired to the development worker and tested with a controlled client; no live queue or hosted customer worker exists. General tasks and live autonomous repair remain absent. |
 | FR-HAR-02 | Partial | Development worker enforces tool cap and bounded container execution; model call reservation, actual usage settlement and one patch attempt wired for fixture. The run ledger detects three consecutive same-signature, same-result completed actions and fails visibly. Active-time and hosted scope need qualification. |
 | FR-HAR-03 | Partial | Local `PAUSED_INPUT` resume records an answer, preserves the target, checks policy revision and uncertain effects, idempotently queues one new dispatch, and replays completed fixture effects. Approval/budget resume, full snapshot reconciliation and hosted resume remain absent. |
 | FR-HAR-04 | Partial | Development worker persists intent before Docker, verifies stored receipts/artifacts on replay, and stops an expired uncertain effect. A definite provider rejection is receipted and can safely support one policy-approved alternate; timeout replay remains blocked. External system reconciliation absent. |
@@ -338,7 +347,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-MED-03 | Partial | Hls.js played manually evaluated and admitted-run local HLS in Chromium; hosted player now requests and refreshes a path-scoped CloudFront grant. Live bandwidth adaptation and edge playback remain unverified. |
 | FR-CDN-01 | Partial | Authorized recording grant signs one five-minute path policy with RSA-SHA256 and Secure/HttpOnly cookies; controlled tests verify its signature, scope, cross-tenant denial and deletion tombstone. Terraform now defines a CloudFront distribution, origin access control and key group, but no account plan/apply or live edge verification exists. |
 | FR-CDN-02 | Partial | Immutable object cache headers, short signed-cookie grants and a durable S3 delete plus CloudFront invalidation worker exist with fake-client tests. Terraform separates uncached API/HTML, cached hashed assets and signed private media on one hostname. Edge/cache authorization and live invalidation remain unverified. |
-| FR-DAT-01 | Partial | Twenty Alembic revisions applied through `ef86c2bb703d` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
+| FR-DAT-01 | Partial | Twenty-one Alembic revisions applied through `b6714d7c2a09` on local PostgreSQL with no detected drift; disposable checks rejected cross-tenant inserts, duplicate admission produced one run/reservation/outbox/event, and tenant inference/export quota races denied overspend. SQS transport receipts are separate from outbox execution status, and controlled lost-send replay uses the same event ID. The alert ledger's composite key rejects cross-tenant transitions on PostgreSQL, and its delivery state survived a controlled PostgreSQL probe. Restore/hosted race qualification remains. |
 | FR-DAT-02 | Partial | Transactional memory outbox has an idempotent Memgraph projection worker and project-scope rebuild command; local Memgraph roundtrip passed. Hosted lag monitoring, replay capacity and disaster restore remain. |
 | FR-API-01 | Partial | Durable event schema and persistence exist; all event producers absent. |
 | FR-API-02 | Partial | SSE replay delivered events 1–3, then cursor 3 resumed at 4–6 without gaps; a browser displayed new recording evidence without reselecting its run. Hosted load and slow-client tests absent. |

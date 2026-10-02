@@ -1023,3 +1023,17 @@ prefixes. `SandboxSpec` now admits only the reviewed `m6i.large` and
 from the cached signed provider lock, `terraform fmt -check` and `validate`
 passed; six sandbox broker tests and scoped Ruff passed. No AWS plan/apply,
 guest AMI, presigned object transport or live AC-15 network probe exists.
+
+2026-10-03 SQS dispatch transport increment: migration `b6714d7c2a09` added
+`outbox_events.queue_published_at` and a matching index; local PostgreSQL
+upgraded and `alembic check` found no drift. The relay sends only event/run/
+tenant IDs to SQS, commits a separate transport receipt, and may safely send
+the same ID twice if the first SQS response/DB commit is lost. The consumer
+checks the canonical event and tenant, extends visibility while processing and
+deletes a message only after the outbox event is delivered/failed. The
+development worker can target one event ID; the SQS CLI remains restricted to
+the synthetic fixture. Terraform defines encrypted agent/media/projection
+standard queues and 14-day DLQs with bounded redrive; format and validate
+passed with AWS provider 6.67.0. Controlled queue tests passed and the full
+Python suite passed 177 tests with 3 skips; scoped Ruff passed. No live SQS,
+hosted customer consumer or production queue IAM role has been qualified.
