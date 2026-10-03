@@ -20,7 +20,7 @@ from fastapi.responses import (
     StreamingResponse,
 )
 from sqlalchemy import func, select, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from platform_app.auth import (
@@ -166,6 +166,19 @@ async def service_error_handler(request: Request, exc: ServiceError) -> JSONResp
         content=ErrorBody(
             code=exc.code, message=exc.message, request_id=str(request.state.request_id)
         ).model_dump(),
+    )
+
+
+@app.exception_handler(OperationalError)
+async def database_unavailable_handler(request: Request, _: OperationalError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content=ErrorBody(
+            code="DATABASE_UNAVAILABLE",
+            message="The workspace database is temporarily unavailable",
+            request_id=str(request.state.request_id),
+        ).model_dump(),
+        headers={"Retry-After": "3"},
     )
 
 

@@ -4,7 +4,7 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 243 tests with 5 skips after the benchmark CI wiring;
+Python suite passed 246 tests with 5 skips after the database outage handling;
 scoped lint and the web production build passed. The pinned 40-case synthetic
 benchmark asset validator and all 40 baseline/reference hidden-oracle pairs
 passed. Local
@@ -479,7 +479,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-EVL-02 | Partial | A conservative scorer requires one distinct attempt per case and one model, includes failures in denominators and flags false success. Supplied result fields are labelled unverified; no provider has run a complete benchmark or received qualification. |
 | FR-EVL-03 | Partial | Push/PR workflow runs Python tests/lint, pinned benchmark asset validation and synthetic oracle checks, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and live model-change qualification remains. |
 | FR-NFR-01 | Missing | Hosted load, availability and recovery measurements absent. |
-| FR-NFR-02 | Partial | API liveness and database-backed readiness are separate; the hosted load balancer withdraws targets when PostgreSQL cannot answer a lightweight query. Existing graph retrieval falls back to scoped canonical rows, media failure retains non-video evidence, and provider rejection follows the bounded stop/failover path. Component status publication and hosted outage drills remain. |
+| FR-NFR-02 | Partial | API liveness and database-backed readiness are separate; the hosted load balancer withdraws targets when PostgreSQL cannot answer a lightweight query. PostgreSQL connections have a three-second connect timeout; operational failures return a sanitized retryable 503. Existing graph retrieval falls back to scoped canonical rows, media failure retains non-video evidence, and provider rejection follows the bounded stop/failover path. Component status publication and hosted outage drills remain. |
 | FR-CST-01 | Partial | Per-run reservation plus tenant daily/monthly inference caps, concurrent run caps and a daily evidence ZIP export byte cap. PostgreSQL tenant row locking passed admission and inference races; export quota uses the same lock, records byte/hash receipts and an 80% audit warning, and rejects excess downloads before response. Operator cap changes are audited. Sandbox/media/artifact storage quotas and hosted billing qualification remain. |
 
 ## Acceptance scenarios

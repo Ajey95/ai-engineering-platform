@@ -1279,3 +1279,12 @@ balancer health target. Two HTTP-level tests passed for database up/down;
 Terraform control-plane and pilot validation passed. This improves one
 PostgreSQL outage gate but does not establish full hosted degraded-mode
 behavior or availability objectives.
+
+2026-10-03 database outage fail-fast increment: PostgreSQL connections now
+have a three-second connect timeout and a bounded pool wait. Operational
+database failures become sanitized HTTP 503 responses with a three-second
+retry hint; raw driver/SQL details are not returned. Three focused HTTP tests
+passed. This was prompted by the older running API timing out on a DB-backed
+request after WSL failed; the running process has not yet been restarted with
+the new code because its database is still unavailable. The full Python suite
+passed 246 tests with 5 skips and scoped Ruff passed after this change.

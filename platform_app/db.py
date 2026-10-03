@@ -9,7 +9,13 @@ from platform_app.model_base import Base, new_id, utcnow
 __all__ = ["Base", "new_id", "utcnow", "engine", "SessionLocal", "session_scope"]
 
 
-engine = create_engine(settings().database_url, pool_pre_ping=True)
+database_url = settings().database_url
+engine_options = {"pool_pre_ping": True}
+if database_url.startswith("postgresql+psycopg://"):
+    # A stopped database must fail promptly so API requests cannot hang behind
+    # the driver's default connection timeout.
+    engine_options.update(connect_args={"connect_timeout": 3}, pool_timeout=5)
+engine = create_engine(database_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
