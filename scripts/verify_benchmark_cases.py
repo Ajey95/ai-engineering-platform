@@ -17,16 +17,19 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     cases = FORM_CASES + CSV_CASES + NONBUG_CASES
-    catalog = {case.case_id: case.category for case in cases}
+    catalog = {"form-submit-001": "form_frontend"}
+    catalog.update({case.case_id: case.category for case in cases})
     catalog.update({case_id: "api_contract" for case_id, *_ in API_CASES})
     failures = []
     for case_id, category in sorted(catalog.items()):
         oracle = root / "benchmarks" / "oracles" / case_id / "test_hidden.py"
         for variant in ("base", "reference"):
-            workspace = (
-                root / "benchmarks" / "fixtures" / case_id / "base"
-                if variant == "base" else root / "benchmarks" / "references" / case_id
-            )
+            if variant == "reference":
+                workspace = root / "benchmarks" / "references" / case_id
+            elif case_id == "form-submit-001":
+                workspace = root / "benchmarks" / "fixtures" / "form-submit" / "base"
+            else:
+                workspace = root / "benchmarks" / "fixtures" / case_id / "base"
             env = {
                 **os.environ,
                 "PYTHONPATH": str(workspace),

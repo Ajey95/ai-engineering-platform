@@ -1,0 +1,697 @@
+{
+  "schema_version": "1.0",
+  "benchmark_revision": "synthetic-v1",
+  "oracle_revision": "1.0",
+  "cases": [
+    {
+      "case_id": "form-submit-001",
+      "category": "form_frontend",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-submit/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-submit-001/test_hidden.py",
+      "hidden_oracle_sha256": "5b50d044082eddb6ed6ff9db7c3bce65a133688790802f5edda2f364b616a8de",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 647865608,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-blank-002",
+      "category": "form_frontend",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-blank-002/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-blank-002/test_hidden.py",
+      "hidden_oracle_sha256": "31b316a90c520324055b361272aa9326ce7f8cff6ce5dc02ac66980bf94e18ba",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2931563938,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-email-003",
+      "category": "form_frontend",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-email-003/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-email-003/test_hidden.py",
+      "hidden_oracle_sha256": "98b47209bfba8b908625405d517bbad234496989870185f19810c1cc0e259f16",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3284520460,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-phone-004",
+      "category": "form_frontend",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-phone-004/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-phone-004/test_hidden.py",
+      "hidden_oracle_sha256": "747606d221b67540716100b43484259d4ecb394c44a7fbf5c44fee95d12f376b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4123405800,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-age-005",
+      "category": "form_frontend",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-age-005/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-age-005/test_hidden.py",
+      "hidden_oracle_sha256": "2a4ab2c500c88cfd19a6c9ad7012164e74f84139e99acd52d7381a25413a53c8",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 610980720,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-quantity-006",
+      "category": "form_frontend",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-quantity-006/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-quantity-006/test_hidden.py",
+      "hidden_oracle_sha256": "a0a15a02c750caaac5ab8cd5d5234c71723dce765f67b3dc83ae0ba793302141",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3319134442,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-consent-007",
+      "category": "form_frontend",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-consent-007/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-consent-007/test_hidden.py",
+      "hidden_oracle_sha256": "2487770d72f3b61f1aba9dee7016e37177e6c7a82c081ae38c8e985227758dde",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4041134975,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-slug-008",
+      "category": "form_frontend",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-slug-008/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-slug-008/test_hidden.py",
+      "hidden_oracle_sha256": "5c8ac9f439901a39f51ec348122fc42a84b6b0a414f749e878eb8527b0c2146b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 891990242,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-password-009",
+      "category": "form_frontend",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-password-009/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-password-009/test_hidden.py",
+      "hidden_oracle_sha256": "8df999b5bce9642bbbd45265cab019023e9660db5a1065862bba536173bcc90b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3939828720,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "form-confirm-010",
+      "category": "form_frontend",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/form-confirm-010/base",
+      "hidden_oracle_path": "benchmarks/oracles/form-confirm-010/test_hidden.py",
+      "hidden_oracle_sha256": "cb71840c85de83644da83c6b24354bf4401aab14ef067f105540d1977b4afb6e",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1381745251,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-create-001",
+      "category": "api_contract",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-create-001/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-create-001/test_hidden.py",
+      "hidden_oracle_sha256": "31487ae3ddf2826964d8589296c1c95cc4916bd18dad7ea5bf0e9af4486e3a3a",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4163211172,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-malformed-002",
+      "category": "api_contract",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-malformed-002/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-malformed-002/test_hidden.py",
+      "hidden_oracle_sha256": "b9e2c8c8d826e0eb4924209017b845ff42ed59042e21da78ccb4489333afd5fc",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3072694634,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-auth-003",
+      "category": "api_contract",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-auth-003/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-auth-003/test_hidden.py",
+      "hidden_oracle_sha256": "3ebeea7013fc770e687feb075aaa64cd4da71f2d2c26273bf6789c0225f28d84",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3523282675,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-role-004",
+      "category": "api_contract",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-role-004/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-role-004/test_hidden.py",
+      "hidden_oracle_sha256": "7e15d9e6254c39e14581b377dcfadfa4c67c497baf3349b9c6656517ba7be338",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3957765451,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-missing-005",
+      "category": "api_contract",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-missing-005/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-missing-005/test_hidden.py",
+      "hidden_oracle_sha256": "ea7a84722a34b9c3aade2c96dcdb94c1d24d949b0bf8fc6c7bfaf5bcca1bb864",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3087337438,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-duplicate-006",
+      "category": "api_contract",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-duplicate-006/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-duplicate-006/test_hidden.py",
+      "hidden_oracle_sha256": "e46b2335346fbaab030b6083a2305fc5825b0053626f52894a4563e07b2aff52",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4054211430,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-large-007",
+      "category": "api_contract",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-large-007/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-large-007/test_hidden.py",
+      "hidden_oracle_sha256": "cd915692b6cdfe131d392484ede93019bb0c33db8f496e2bc8e917814d089bc4",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 571763384,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-media-008",
+      "category": "api_contract",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-media-008/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-media-008/test_hidden.py",
+      "hidden_oracle_sha256": "52854a416933b633443669792b5360a3129adddcf72a4ef2bdcdb523474d5ba6",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2391676222,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-invalid-009",
+      "category": "api_contract",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-invalid-009/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-invalid-009/test_hidden.py",
+      "hidden_oracle_sha256": "34041c17bbcd892048b1b78db9d20e234f5eb372bcef654c15f0e991479df123",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1983585920,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "api-rate-010",
+      "category": "api_contract",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/api-rate-010/base",
+      "hidden_oracle_path": "benchmarks/oracles/api-rate-010/test_hidden.py",
+      "hidden_oracle_sha256": "3f102932ce87783faa08693e42b34d7a295a7d6e451ba8e814d73617bad9a812",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 402659952,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-quoted-001",
+      "category": "csv_timestamp",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-quoted-001/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-quoted-001/test_hidden.py",
+      "hidden_oracle_sha256": "1b30c8bfdf35bb167641f7397b985e89a02ef1e87d44acc6156e02b65bfd3d98",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3188489992,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-bom-002",
+      "category": "csv_timestamp",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-bom-002/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-bom-002/test_hidden.py",
+      "hidden_oracle_sha256": "40d5643017830fcdb28ec55f3f631bc51d72cb07d13a4bfa5231a4b9372b4ebf",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3718773102,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-crlf-003",
+      "category": "csv_timestamp",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-crlf-003/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-crlf-003/test_hidden.py",
+      "hidden_oracle_sha256": "17dbce1212dde676239efd05a09fbb2a26818198b7fe08c28f51ff530b1ac166",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1035795125,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-header-004",
+      "category": "csv_timestamp",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-header-004/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-header-004/test_hidden.py",
+      "hidden_oracle_sha256": "6eccd81ca03b9a5a31df2b6e7cd09a479e0d52eb2186c88719266ad6de735403",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1124589777,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-duplicate-005",
+      "category": "csv_timestamp",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-duplicate-005/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-duplicate-005/test_hidden.py",
+      "hidden_oracle_sha256": "27e00b762841df90b32f557815301d45faa861acdb93a94bcece396182e462ee",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3612984706,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-number-006",
+      "category": "csv_timestamp",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-number-006/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-number-006/test_hidden.py",
+      "hidden_oracle_sha256": "7d1dd59fca028fe3e2623b477c5e5f9e13c0837693a2336e858ec89741041d3e",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 961557717,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-negative-007",
+      "category": "csv_timestamp",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-negative-007/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-negative-007/test_hidden.py",
+      "hidden_oracle_sha256": "2da509d68541324bdc4769d0b25e8ca2a6067adbd10e5ca4b896f55cef2e8cb5",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 124747615,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "csv-blank-008",
+      "category": "csv_timestamp",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/csv-blank-008/base",
+      "hidden_oracle_path": "benchmarks/oracles/csv-blank-008/test_hidden.py",
+      "hidden_oracle_sha256": "dba3668fd169423da6e66ba1f3090ec0ef6b92c9a84c7dc2f60af0a8b61e100e",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3236786204,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "timestamp-leap-009",
+      "category": "csv_timestamp",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/timestamp-leap-009/base",
+      "hidden_oracle_path": "benchmarks/oracles/timestamp-leap-009/test_hidden.py",
+      "hidden_oracle_sha256": "c0250a9fd908f07cf6104df3eb912b0d33b06d961e3c1efdf6ad6c3cac795d03",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2407385951,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "timestamp-offset-010",
+      "category": "csv_timestamp",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/timestamp-offset-010/base",
+      "hidden_oracle_path": "benchmarks/oracles/timestamp-offset-010/test_hidden.py",
+      "hidden_oracle_sha256": "4f0c4f75c07483f3e6371faa491cb874d809daa7e63d113b147ad3b17969cc91",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2732618189,
+      "expected_reproduction": "BUG_REPRODUCED",
+      "accepted_outcomes": [
+        "VERIFIED_REPAIR"
+      ]
+    },
+    {
+      "case_id": "nonbug-blank-001",
+      "category": "non_bug",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-blank-001/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-blank-001/test_hidden.py",
+      "hidden_oracle_sha256": "ab84f9a824cc299d1544be9aa37fb29e43c22ecbe0b488d2b9443321782e263c",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2906981004,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-email-002",
+      "category": "non_bug",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-email-002/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-email-002/test_hidden.py",
+      "hidden_oracle_sha256": "ee334aeea11d1de9a36ff2f3b080c36e26c6414204f64b8176b00abaa3e0c71a",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 2811767263,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-phone-003",
+      "category": "non_bug",
+      "split": "development",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-phone-003/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-phone-003/test_hidden.py",
+      "hidden_oracle_sha256": "747606d221b67540716100b43484259d4ecb394c44a7fbf5c44fee95d12f376b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4035473245,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-age-004",
+      "category": "non_bug",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-age-004/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-age-004/test_hidden.py",
+      "hidden_oracle_sha256": "2a4ab2c500c88cfd19a6c9ad7012164e74f84139e99acd52d7381a25413a53c8",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1922121083,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-quantity-005",
+      "category": "non_bug",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-quantity-005/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-quantity-005/test_hidden.py",
+      "hidden_oracle_sha256": "a0a15a02c750caaac5ab8cd5d5234c71723dce765f67b3dc83ae0ba793302141",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1068385030,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-consent-006",
+      "category": "non_bug",
+      "split": "regression",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-consent-006/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-consent-006/test_hidden.py",
+      "hidden_oracle_sha256": "2487770d72f3b61f1aba9dee7016e37177e6c7a82c081ae38c8e985227758dde",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 4232138286,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-slug-007",
+      "category": "non_bug",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-slug-007/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-slug-007/test_hidden.py",
+      "hidden_oracle_sha256": "5c8ac9f439901a39f51ec348122fc42a84b6b0a414f749e878eb8527b0c2146b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 767474453,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-password-008",
+      "category": "non_bug",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-password-008/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-password-008/test_hidden.py",
+      "hidden_oracle_sha256": "8df999b5bce9642bbbd45265cab019023e9660db5a1065862bba536173bcc90b",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 3791047511,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-confirm-009",
+      "category": "non_bug",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-confirm-009/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-confirm-009/test_hidden.py",
+      "hidden_oracle_sha256": "cb71840c85de83644da83c6b24354bf4401aab14ef067f105540d1977b4afb6e",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 1936526902,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    },
+    {
+      "case_id": "nonbug-date-010",
+      "category": "non_bug",
+      "split": "release",
+      "base_commit": "518528cb82395b92db7c99034e3785389290f9ad",
+      "fixture_path": "benchmarks/fixtures/nonbug-date-010/base",
+      "hidden_oracle_path": "benchmarks/oracles/nonbug-date-010/test_hidden.py",
+      "hidden_oracle_sha256": "c0250a9fd908f07cf6104df3eb912b0d33b06d961e3c1efdf6ad6c3cac795d03",
+      "dependency_lock_path": "benchmarks/locks/platform-uv.lock",
+      "dependency_lock_sha256": "871ac968728ee79fb6864786a092efcdd9a8cb2f795b7a63f13f0a0dedd335e9",
+      "environment_image_sha256": "50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f",
+      "run_seed": 111645108,
+      "expected_reproduction": "NO_SUPPORTED_DEFECT",
+      "accepted_outcomes": [
+        "NO_DEFECT",
+        "INCONCLUSIVE"
+      ]
+    }
+  ]
+}

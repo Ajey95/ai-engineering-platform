@@ -1249,3 +1249,25 @@ The live local Memgraph test verified idempotent file/symbol/dependency
 projection and exact revision isolation. Full Python suite: 243 passed,
 5 skipped (the live graph tests are opt-in for the whole suite). Terraform
 control-plane and pilot validation passed; no hosted graph was deployed.
+
+2026-10-03 benchmark catalog increment: commit `518528c` added 39 distinct
+synthetic fixtures with hidden oracles and reference versions outside repair
+trees. The 40-case suite manifest pins Git revision
+`518528cb82395b92db7c99034e3785389290f9ad`, oracle and lock digests,
+and local development sandbox image ID
+`sha256:50e828b2fea7083c9989206e11e1d88a6bd3715d35f89800b923cfdf38b4bb3f`.
+Asset validation passed. All 40 baseline/reference oracle pairs passed their
+expected fail/pass criteria; one CRLF browser reproduction fixture was
+corrected and its baseline/reference browser behavior rechecked. A reference
+repair was added for the original form case.
+CI now checks the pinned suite and runs all local oracle pairs. Full Python
+suite: 243 passed, 5 skipped; Ruff passed. These are synthetic checks, not
+independent live-provider scores.
+
+Current local blocker: C: had about 45 MiB free at the latest check while the
+Ubuntu WSL virtual disk remains there. The media Docker build failed with
+read-only filesystem/I/O errors, then WSL reported
+`Wsl/Service/E_UNEXPECTED`. Automatic approval review rejected removal of
+four exact C: temporary downloads; do not retry through another route. The
+user has been asked to free at least 2 GiB manually. Continue code and local
+validation on D: meanwhile; do not claim Docker media or hosted qualification.

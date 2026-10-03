@@ -24,6 +24,8 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run --frozen ruff check platform_app tests scripts migrations/versions/eb8f0a7d36c4_tenant_inference_quotas.py
       - run: uv run --frozen python -m pytest -q
+      - run: uv run --frozen python -m scripts.validate_benchmark --manifest benchmarks/suite-v1.json
+      - run: uv run --frozen python -m scripts.verify_benchmark_cases
 
   web:
     runs-on: ubuntu-24.04

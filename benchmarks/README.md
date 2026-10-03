@@ -30,11 +30,11 @@ live outside the repair source trees. The generated catalog is checked by
 checks, non-bug baselines must pass, and every reference must pass. Browser
 reproduction is checked with `python -m scripts.verify_benchmark_browser`.
 
-After committing fixture, oracle and lock assets, run
-`python -m scripts.build_benchmark_manifest --image-digest sha256:<built-image-id>`
-to pin their exact commit and the locally built sandbox image in
-`benchmarks/suite-v1.json`; then use `scripts.validate_benchmark` above. This
-local image ID is not a pushed registry digest. Provider-run evidence binding,
+The committed `benchmarks/suite-v1.json` pins the fixture, oracle and lock
+assets at Git revision `518528cb82395b92db7c99034e3785389290f9ad` and a
+locally built sandbox image ID. Rebuild it after asset changes with
+`python -m scripts.build_benchmark_manifest --image-digest sha256:<built-image-id>`.
+This local image ID is not a pushed registry digest. Provider-run evidence binding,
 held-out model evaluation, repeated-trial scores and hosted qualification
 remain separate gates. The synthetic cases exercise a narrow shared app
 shape; their oracle results do not establish general repair success.

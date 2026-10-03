@@ -4,8 +4,10 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 243 tests with 5 skips after the dependency endpoint;
-scoped lint and the web production build passed. Local
+Python suite passed 243 tests with 5 skips after the benchmark CI wiring;
+scoped lint and the web production build passed. The pinned 40-case synthetic
+benchmark asset validator and all 40 baseline/reference hidden-oracle pairs
+passed. Local
 PostgreSQL is at migration `5b8f3d4e1a70` with no Alembic drift.
 
 Latest local recheck: commit `cb16fca92476eee6fe597d83f18930c053121f04`
@@ -452,7 +454,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. The hosted coordinator records baseline and candidate guest phases in separate fake EC2 VMs, compares declared checks with exact tree/manifest pins, and exposes a hash-verified review diff and scoped S3 evidence tar. The declared checks are explicitly labelled without an independent hidden oracle. No live VM, live model or customer repository has been verified. |
-| FR-REP-03 | Partial | One hidden independent oracle distinguishes baseline and manual candidate; full benchmark isolation and suite missing. |
+| FR-REP-03 | Partial | Forty synthetic cases have distinct hidden oracles outside repair trees. Baseline/reference checks passed and 39 generated cases were reproduced in a desktop browser. Hosted independent oracle execution and real repository evidence remain absent. |
 | FR-REP-04 | Partial | Review acceptance/rejection is separate from explicit 24-hour draft PR approval. Approval requires a ready run-pinned repository connection, accepted verified native-provider run, and binds destination, base commit, patch digest and matching candidate test tree/receipts. The hosted path rechecks the model artifact, guest receipts and candidate built from the pinned commit. A durable publication outbox leases work and retries/reconciles uncertain writes; the UI exposes approval and published URL. Controlled HTTP and hosted replay tests passed; no live GitHub account or customer PR publication exists. |
 | FR-MED-01 | Partial | Admitted fixture browser WebM recordings encoded to local FFmpeg HLS. The hosted worker now stages digest-verified guest WebM and queues baseline/final-candidate media separately through SQS/outbox; a separate FFmpeg worker is defined. Controlled end-to-end replay passed, but the media image and AWS queue have not been live exercised. |
 | FR-MED-02 | Partial | Staged immutable local publication and DB media status/receipts tested; hosted media worker now uses the controlled S3 publisher to upload verified encrypted objects and records a scoped publication only after the manifest is complete. No live bucket has been used. |
@@ -473,9 +475,9 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Partial | Owner-only operations API/UI show tenant-scoped 24-hour run states, verification and reviewer rates, queue/graph age, tool failures, media state, spend/reservations, export quota, durable active alerts and pager delivery backlog. Queue and graph thresholds have a separate persisted evaluator. Provider latency/errors, context size, token estimation error, sandbox utilization, ABR playback and hosted telemetry remain unavailable. |
 | FR-OPS-01 | Partial | The versioned catalog assigns owner, impact and runbook to five paging and five warning classes. A tenant-row-locked evaluator persists queue warnings only after repeated samples over ten minutes, resets after a monitoring gap, fires graph lag immediately and derives sticky budget-breach pages from canonical run events. Owner-only API/UI resolution requires a reason. A separate signed HTTPS webhook dispatcher uses durable retry state and an event ID idempotency key; controlled HTTP and PostgreSQL probes passed. The local evaluator runs continuously. Other alert inputs, live pager delivery, hosted egress/supervision, responder qualification and restore drill remain absent. |
-| FR-EVL-01 | Partial | A strict versioned suite contract now requires exactly ten cases in each of the 30 bug plus 10 non-bug categories, at least 20 held out, distinct fixtures and hidden oracles, pinned Git assets, digests and accepted outcomes. Only one actual development fixture exists; the remaining 39 cases and protected oracle execution are absent. |
+| FR-EVL-01 | Partial | A strict versioned suite contains 40 distinct synthetic fixtures with hidden oracles, 12 development, 12 regression and 16 release cases. All 30 bug baselines fail, 10 non-bug baselines pass, and all 40 references pass their hidden checks. The manifest validates pinned Git assets and a local sandbox image ID; hosted protected oracle execution and real provider trials remain absent. |
 | FR-EVL-02 | Partial | A conservative scorer requires one distinct attempt per case and one model, includes failures in denominators and flags false success. Supplied result fields are labelled unverified; no provider has run a complete benchmark or received qualification. |
-| FR-EVL-03 | Partial | Push/PR workflow now runs Python tests/lint, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and benchmark/model-change qualification gates remain. |
+| FR-EVL-03 | Partial | Push/PR workflow runs Python tests/lint, pinned benchmark asset validation and synthetic oracle checks, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and live model-change qualification remains. |
 | FR-NFR-01 | Missing | Hosted load, availability and recovery measurements absent. |
 | FR-NFR-02 | Missing | Full degraded-mode service behavior absent. |
 | FR-CST-01 | Partial | Per-run reservation plus tenant daily/monthly inference caps, concurrent run caps and a daily evidence ZIP export byte cap. PostgreSQL tenant row locking passed admission and inference races; export quota uses the same lock, records byte/hash receipts and an 80% audit warning, and rejects excess downloads before response. Operator cap changes are audited. Sandbox/media/artifact storage quotas and hosted billing qualification remain. |
@@ -500,6 +502,13 @@ The remaining acceptance scenarios need broader integration or hosted
 qualification and are **not passed for a paid pilot**. A passing unit test or
 synthetic local run is not a release qualification.
 
+The local WSL Docker media-image build is blocked by disk exhaustion on C:.
+The WSL virtual disk is on that drive; after the failed build the distro
+reported `Wsl/Service/E_UNEXPECTED`. A cleanup request for four exact temporary
+Terraform/Packer downloads was rejected by automatic approval review, so it
+was not retried. C: had about 45 MiB free at the latest check. No media image
+or hosted FFmpeg task has been verified.
+
 ## What breaks first
 
 1. A run can reproduce and test a bounded patch on the trusted synthetic
@@ -515,8 +524,9 @@ synthetic local run is not a release qualification.
    have not been exercised.
 4. The worker publishes local HLS recordings and a tenant-scoped route; the
    independent media queue, hosted authorization and private CDN remain.
-5. No independent correctness benchmark or restore drill exists, so success,
-   reliability, latency and cost targets cannot be claimed.
+5. A pinned synthetic benchmark exists, but no model has run its 40 cases and
+   no restore drill exists, so success, reliability, latency and cost targets
+   cannot be claimed.
 
 ## Next implementation sequence
 

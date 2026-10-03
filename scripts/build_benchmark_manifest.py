@@ -13,8 +13,12 @@ from platform_app.benchmark_contract import BenchmarkSuite, verify_suite_assets
 from scripts.generate_benchmark_cases import API_CASES, CSV_CASES, FORM_CASES, NONBUG_CASES
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _pinned_sha256(root: Path, commit: str, relative: str) -> str:
+    pinned = subprocess.run(
+        ["git", "show", f"{commit}:{relative}"], cwd=root,
+        capture_output=True, check=True, timeout=10,
+    )
+    return hashlib.sha256(pinned.stdout).hexdigest()
 
 
 def build(root: Path, commit: str, image_digest: str) -> BenchmarkSuite:
@@ -24,7 +28,7 @@ def build(root: Path, commit: str, image_digest: str) -> BenchmarkSuite:
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("A built environment image SHA-256 is required")
     lock_relative = "benchmarks/locks/platform-uv.lock"
-    lock_sha = _sha256(root / lock_relative)
+    lock_sha = _pinned_sha256(root, commit, lock_relative)
     grouped = {
         "form_frontend": ["form-submit-001", *(case.case_id for case in FORM_CASES)],
         "api_contract": [case_id for case_id, *_ in API_CASES],
@@ -47,7 +51,7 @@ def build(root: Path, commit: str, image_digest: str) -> BenchmarkSuite:
                 "base_commit": commit,
                 "fixture_path": fixture,
                 "hidden_oracle_path": oracle,
-                "hidden_oracle_sha256": _sha256(root / oracle),
+                "hidden_oracle_sha256": _pinned_sha256(root, commit, oracle),
                 "dependency_lock_path": lock_relative,
                 "dependency_lock_sha256": lock_sha,
                 "environment_image_sha256": digest,
