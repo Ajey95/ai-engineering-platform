@@ -26,9 +26,11 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from platform_app.artifact_quota import artifact_usage_bytes, reserve_artifact
 from platform_app.export_quota import reserve_export
 from platform_app.media_quota import media_usage_seconds, reserve_media_attempt
 from platform_app.models import (
+    ArtifactCharge,
     AuditEvent,
     BudgetEntry,
     ExportCharge,
@@ -310,6 +312,7 @@ def main() -> int:
             "--daily-export-cap-bytes", "100",
             "--daily-sandbox-minutes", "30",
             "--daily-media-minutes", "2",
+            "--artifact-cap-bytes", "100",
         ]
         operator_result = subprocess.run(
             operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
@@ -330,6 +333,7 @@ def main() -> int:
                 and tenant.daily_export_cap_bytes == 100
                 and tenant.daily_sandbox_minutes == 30
                 and tenant.daily_media_minutes == 2
+                and tenant.artifact_cap_bytes == 100
                 and Decimal(tenant.daily_inference_cap_usd) == Decimal("0.015")
                 and session.scalar(select(func.count()).select_from(AuditEvent).where(
                     AuditEvent.tenant_id == tenant.id,
@@ -487,6 +491,33 @@ def main() -> int:
         postgres_media_quota_race = sorted(media_results) == [
             "MEDIA_QUOTA_EXHAUSTED", "reserved",
         ] and media_rows == 1 and media_seconds == 70
+        artifact_barrier = Barrier(2)
+
+        def reserve_media_bytes(index: int) -> str:
+            artifact_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    reserve_artifact(
+                        session, f"sandbox-race-{index}", "private_media", "baseline",
+                        f"{index}" * 64, 70,
+                    )
+                    session.commit()
+                    return "reserved"
+                except ServiceError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(reserve_media_bytes, index) for index in range(2)]
+            artifact_results = [future.result(timeout=30) for future in futures]
+        with Session(engine) as session:
+            artifact_rows = session.scalar(select(func.count(ArtifactCharge.id)).where(
+                ArtifactCharge.tenant_id == "fixture-tenant",
+            ))
+            artifact_bytes = artifact_usage_bytes(session, "fixture-tenant")
+        postgres_artifact_quota_race = sorted(artifact_results) == [
+            "ARTIFACT_QUOTA_EXHAUSTED", "reserved",
+        ] and artifact_rows == 1 and artifact_bytes == 70
         # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
         # Both requests must return successfully while only one final event exists.
         import platform_app.api as api_module
@@ -576,6 +607,7 @@ def main() -> int:
             "postgres_export_quota_race": postgres_export_quota_race,
             "postgres_sandbox_quota_race": postgres_sandbox_quota_race,
             "postgres_media_quota_race": postgres_media_quota_race,
+            "postgres_artifact_quota_race": postgres_artifact_quota_race,
             "quota_operator_audit": quota_operator_audit,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
@@ -601,6 +633,7 @@ def main() -> int:
             and postgres_export_quota_race
             and postgres_sandbox_quota_race
             and postgres_media_quota_race
+            and postgres_artifact_quota_race
             and quota_operator_audit
             and all(v == 1 for v in counts.values())
             else 1

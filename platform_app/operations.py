@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from platform_app.alert_delivery import validate_pager_destination
+from platform_app.artifact_quota import artifact_usage_bytes
 from platform_app.config import settings
 from platform_app.db import utcnow
 from platform_app.media_quota import media_usage_seconds
@@ -328,6 +329,10 @@ def operations_snapshot(
         "exports": {
             "used_bytes_today": export_bytes,
             "daily_cap_bytes": tenant.daily_export_cap_bytes,
+        },
+        "artifacts": {
+            "used_bytes": artifact_usage_bytes(db, tenant_id),
+            "cap_bytes": tenant.artifact_cap_bytes,
         },
         "warnings_now": warnings,
         "warning_details": current_warning_details(warnings),

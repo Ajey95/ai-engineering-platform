@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -28,6 +29,7 @@ class Tenant(Base):
         CheckConstraint("daily_export_cap_bytes > 0", name="ck_tenant_export_cap_positive"),
         CheckConstraint("daily_sandbox_minutes > 0", name="ck_tenant_sandbox_cap_positive"),
         CheckConstraint("daily_media_minutes > 0", name="ck_tenant_media_cap_positive"),
+        CheckConstraint("artifact_cap_bytes > 0", name="ck_tenant_artifact_cap_positive"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200))
@@ -39,6 +41,7 @@ class Tenant(Base):
     daily_export_cap_bytes: Mapped[int] = mapped_column(Integer, default=100_000_000)
     daily_sandbox_minutes: Mapped[int] = mapped_column(Integer, default=120)
     daily_media_minutes: Mapped[int] = mapped_column(Integer, default=120)
+    artifact_cap_bytes: Mapped[int] = mapped_column(BigInteger, default=5_000_000_000)
     model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
     plugin_allowlist: Mapped[list] = mapped_column(JsonType, default=list)
 
@@ -395,6 +398,35 @@ class MediaMinuteCharge(Base):
     status: Mapped[str] = mapped_column(String(16), default="reserved")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ArtifactCharge(Base):
+    __tablename__ = "artifact_charges"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "run_id", "kind", "logical_key",
+            name="uq_artifact_charge_logical",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_artifact_charge_run_scope",
+        ),
+        CheckConstraint("byte_count > 0", name="ck_artifact_charge_bytes_positive"),
+        CheckConstraint(
+            "status IN ('reserved', 'active', 'deleted')",
+            name="ck_artifact_charge_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    logical_key: Mapped[str] = mapped_column(String(100))
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_count: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16), default="reserved")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class SandboxLease(Base):

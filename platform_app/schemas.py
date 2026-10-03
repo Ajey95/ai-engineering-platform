@@ -53,6 +53,7 @@ class TenantQuotasSet(StrictModel):
     daily_export_cap_bytes: int = Field(ge=1, le=2_000_000_000)
     daily_sandbox_minutes: int | None = Field(default=None, ge=10, le=100_000)
     daily_media_minutes: int | None = Field(default=None, ge=1, le=100_000)
+    artifact_cap_bytes: int | None = Field(default=None, ge=1, le=1_000_000_000_000)
     reason: str = Field(min_length=8, max_length=2000)
 
     @model_validator(mode="after")

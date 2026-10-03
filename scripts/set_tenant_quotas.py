@@ -58,6 +58,7 @@ def main() -> int:
     parser.add_argument("--daily-export-cap-bytes", type=_export_bytes)
     parser.add_argument("--daily-sandbox-minutes", type=_sandbox_minutes)
     parser.add_argument("--daily-media-minutes", type=_positive_int)
+    parser.add_argument("--artifact-cap-bytes", type=_positive_int)
     args = parser.parse_args()
     if args.monthly_inference_cap_usd < args.daily_inference_cap_usd:
         parser.error("Monthly inference cap must be at least the daily cap")
@@ -79,6 +80,7 @@ def main() -> int:
                 "daily_export_cap_bytes": tenant.daily_export_cap_bytes,
                 "daily_sandbox_minutes": tenant.daily_sandbox_minutes,
                 "daily_media_minutes": tenant.daily_media_minutes,
+                "artifact_cap_bytes": tenant.artifact_cap_bytes,
             }
             after = {
                 "daily_inference_cap_usd": format(args.daily_inference_cap_usd, ".6f"),
@@ -98,6 +100,10 @@ def main() -> int:
                     args.daily_media_minutes
                     if args.daily_media_minutes is not None else tenant.daily_media_minutes
                 ),
+                "artifact_cap_bytes": (
+                    args.artifact_cap_bytes
+                    if args.artifact_cap_bytes is not None else tenant.artifact_cap_bytes
+                ),
             }
             if before != after:
                 tenant.daily_inference_cap_usd = args.daily_inference_cap_usd
@@ -106,6 +112,7 @@ def main() -> int:
                 tenant.daily_export_cap_bytes = after["daily_export_cap_bytes"]
                 tenant.daily_sandbox_minutes = after["daily_sandbox_minutes"]
                 tenant.daily_media_minutes = after["daily_media_minutes"]
+                tenant.artifact_cap_bytes = after["artifact_cap_bytes"]
                 db.add(
                     AuditEvent(
                         tenant_id=tenant.id,

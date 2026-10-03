@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from platform_app import api
+from platform_app.artifact_quota import artifact_usage_bytes, reserve_artifact
 from platform_app.browser_auth import SESSION_COOKIE, csrf_for
 from platform_app.config import Settings
 from platform_app.db import Base
 from platform_app.models import (
+    ArtifactCharge,
     BrowserSession,
     OutboxEvent,
     PrivateMediaPublication,
@@ -31,7 +33,7 @@ from platform_app.models import (
 )
 from platform_app.private_media import media_prefix, sign_recording_grant
 from platform_app.private_media_deletion import process_private_media_deletion
-from platform_app.private_media_store import publish_recording
+from platform_app.private_media_store import publication_inventory, publish_recording
 from platform_app.recording_deletion import reconcile_local_recording_deletions
 from platform_app.service import ServiceError
 from scripts.dispatch_private_media_deletions import pending_event_ids
@@ -159,9 +161,13 @@ def test_private_publication_uploads_verifies_and_replays(tmp_path):
         ))
         db.commit()
         client = FakeS3()
+        digest, byte_count = publication_inventory(db, run, "baseline", tmp_path)
+        reserve_artifact(db, run.id, "private_media", "baseline", digest, byte_count)
+        db.commit()
         publication = publish_recording(db, config, run, "baseline", tmp_path, client)
         db.commit()
         assert publication.status == "ready"
+        assert artifact_usage_bytes(db, run.tenant_id) == byte_count
         assert publication.object_count == 5
         assert client.uploads == 5
         prefix = media_prefix("tenant-a", "project-a", "run-a", "baseline", effect)
@@ -183,6 +189,10 @@ def test_private_publication_uploads_verifies_and_replays(tmp_path):
         with pytest.raises(ServiceError) as changed:
             publish_recording(db, config, run, "baseline", tmp_path, client)
         assert changed.value.code == "MEDIA_UPLOAD_UNVERIFIED"
+        del client.objects[prefix + "manifest.json"]
+        with pytest.raises(ServiceError) as missing:
+            publish_recording(db, config, run, "baseline", tmp_path, client)
+        assert missing.value.code == "MEDIA_UPLOAD_UNVERIFIED"
     engine.dispose()
 
 
@@ -288,8 +298,13 @@ def test_remote_deletion_waits_for_edge_invalidation_and_survives_local_reconcil
             tenant_id=run.tenant_id, topic="private_media.delete",
             payload={"run_id": run.id, "label": "baseline"}, status="pending",
         )
-        db.add_all([publication, deletion, event])
+        db.add_all([publication, deletion, event, ArtifactCharge(
+            tenant_id=run.tenant_id, run_id=run.id,
+            kind="private_media", logical_key="baseline", sha256="b" * 64,
+            byte_count=100, status="active",
+        )])
         db.commit()
+        assert artifact_usage_bytes(db, run.tenant_id) == 100
         result = reconcile_local_recording_deletions(lambda: Session(engine), str(tmp_path))
         assert result["cleaned"] == 0 and deletion.status == "pending"
         prefix = media_prefix(run.tenant_id, run.project_id, run.id, "baseline", "a" * 64)
@@ -302,11 +317,13 @@ def test_remote_deletion_waits_for_edge_invalidation_and_survives_local_reconcil
         assert not s3.objects
         assert event.status == "pending" and deletion.status == "pending"
         assert publication.status == "ready"
+        assert artifact_usage_bytes(db, run.tenant_id) == 100
         cloudfront.status = "Completed"
         assert process_private_media_deletion(db, config, event, s3, cloudfront) is True
         db.commit()
         assert event.status == "delivered" and deletion.status == "complete"
         assert publication.status == "deleted"
+        assert artifact_usage_bytes(db, run.tenant_id) == 0
         assert run.media_status == "PARTIALLY_DELETED"
         assert cloudfront.calls[0]["InvalidationBatch"]["Paths"]["Items"] == [
             f"/{prefix}*"

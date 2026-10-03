@@ -7,6 +7,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from platform_app.artifact_quota import delete_artifact_charge
 from platform_app.config import Settings
 from platform_app.model_base import utcnow
 from platform_app.models import (
@@ -94,6 +95,7 @@ def process_private_media_deletion(
         return False
     purge_local_recording(db, run, label, config.artifact_dir)
     publication.status = "deleted"
+    delete_artifact_charge(db, run, "private_media", label)
     deletion.status = "complete"
     deletion.completed_at = utcnow()
     other = "candidate" if label == "baseline" else "baseline"

@@ -1783,3 +1783,18 @@ SQLite API database was backed up, extended and restarted on 8098. Full suite
 289 passed, 2 Windows symlink skips with PostgreSQL/Memgraph gates; Ruff,
 TypeScript and Vite passed; Chromium showed the new field/metric with no page
 errors. Artifact-byte quota remains.
+
+2026-10-03 private media artifact-byte quota: migration `b902d4ef6a30` adds a
+5 GB default tenant cap and a durable tenant/run/label charge. Hosted HLS
+publication computes a digest-verified inventory, reserves exact object and
+manifest bytes under the tenant row lock before S3 upload, activates the
+charge after publication, and releases it only after S3 purge plus CloudFront
+invalidation complete. Replay reuses the same charge; 80% usage creates an
+audit warning. Owner Settings/Operations and trusted CLI expose cap and usage.
+Local PostgreSQL upgraded with no Alembic drift, and a disposable concurrent
+probe admitted exactly one 70-byte artifact at a 100-byte cap. The local SQLite
+API database was backed up and upgraded, API readiness passed, and Chromium
+showed the 5 GB field and metric without page errors. Full suite: 291 passed,
+2 Windows symlink skips with PostgreSQL/Memgraph gates; Ruff, TypeScript and
+Vite production build passed. The quota covers private HLS objects only; live
+AWS publication and other artifact classes remain unverified/unmetered.

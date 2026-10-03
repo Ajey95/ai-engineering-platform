@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import or_, select
 
+from platform_app.artifact_quota import reserve_artifact
 from platform_app.config import Settings
 from platform_app.db import utcnow
 from platform_app.media import (
@@ -19,8 +20,15 @@ from platform_app.media import (
     sha256_file,
 )
 from platform_app.media_quota import finish_media_attempt, reserve_media_attempt
-from platform_app.models import MediaMinuteCharge, OutboxEvent, Run, SandboxLease, ToolAction
-from platform_app.private_media_store import publish_recording
+from platform_app.models import (
+    MediaMinuteCharge,
+    OutboxEvent,
+    PrivateMediaPublication,
+    Run,
+    SandboxLease,
+    ToolAction,
+)
+from platform_app.private_media_store import publication_inventory, publish_recording
 from platform_app.recording_deletion import deletion_for
 from platform_app.service import ServiceError, canonical_hash
 
@@ -209,6 +217,18 @@ def dispatch_one_hosted_media(
             db.commit()
         with session_factory() as db:
             run = db.get(Run, run_id)
+            existing = db.scalar(select(PrivateMediaPublication).where(
+                PrivateMediaPublication.tenant_id == tenant_id,
+                PrivateMediaPublication.run_id == run_id,
+                PrivateMediaPublication.label == label,
+                PrivateMediaPublication.status == "ready",
+            ))
+            if existing is None:
+                digest, byte_count = publication_inventory(db, run, label, root)
+                reserve_artifact(db, run_id, "private_media", label, digest, byte_count)
+                db.commit()
+        with session_factory() as db:
+            run = db.get(Run, run_id)
             publish_recording(db, config, run, label, root, s3)
             jobs = db.scalars(select(OutboxEvent).where(
                 OutboxEvent.tenant_id == tenant_id,
@@ -235,6 +255,7 @@ def dispatch_one_hosted_media(
         permanent = code in {
             "MEDIA_SOURCE_INVALID", "MEDIA_SOURCE_CONFLICT",
             "MEDIA_QUOTA_EXHAUSTED", "MEDIA_QUOTA_MISSING", "MEDIA_QUOTA_CONFLICT",
+            "ARTIFACT_QUOTA_EXHAUSTED", "ARTIFACT_CONFLICT", "ARTIFACT_INVALID",
         }
         return _finish(
             session_factory, event_id, token,
