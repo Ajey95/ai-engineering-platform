@@ -1822,3 +1822,13 @@ REVIEW_READY/PASSED, and two READY recordings. The local development worker
 was restarted with the refreshed image. This is synthetic controlled evidence,
 not a live model or hosted customer-repository result. Full regression
 suite passed 292 with 2 Windows symlink skips under PostgreSQL/Memgraph gates.
+
+2026-10-03 repeatable local PostgreSQL restore: new
+`scripts.verify_local_postgres_restore` creates and drops a uniquely named
+local disposable database, exports a repeatable-read snapshot, restores it
+transactionally, compares all public table counts and migration revision,
+checks event sequences/foreign keys and Alembic drift, and replays restored
+recording tombstones against synthetic local media. Latest run at head
+`b902d4ef6a30` passed 32 table counts, zero sequence mismatches, no drift,
+and two of two synthetic media removals; local structural restore elapsed
+4.56 seconds. This does not establish hosted backup age, RPO, RTO or failover.

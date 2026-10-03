@@ -28,3 +28,21 @@ The remaining release gate is a timed restore from the selected hosted backup
 and object store into an isolated environment, followed by authorization,
 cross-tenant, worker, media deletion, graph rebuild and recovery checks under
 the declared load. No RPO or RTO claim follows from this local drill.
+
+## Repeatable current-schema drill
+
+`python -m scripts.verify_local_postgres_restore` creates a uniquely named
+disposable local PostgreSQL database, takes a repeatable-read snapshot of the
+active fixture database, restores it with `pg_restore --single-transaction`,
+compares every public table count and the Alembic revision, checks event
+sequences and validated foreign keys, runs `alembic check`, then plants and
+removes synthetic local media under restored deletion tombstones. It drops
+only the database it created. It requires the local WSL PostgreSQL container.
+
+The 2026-10-03 rerun at revision `b902d4ef6a30` restored 32 public tables
+with matching counts, zero run/event sequence mismatches, no Alembic drift,
+and two of two synthetic media objects removed under two tombstones. The
+123,386-byte dump restored and passed the structural checks in 4.56 seconds
+on this local machine. This duration excludes hosted backup age, object
+restore, graph rebuild, traffic cutover and application validation; it is
+not an RTO measurement. No customer data was used.
