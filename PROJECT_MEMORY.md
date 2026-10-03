@@ -1723,3 +1723,25 @@ input/cache rates after reservation yet settles $0.000110 at the pinned rates.
 Model budget tests passed 16/16, fixture/general/hosted model path tests 4/4,
 scoped Ruff passed, and the full suite again passed 287 with 2 Windows symlink
 skips with the PostgreSQL and Memgraph gates enabled.
+
+2026-10-03 post-pricing local end-to-end check: the WSL sandbox image
+`aip-dev-sandbox:0.1.2` ran the controlled-provider budget pause and approval
+replay as run `ed57dff7-8968-4452-9887-eab0abd3e318` at
+`artifacts/worker-verification/e0d077f63266`. Zero provider calls occurred
+before approval; exactly one controlled call occurred after it. Ten effects
+completed, baseline browser/oracle failed as expected, candidate named test,
+browser and oracle passed, both recordings became READY, and run ended
+REVIEW_READY/PASSED. This remains synthetic controlled evidence. After the
+SQLite migration, local Chromium loaded the Forge workspace with no page
+errors or failed network responses.
+
+2026-10-03 hosted prelaunch crash recovery: an expired PREPARING dispatch now
+requeues only if it has no sandbox lease of any state, no tool action and fewer
+than three delivery attempts. It claims a new fence, clears ownership and
+records the state change before the existing dispatch becomes pending again.
+The controlled coordinator test replayed such a run through baseline and
+candidate guests to REVIEW_READY; a PREPARING run with an INTENDED model action
+still closed FAILED without replay. Hosted worker tests passed 3/3; scoped
+Ruff and diff whitespace checks passed. The full Python suite passed 287 with
+2 Windows symlink skips with PostgreSQL and Memgraph gates enabled. Active
+sandbox and later-phase crash replay remain blocked pending reconciliation.

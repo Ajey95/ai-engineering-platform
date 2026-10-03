@@ -16,7 +16,16 @@ from platform_app.db import Base
 from platform_app.environment_manifest import EnvironmentManifest
 from platform_app.general_patch import parse_general_patch
 from platform_app.hosted_worker import HostedWorker
-from platform_app.models import ModelEntry, OutboxEvent, Project, Run, RunEvent, Task, Tenant
+from platform_app.models import (
+    ModelEntry,
+    OutboxEvent,
+    Project,
+    Run,
+    RunEvent,
+    Task,
+    Tenant,
+    ToolAction,
+)
 from platform_app.repository_archive import SourceArchive
 from platform_app.sandbox_broker import SandboxSpec
 from platform_app.sandbox_bundle import build_guest_bundle
@@ -194,4 +203,52 @@ def test_hosted_worker_joins_two_guest_generations_and_review_receipt(
     with factory() as db:
         assert db.get(Run, "run-b").state == "FAILED"
         assert db.get(OutboxEvent, "dispatch-b").status == "failed"
+        db.add(Run(
+            id="run-c", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="k3",
+            request_hash="e" * 64, base_commit=source.commit,
+            model_entry_id="model-a", state="PREPARING",
+            lease_owner="dead-worker", lease_fence=1,
+            lease_until=datetime.now(UTC) - timedelta(seconds=1),
+            config_snapshot=run.config_snapshot,
+        ))
+        db.add(OutboxEvent(
+            id="dispatch-c", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-c"}, status="processing", attempts=1,
+        ))
+        db.commit()
+    assert worker.recover_stale() == 1
+    with factory() as db:
+        recovered = db.get(Run, "run-c")
+        assert recovered.state == "QUEUED"
+        assert recovered.lease_fence == 2
+        assert recovered.lease_owner is None
+        assert db.get(OutboxEvent, "dispatch-c").status == "pending"
+    assert worker.process_event("dispatch-c") == "run-c"
+    with factory() as db:
+        assert db.get(Run, "run-c").state == "REVIEW_READY"
+        assert db.get(OutboxEvent, "dispatch-c").status == "delivered"
+        db.add(Run(
+            id="run-d", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="k4",
+            request_hash="f" * 64, base_commit=source.commit,
+            model_entry_id="model-a", state="PREPARING",
+            lease_owner="dead-worker", lease_fence=1,
+            lease_until=datetime.now(UTC) - timedelta(seconds=1),
+            config_snapshot=run.config_snapshot,
+        ))
+        db.add(OutboxEvent(
+            id="dispatch-d", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-d"}, status="processing", attempts=1,
+        ))
+        db.add(ToolAction(
+            tenant_id="tenant-a", run_id="run-d", step_id="pending-effect",
+            logical_action="model.generate", effect_key="a" * 64,
+            arguments_hash="b" * 64, policy_result="allowed", status="INTENDED",
+        ))
+        db.commit()
+    assert worker.recover_stale() == 1
+    with factory() as db:
+        assert db.get(Run, "run-d").state == "FAILED"
+        assert db.get(OutboxEvent, "dispatch-d").status == "failed"
     engine.dispose()

@@ -28,7 +28,7 @@ from platform_app.guest_comparison import compare_guest_observations
 from platform_app.hosted_baseline import seal_and_collect_baseline, stage_and_launch_baseline
 from platform_app.hosted_media import stage_hosted_recording
 from platform_app.model_qualification import qualification_for_pinned_run
-from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, SandboxLease
+from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, SandboxLease, ToolAction
 from platform_app.providers import ProviderError
 from platform_app.repository_fetch import fetch_authorized_run_source
 from platform_app.run_ledger import assert_fence, aware, claim_run, heartbeat, transition
@@ -428,6 +428,28 @@ class HostedWorker:
                     recovered += 1
                     continue
                 else:
+                    if run.state == "PREPARING" and event.attempts < 3 and not active:
+                        any_sandbox = db.scalar(select(SandboxLease.id).where(
+                            SandboxLease.tenant_id == run.tenant_id,
+                            SandboxLease.run_id == run.id,
+                        ).limit(1))
+                        any_tool = db.scalar(select(ToolAction.id).where(
+                            ToolAction.tenant_id == run.tenant_id,
+                            ToolAction.run_id == run.id,
+                        ).limit(1))
+                        if any_sandbox is None and any_tool is None:
+                            owned, _ = claim_run(
+                                db, run.id, self.worker_id, settings().lease_seconds
+                            )
+                            owned.state = "QUEUED"
+                            owned.lease_owner = None
+                            owned.lease_until = None
+                            append_event(db, owned, "run.state_changed", {
+                                "state": "QUEUED", "recovery": "prelaunch_retry",
+                            })
+                            event.status = "pending"
+                            recovered += 1
+                            continue
                     owned, fence = claim_run(
                         db, run.id, self.worker_id, settings().lease_seconds
                     )
