@@ -25,10 +25,12 @@ cache-pricing change (run `2c68adf4-a172-4c38-aaed-4737f9198d44`,
 REVIEW_READY/PASSED, 10 effects,
 two READY recordings). Its first attempt paused before provider HTTP; one owner
 budget approval resumed it with exactly one controlled provider request. The
-visible local UI at `http://127.0.0.1:5173/`
-admitted run `851d8ffb-d0d1-4876-b815-561910ccd653` with a lower run cap,
-reproduced the form bug and correctly closed INCONCLUSIVE without a qualified provider;
-Chromium displayed its evidence without page errors. This is
+visible local UI at `http://127.0.0.1:5173/` admitted fresh run
+`78286c44-53c1-41f3-9b4b-6dfc4f5a2c00` with the refreshed worker image.
+It reproduced the form bug and correctly closed INCONCLUSIVE without a qualified
+provider; four effects and 17 events persisted. Its recording SHA-256 matched
+the browser receipt, and Chromium played 360p HLS at 230 ms to first frame
+without page or server errors. This is
 not a live provider, customer repository, AWS or GitHub qualification.
 
 ## Evidence currently available
