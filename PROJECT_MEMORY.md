@@ -11,8 +11,8 @@ release gate have not been achieved**.
 
 **Workspace and publication:** `D:\projects\aiplatform`, branch `master`,
 private source repository `https://github.com/Ajey95/ai-engineering-platform`.
-The last published baseline before this documentation pass was
-`50290a10c2ea8c33e5a2865f7f96c43f38203de6`. Check `git status` and
+The latest observed green quality run used commit
+`d38865a9ba53d21fd507914129731f584405f9a6`. Check `git status` and
 `git ls-remote origin refs/heads/master` before changing files; do not assume
 this paragraph is the latest commit. The source repository is connected to
 Ajey95; a repository connection for the platform's draft-PR feature is a
@@ -29,7 +29,7 @@ separate integration.
 | Model and policy | OpenAI, Anthropic and Google adapter code; registry and qualification commands; pinned price/capability snapshots, reservation/usage accounting, tenant routing policy, bounded failover, context bundles, compaction, tool policy and plugin manifest validation have controlled tests. |
 | Memory and media | Canonical memory states and provenance, revision-pinned code index, local Memgraph projection/fallback, FFmpeg HLS, scoped local playback and deletion, private publication/grant/deletion code with fake-client tests. |
 | Operations and infrastructure artifacts | Quota ledgers, owner Operations UI, alert evaluator/webhook code, runbooks, OTLP propagation and local receiver probe. Terraform modules, Packer guest definition and control/media Dockerfiles exist and passed local format/build/smoke checks. |
-| Evaluation and quality | Forty pinned synthetic cases: baselines and reference hidden-oracle checks passed. Latest PostgreSQL/Memgraph-enabled suite: **295 passed, 2 Windows symlink skips**; Ruff passed. Frontend TypeScript/Vite production build passed. Local PostgreSQL structural restore drill passed. |
+| Evaluation and quality | Forty pinned synthetic cases: baselines and reference hidden-oracle checks passed. Latest PostgreSQL/Memgraph-enabled local suite: **295 passed, 2 Windows symlink skips**; Ruff passed. GitHub quality run `37113492325` passed Python (293 passed, 4 Linux skips), PostgreSQL, web and controlled sandbox jobs. Local PostgreSQL structural restore drill passed. |
 
 ### Pending before calling the product complete
 
@@ -51,19 +51,12 @@ for the private **source** repository only.
 
 ### Exact next checkpoint
 
-1. Finish and verify this README/PROJECT_MEMORY documentation pass. The first
-   GitHub Actions run for `50290a1` failed before tests because
-   `astral-sh/setup-uv@v10` was not a resolvable action ref. Commit `56a8712`
-   pinned the verified `v10.2.0` commit and reached the jobs: web and PostgreSQL
-   passed, while Linux pytest returned browser `ERROR` without installed
-   Playwright Chromium, and the sandbox probe reached `REVIEW_READY/PASSED`
-   but media encoding failed without host FFmpeg. The workflow now installs
-   Chromium/dependencies in the Python job and FFmpeg in the sandbox job.
-   The third run for `0ff52dc` passed Linux pytest (293 passed, 4 skipped),
-   PostgreSQL, web and sandbox with READY media. Its benchmark validator found
-   that the default shallow checkout omitted the historical pinned fixture
-   commit. The Python job now fetches full Git history. Commit/push, inspect
-   the next Actions run, and fix any remaining gate before reporting CI green.
+1. The docs and CI repair are complete at the observed code baseline:
+   [quality run 37113492325](https://github.com/Ajey95/ai-engineering-platform/actions/runs/37113492325)
+   passed all four jobs after pinning setup-uv, installing Linux Playwright
+   Chromium and host FFmpeg, and fetching historical pinned benchmark commits.
+   Push any later checkpoint edit and inspect its new Actions run before
+   treating that later commit as green.
 2. On continuation, run `git status --short`, `git log -1 --oneline`,
    `gh run list --repo Ajey95/ai-engineering-platform --limit 3` and read this
    section plus `IMPLEMENTATION_STATUS.md`. Recheck any long-running local
@@ -2004,3 +1997,15 @@ focused regression test covers this. No live model, AWS or customer repository
 was used.
 The final PostgreSQL/Memgraph-enabled Python suite passed 295 with two Windows
 symlink skips; focused resume tests passed 18/18, and Ruff passed.
+
+2026-10-03 source publication and CI: the code and detailed backend README
+were pushed to private `Ajey95/ai-engineering-platform`. The first Actions run
+failed before jobs on an unresolved `setup-uv@v10` alias. After pinning the
+action, Linux Python tests exposed missing Playwright Chromium, and the
+controlled sandbox run exposed missing host FFmpeg for HLS. Installing both
+made Python tests, PostgreSQL, web and sandbox checks pass. Benchmark validation
+then found the checkout had omitted historical pinned commits; `fetch-depth: 0`
+fixed it. Run `37113492325` at `d38865a` passed all four jobs, including
+40-case benchmark validation/reference checks, 293 Python tests with four
+Linux skips and a controlled sandbox `REVIEW_READY/PASSED` with READY media.
+This is source/CI evidence, not live provider or AWS qualification.

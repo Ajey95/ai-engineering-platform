@@ -215,7 +215,7 @@ Set-Location apps\web
 npm run build
 ```
 
-The latest PostgreSQL/Memgraph-enabled Python run passed **295 tests** with **2 Windows symlink skips**. Ruff passed. The 40 pinned benchmark baseline/reference pairs and the frontend production build have also passed locally. These results are local verification evidence for the code paths described above.
+The latest PostgreSQL/Memgraph-enabled local Python run passed **295 tests** with **2 Windows symlink skips**. Ruff passed. The 40 pinned benchmark baseline/reference pairs and the frontend production build passed locally. [GitHub quality run 37113492325](https://github.com/Ajey95/ai-engineering-platform/actions/runs/37113492325) passed Python (293 tests, 4 Linux skips), PostgreSQL, web and the controlled sandbox repair/media jobs.
 
 ## Repository guide
 
