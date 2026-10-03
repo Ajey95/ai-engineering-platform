@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from platform_app.alert_delivery import validate_pager_destination
 from platform_app.config import settings
 from platform_app.db import utcnow
+from platform_app.model_qualification import qualification_current
 from platform_app.models import (
     BudgetEntry,
     ExportCharge,
+    ModelEntry,
     OperationalAlert,
     OperationalAlertEvent,
     OutboxEvent,
@@ -115,6 +117,58 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
         "input_estimation_samples": len(errors),
         "definite_rejection_rate": round(rejected / decided, 4) if decided else None,
     }
+
+
+def _component_status(
+    db: Session, config, *, queue_age: int | None, graph_age: int | None,
+    media_age: int | None, expired_leases: int,
+) -> list[dict[str, str]]:
+    """Report only what this request can prove from configuration and canonical rows."""
+    qualified = sum(
+        1 for model in db.scalars(select(ModelEntry)).all()
+        if qualification_current(model)
+        and not (model.capabilities or {}).get("database_fixture_only")
+    )
+    queue_status = "DEGRADED" if queue_age is not None and queue_age > 300 else "UNVERIFIED"
+    graph_status = (
+        "DISABLED" if not config.memgraph_uri else
+        "DEGRADED" if graph_age is not None and graph_age > 60 else "UNVERIFIED"
+    )
+    media_status = (
+        "DEGRADED" if media_age is not None and media_age > 600 else
+        "UNVERIFIED" if config.private_media_bucket else "LOCAL_ONLY"
+    )
+    sandbox_status = (
+        "DISABLED" if not config.hosted_execution_enabled else
+        "DEGRADED" if expired_leases else "UNVERIFIED"
+    )
+    return [
+        {"id": "control_api", "status": "SERVING",
+         "detail": "This authenticated API request completed."},
+        {"id": "canonical_database", "status": "AVAILABLE",
+         "detail": "Canonical database queries completed for this snapshot."},
+        {"id": "run_dispatch", "status": queue_status,
+         "detail": "Queued run age exceeds five minutes." if queue_status == "DEGRADED"
+         else "Worker liveness is not proven by the queue snapshot."},
+        {"id": "graph_projection", "status": graph_status,
+         "detail": "Graph projection is not configured." if graph_status == "DISABLED"
+         else "Graph projection backlog exceeds one minute." if graph_status == "DEGRADED"
+         else "Graph service reachability is not probed by this snapshot."},
+        {"id": "model_providers", "status": "UNVERIFIED" if qualified else "UNAVAILABLE",
+         "detail": (
+             f"{qualified} non-fixture model entries have current qualification; "
+             "live provider reachability is not probed."
+         )
+         if qualified else "No non-fixture model entry has current qualification."},
+        {"id": "sandbox_execution", "status": sandbox_status,
+         "detail": "Hosted sandbox execution is disabled." if sandbox_status == "DISABLED"
+         else "Expired sandbox leases require cleanup." if sandbox_status == "DEGRADED"
+         else "Hosted VM launch and isolation are not probed by this snapshot."},
+        {"id": "media_processing", "status": media_status,
+         "detail": "Media job age exceeds ten minutes." if media_status == "DEGRADED"
+         else "Only local media storage is configured." if media_status == "LOCAL_ONLY"
+         else "Remote media processing and playback are not probed by this snapshot."},
+    ]
 
 
 def operations_snapshot(
@@ -236,6 +290,10 @@ def operations_snapshot(
         pager_configured = False
     return {
         "window_start": cutoff.isoformat(), "observed_at": now.isoformat(),
+        "components": _component_status(
+            db, config, queue_age=queue_age, graph_age=graph_age,
+            media_age=media_age, expired_leases=expired_leases,
+        ),
         "runs": {
             "by_state": states, "closed_by_verdict": verdicts,
             "closed_count": closed, "reviewed_count": reviewed,

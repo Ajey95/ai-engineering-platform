@@ -158,6 +158,14 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",
             "media_encode_age", "sandbox_orphan",
         ]
+        components = {item["id"]: item for item in snapshot["components"]}
+        assert components["control_api"]["status"] == "SERVING"
+        assert components["canonical_database"]["status"] == "AVAILABLE"
+        assert components["run_dispatch"]["status"] == "DEGRADED"
+        assert components["graph_projection"]["status"] in {"DISABLED", "DEGRADED"}
+        assert components["model_providers"]["status"] == "UNAVAILABLE"
+        assert components["sandbox_execution"]["status"] in {"DISABLED", "DEGRADED"}
+        assert components["media_processing"]["status"] == "DEGRADED"
         assert snapshot["pager_delivery"]["pending_count"] == 0
         assert snapshot["pager_delivery"]["delivered_count_24h"] == 0
         assert [item["owner"] for item in snapshot["warning_details"]] == [
@@ -222,6 +230,9 @@ def test_operations_api_requires_tenant_owner(monkeypatch):
         assert response.json()["runs"]["verification_pass_rate"] is None
         assert response.json()["runs"]["review_acceptance_rate"] is None
         assert response.json()["unavailable"]
+        components = {item["id"]: item for item in response.json()["components"]}
+        assert components["canonical_database"]["status"] == "AVAILABLE"
+        assert components["model_providers"]["status"] == "UNAVAILABLE"
         assert [item["id"] for item in response.json()["active_alerts"]] == ["alert-a"]
         assert client.post(
             "/v1/operations/alerts/alert-b/resolve", json={"reason": "Reviewed event"}

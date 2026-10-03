@@ -1745,3 +1745,13 @@ still closed FAILED without replay. Hosted worker tests passed 3/3; scoped
 Ruff and diff whitespace checks passed. The full Python suite passed 287 with
 2 Windows symlink skips with PostgreSQL and Memgraph gates enabled. Active
 sandbox and later-phase crash replay remain blocked pending reconciliation.
+
+2026-10-03 component status: the owner Operations summary now reports seven
+separate components from authenticated API/database observation, persisted
+tenant-scoped queue age, local configuration and current non-fixture model
+qualification. Unprobed service reachability is explicitly UNVERIFIED;
+unconfigured components are DISABLED or LOCAL_ONLY. Focused API tests passed,
+the full suite passed 287 with two Windows symlink skips (PostgreSQL and
+Memgraph gates enabled), Ruff, TypeScript and Vite production build passed.
+The API on 8098 was restarted, and headless Chromium rendered all seven rows
+without page errors; the initial inline label spacing was fixed and checked.

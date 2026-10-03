@@ -32,6 +32,7 @@ type MemoryRecord = {
 }
 type OperationsSummary = {
   window_start: string; observed_at: string
+  components: { id: string; status: string; detail: string }[]
   runs: { by_state: Record<string, number>; closed_by_verdict: Record<string, number>
     closed_count: number; reviewed_count: number; verification_pass_rate: number | null
     inconclusive_rate: number | null; review_acceptance_rate: number | null }
@@ -85,9 +86,9 @@ const contextSummaryDigest = (event: RunEvent, runId: string): string | null => 
 }
 
 function Status({ value }: { value: string }) {
-  const style = ['FAILED', 'CANCELLED', 'DISABLED'].includes(value) ? 'bad'
-    : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET', 'PAUSED_APPROVAL', 'FIXTURE ONLY'].includes(value) ? 'warn'
-      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED', 'ACTIVE', 'READY', 'ALLOWED'].includes(value) ? 'good' : 'neutral'
+  const style = ['FAILED', 'CANCELLED', 'DISABLED', 'UNAVAILABLE'].includes(value) ? 'bad'
+    : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET', 'PAUSED_APPROVAL', 'FIXTURE ONLY', 'DEGRADED', 'UNVERIFIED', 'LOCAL_ONLY'].includes(value) ? 'warn'
+      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED', 'ACTIVE', 'READY', 'ALLOWED', 'SERVING', 'AVAILABLE'].includes(value) ? 'good' : 'neutral'
   return <span className={`status ${style}`}>{value.replaceAll('_', ' ')}</span>
 }
 
@@ -599,6 +600,7 @@ export default function App({ identity, onSignOut }: {
           {operationsError && <div className="notice">{operationsError}</div>}
           {operations && <>
             <p className="muted">Last 24 hours · observed {date(operations.observed_at)}. Verification rates use closed runs; reviewer acceptance uses decided reviews.</p>
+            <div className="content-panel"><h2>Component status</h2><p className="muted">These statuses describe the evidence available in this snapshot. Unverified components need a live service probe.</p>{operations.components.map(component => <div className="list-row" key={component.id}><span className="component-info"><strong>{component.id.replaceAll('_', ' ')}</strong><small>{component.detail}</small></span><Status value={component.status} /></div>)}</div>
             <div className="ops-grid ops-metrics-grid">
               <div className="content-panel ops-metric"><small>Closed runs</small><strong>{operations.runs.closed_count}</strong><span>Passed verification {operations.runs.verification_pass_rate === null ? 'unavailable' : `${(operations.runs.verification_pass_rate * 100).toFixed(1)}%`} · inconclusive {operations.runs.inconclusive_rate === null ? 'unavailable' : `${(operations.runs.inconclusive_rate * 100).toFixed(1)}%`}</span><span>Reviewer acceptance {operations.runs.review_acceptance_rate === null ? 'unavailable' : `${(operations.runs.review_acceptance_rate * 100).toFixed(1)}%`} of {operations.runs.reviewed_count} decided</span></div>
               <div className="content-panel ops-metric"><small>Runnable queue</small><strong>{operations.queue.queued_count}</strong><span>Oldest {operations.queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.queue.oldest_age_seconds / 60)} min`}</span></div>
