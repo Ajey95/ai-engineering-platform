@@ -127,6 +127,7 @@ from platform_app.schemas import (
     TaskCreate,
     TaskRead,
     TenantMembershipSet,
+    TenantQuotasSet,
 )
 from platform_app.service import (
     TERMINAL_STATES,
@@ -142,6 +143,7 @@ from platform_app.service import (
     run_read,
 )
 from platform_app.telemetry import configure_telemetry, extract_trace, set_safe_attributes, tracer
+from platform_app.tenant_admin import quota_read, update_quotas
 from platform_app.tenant_quota import QuotaError
 
 
@@ -965,6 +967,30 @@ def list_tenant_memberships(
         .limit(500)
     ).all()
     return [{"subject": row.subject, "role": row.role, "status": row.status} for row in rows]
+
+
+@app.get("/v1/tenant/quotas")
+def get_tenant_quotas(
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    tenant = db.get(Tenant, identity[0])
+    if tenant is None:
+        raise ServiceError("NOT_FOUND", "Workspace not found", 404)
+    return quota_read(tenant)
+
+
+@app.put("/v1/tenant/quotas")
+def set_tenant_quotas(
+    body: TenantQuotasSet,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    result = update_quotas(db, identity[0], identity[1], body)
+    db.commit()
+    return result
 
 
 @app.put("/v1/memberships/{subject}")

@@ -46,6 +46,22 @@ class TenantMembershipSet(StrictModel):
     status: Literal["active", "disabled"] = "active"
 
 
+class TenantQuotasSet(StrictModel):
+    daily_inference_cap_usd: Decimal = Field(gt=0, le=Decimal("999999.999999"), decimal_places=6)
+    monthly_inference_cap_usd: Decimal = Field(gt=0, le=Decimal("999999.999999"), decimal_places=6)
+    max_concurrent_runs: int = Field(ge=1, le=1000)
+    daily_export_cap_bytes: int = Field(ge=1, le=2_000_000_000)
+    reason: str = Field(min_length=8, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_quotas(self):
+        if self.monthly_inference_cap_usd < self.daily_inference_cap_usd:
+            raise ValueError("Monthly inference cap must be at least the daily cap")
+        if not self.reason.strip() or len(self.reason.strip()) < 8:
+            raise ValueError("A meaningful quota change reason is required")
+        return self
+
+
 class ProjectMembershipSet(StrictModel):
     role: Literal["maintainer", "contributor", "reviewer", "viewer"]
     status: Literal["active", "disabled"] = "active"

@@ -7,14 +7,22 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from platform_app import api, auth, run_ledger, service
 from platform_app.config import Settings
 from platform_app.db import Base
-from platform_app.models import Project, ProjectMembership, Run, Task, Tenant, TenantMembership
+from platform_app.models import (
+    AuditEvent,
+    Project,
+    ProjectMembership,
+    Run,
+    Task,
+    Tenant,
+    TenantMembership,
+)
 from platform_app.service import ServiceError
 
 
@@ -166,6 +174,29 @@ def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
                 "/v1/projects/project-a/members/intruder", headers=owner,
                 json={"role": "viewer"},
             ).status_code == 404
+            assert client.get("/v1/tenant/quotas", headers=bob).status_code == 403
+            assert client.put("/v1/tenant/quotas", headers=bob, json={
+                "daily_inference_cap_usd": "5", "monthly_inference_cap_usd": "50",
+                "max_concurrent_runs": 2, "daily_export_cap_bytes": 100_000,
+                "reason": "Approved pilot ceiling",
+            }).status_code == 403
+            quotas = {
+                "daily_inference_cap_usd": "5.000000",
+                "monthly_inference_cap_usd": "50.000000",
+                "max_concurrent_runs": 2, "daily_export_cap_bytes": 100_000,
+                "reason": "Approved pilot ceiling",
+            }
+            assert client.put("/v1/tenant/quotas", headers=owner, json={
+                **quotas, "monthly_inference_cap_usd": "4",
+            }).status_code == 422
+            saved = client.put("/v1/tenant/quotas", headers=owner, json=quotas)
+            assert saved.status_code == 200
+            assert saved.json()["daily_inference_cap_usd"] == "5.000000"
+            assert client.get("/v1/tenant/quotas", headers=owner).json() == saved.json()
+            assert client.put("/v1/tenant/quotas", headers=owner, json=quotas).status_code == 200
+            assert len(db.scalars(select(AuditEvent).where(
+                AuditEvent.action == "tenant.quotas.update",
+            )).all()) == 1
             response = client.post(
                 "/v1/tasks/task-a/runs",
                 headers={**bob, "Idempotency-Key": "run-key-001"},

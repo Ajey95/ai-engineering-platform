@@ -19,6 +19,8 @@ type DevEvaluation = {
 }
 type MemoryStatus = 'proposed' | 'verified' | 'rejected' | 'superseded' | 'expired' | 'deleted'
 type Membership = { subject: string; role: string; status: 'active' | 'disabled' }
+type TenantQuotas = { daily_inference_cap_usd: string; monthly_inference_cap_usd: string
+  max_concurrent_runs: number; daily_export_cap_bytes: number }
 type MemoryRecord = {
   id: string; fact_type: string; repository_ref: string; source_revision: string
   subject: string; statement: string; source_refs: string[]; verification_scope: string | null
@@ -113,6 +115,8 @@ export default function App({ identity, onSignOut }: {
   const [operationsError, setOperationsError] = useState('')
   const [tenantMembers, setTenantMembers] = useState<Membership[]>([])
   const [projectMembers, setProjectMembers] = useState<Membership[]>([])
+  const [quotas, setQuotas] = useState<TenantQuotas | null>(null)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
 
@@ -174,12 +178,15 @@ export default function App({ identity, onSignOut }: {
   }, [page])
 
   const loadMemberships = useCallback(async () => {
-    const [tenantRows, projectRows] = await Promise.all([
+    const [tenantRows, projectRows, currentQuotas] = await Promise.all([
       api<Membership[]>('/memberships'),
       selectedProject ? api<Membership[]>(`/projects/${selectedProject}/members`) : Promise.resolve([]),
+      api<TenantQuotas>('/tenant/quotas'),
     ])
     setTenantMembers(tenantRows)
     setProjectMembers(projectRows)
+    setQuotas(currentQuotas)
+    setSettingsLoaded(true)
     setSettingsError('')
   }, [selectedProject])
 
@@ -260,6 +267,25 @@ export default function App({ identity, onSignOut }: {
       await loadMemberships()
     } catch (cause) {
       setSettingsError(cause instanceof Error ? cause.message : 'Membership update failed')
+    } finally { setBusy(false) }
+  }
+
+  async function saveQuotas(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setSettingsError('')
+    const form = event.currentTarget
+    const data = new FormData(form)
+    try {
+      const updated = await api<TenantQuotas>('/tenant/quotas', { method: 'PUT', body: jsonBody({
+        daily_inference_cap_usd: String(data.get('daily_inference_cap_usd')),
+        monthly_inference_cap_usd: String(data.get('monthly_inference_cap_usd')),
+        max_concurrent_runs: Number(data.get('max_concurrent_runs')),
+        daily_export_cap_bytes: Number(data.get('daily_export_cap_bytes')),
+        reason: String(data.get('reason') || '').trim(),
+      }) })
+      setQuotas(updated)
+      form.reset()
+    } catch (cause) {
+      setSettingsError(cause instanceof Error ? cause.message : 'Quota update failed')
     } finally { setBusy(false) }
   }
 
@@ -561,10 +587,11 @@ export default function App({ identity, onSignOut }: {
         </section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
         {page === 'settings' && <section className="page-section">
-          <div className="page-heading"><div><h1>Settings</h1><p>Model readiness and owner-managed workspace access.</p></div></div>
+          <div className="page-heading"><div><h1>Settings</h1><p>Model readiness, workspace budgets and owner-managed access.</p></div></div>
           {settingsError && <div className="notice" role="alert">{settingsError}</div>}
           <div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Register a model through the versioned registry. Live conformance is required before enabling it." />}</div>
-          {!settingsError && <div className="ops-grid settings-grid">
+          {settingsLoaded && <div className="ops-grid settings-grid">
+            {quotas && <div className="content-panel"><h2>Workspace quotas</h2><p className="muted">Changes apply to new reservations and admissions. Existing settled charges remain in the ledger.</p><form key={JSON.stringify(quotas)} onSubmit={event => void saveQuotas(event)}><label>Daily inference cap (USD)<input name="daily_inference_cap_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" defaultValue={quotas.daily_inference_cap_usd} required /></label><label>Monthly inference cap (USD)<input name="monthly_inference_cap_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" defaultValue={quotas.monthly_inference_cap_usd} required /></label><label>Maximum concurrent runs<input name="max_concurrent_runs" type="number" min="1" max="1000" step="1" defaultValue={quotas.max_concurrent_runs} required /></label><label>Daily evidence export cap (bytes)<input name="daily_export_cap_bytes" type="number" min="1" max="2000000000" step="1" defaultValue={quotas.daily_export_cap_bytes} required /></label><label>Reason for change<input name="reason" minLength={8} maxLength={2000} required placeholder="Approved spending and capacity policy" /></label><button className="secondary-button" disabled={busy}>Save quotas</button></form></div>}
             <div className="content-panel"><h2>Workspace members</h2><p className="muted">Only owners can change tenant access. The last active owner cannot be disabled.</p>{tenantMembers.map(member => <div className="list-row" key={member.subject}><span>{member.subject} · {member.role}</span><Status value={member.status.toUpperCase()} /></div>)}{!tenantMembers.length && <p className="muted">No members recorded.</p>}<form onSubmit={event => void saveMembership(event, 'tenant')}><label>Identity subject<input name="subject" required maxLength={200} placeholder="OIDC subject" /></label><label>Workspace role<select name="role"><option value="member">Member</option><option value="owner">Owner</option></select></label><label>Status<select name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></label><button className="secondary-button" disabled={busy}>Save workspace access</button></form></div>
             <div className="content-panel"><h2>Project members</h2><p className="muted">{project ? `Access to ${project.name}. Add a workspace member first.` : 'Select a project to manage access.'}</p>{projectMembers.map(member => <div className="list-row" key={member.subject}><span>{member.subject} · {member.role}</span><Status value={member.status.toUpperCase()} /></div>)}{!projectMembers.length && <p className="muted">No project members recorded.</p>}{selectedProject && <form onSubmit={event => void saveMembership(event, 'project')}><label>Identity subject<input name="subject" required maxLength={200} placeholder="Existing workspace member" /></label><label>Project role<select name="role"><option value="viewer">Viewer</option><option value="reviewer">Reviewer</option><option value="contributor">Contributor</option><option value="maintainer">Maintainer</option></select></label><label>Status<select name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></label><button className="secondary-button" disabled={busy}>Save project access</button></form>}</div>
           </div>}

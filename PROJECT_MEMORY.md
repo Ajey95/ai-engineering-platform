@@ -1589,3 +1589,17 @@ budget ordering only. Targeted budget/development-worker tests passed 11/11;
 the full Python suite passed 271 with 5 skips, scoped Ruff and `git diff --check`
 passed. No frontend code changed in this increment; its previous TypeScript and
 Vite build remained the latest UI check.
+
+2026-10-03 tenant quota administration increment: added strict owner-only
+`GET/PUT /v1/tenant/quotas`, with tenant row locking, daily/monthly ordering,
+bounded spend/concurrency/export fields, a required reason and one audit event
+per actual change. Settings now reads and edits the four quotas. The hosted
+OIDC role-boundary test passed for member denial, owner update, invalid monthly
+cap rejection and idempotent no-op audit behavior. TypeScript and scoped Ruff
+passed. Against the local API SQLite tenant, Chromium changed the daily
+inference cap $50 -> $49 -> $50 through the form; each API read matched and
+there were zero page errors. Screenshot outside repo:
+`D:\projects\frontend-quota-settings-20261003.png`. This is local control
+plane proof, not hosted identity/load qualification.
+The full Python suite passed 271 with 5 skips, TypeScript and Vite production
+build passed, scoped Ruff and `git diff --check` passed.
