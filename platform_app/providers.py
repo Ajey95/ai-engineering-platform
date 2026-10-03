@@ -1,4 +1,4 @@
-"""Native non-streaming provider adapters with provider-scoped continuation.
+"""Native provider adapters with provider-scoped continuation and bounded SSE.
 
 The returned opaque state can include protected reasoning metadata. It must be
 encrypted before persistence and must never be shown in review artifacts.
@@ -14,6 +14,12 @@ from urllib.parse import quote
 
 import httpx
 
+from platform_app.provider_streams import (
+    StreamProtocolError,
+    assemble_anthropic,
+    assemble_google,
+    assemble_openai,
+)
 from platform_app.telemetry import tracer
 from platform_app.tool_broker import CompletedToolCall, ToolCallAssembler, ToolDefinition
 
@@ -63,14 +69,7 @@ def _require_continuation(previous: ProviderTurn, provider: str, model: str) -> 
         raise ValueError("Continuation requires pending tool calls")
 
 
-@tracer.start_as_current_span("provider.http")
-def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> dict:
-    try:
-        response = client.post(url, headers=headers, json=payload, timeout=120)
-    except httpx.TimeoutException as error:
-        raise ProviderError("Provider response timed out", code="PROVIDER_TIMEOUT") from error
-    except httpx.TransportError as error:
-        raise ProviderError("Provider transport failed", code="PROVIDER_TRANSPORT") from error
+def _check_http_status(response: httpx.Response) -> None:
     if response.status_code >= 400:
         status = response.status_code
         codes = {
@@ -94,6 +93,17 @@ def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> 
             elif vendor_code in {"invalid_json_schema", "invalid_tool_schema"}:
                 code = "PROVIDER_SCHEMA_INVALID"
         raise ProviderError("Provider rejected the request", code=code, status_code=status)
+
+
+@tracer.start_as_current_span("provider.http")
+def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> dict:
+    try:
+        response = client.post(url, headers=headers, json=payload, timeout=120)
+    except httpx.TimeoutException as error:
+        raise ProviderError("Provider response timed out", code="PROVIDER_TIMEOUT") from error
+    except httpx.TransportError as error:
+        raise ProviderError("Provider transport failed", code="PROVIDER_TRANSPORT") from error
+    _check_http_status(response)
     try:
         body = response.json()
     except ValueError as error:
@@ -101,6 +111,64 @@ def _http_json(client: httpx.Client, url: str, headers: dict, payload: dict) -> 
     if not isinstance(body, dict):
         raise ProviderError("Provider returned a non-object response")
     return body
+
+
+@tracer.start_as_current_span("provider.stream")
+def _http_sse(client: httpx.Client, url: str, headers: dict, payload: dict) -> list[dict]:
+    events: list[dict] = []
+    data_lines: list[str] = []
+    event_name = ""
+    byte_count = 0
+
+    def flush() -> None:
+        nonlocal event_name
+        if not data_lines:
+            event_name = ""
+            return
+        raw = "\n".join(data_lines)
+        data_lines.clear()
+        if raw == "[DONE]":
+            event_name = ""
+            return
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ProviderError("Provider stream event is invalid",
+                                code="PROVIDER_STREAM_INTERRUPTED") from error
+        if not isinstance(event, dict) or (
+            event_name and event.get("type") and event_name != event["type"]
+        ):
+            raise ProviderError("Provider stream event is malformed",
+                                code="PROVIDER_STREAM_INTERRUPTED")
+        events.append(event)
+        event_name = ""
+        if len(events) > 20_000:
+            raise ProviderError("Provider stream exceeds event limit",
+                                code="PROVIDER_STREAM_INTERRUPTED")
+
+    try:
+        with client.stream("POST", url, headers=headers, json=payload, timeout=120) as response:
+            if response.status_code >= 400:
+                response.read()
+            _check_http_status(response)
+            for line in response.iter_lines():
+                byte_count += len(line.encode("utf-8"))
+                if byte_count > 8_000_000:
+                    raise ProviderError("Provider stream exceeds byte limit",
+                                        code="PROVIDER_STREAM_INTERRUPTED")
+                if not line:
+                    flush()
+                elif line.startswith("event:"):
+                    event_name = line[6:].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip(" "))
+            flush()
+    except httpx.TimeoutException as error:
+        raise ProviderError("Provider stream timed out", code="PROVIDER_TIMEOUT") from error
+    except httpx.TransportError as error:
+        raise ProviderError("Provider stream disconnected",
+                            code="PROVIDER_STREAM_INTERRUPTED") from error
+    return events
 
 
 class OpenAIResponses:
@@ -116,6 +184,7 @@ class OpenAIResponses:
         self, model: str, instruction: str, prompt: str,
         tools: dict[str, ToolDefinition], max_output_tokens: int,
         previous: ProviderTurn | None = None, results: dict[str, dict] | None = None,
+        stream: bool = False,
     ) -> ProviderTurn:
         if previous is None:
             input_items: list | str = prompt
@@ -142,10 +211,17 @@ class OpenAIResponses:
             "max_output_tokens": max_output_tokens,
             "store": False,
         }
-        raw = _http_json(
-            self.client, "https://api.openai.com/v1/responses",
-            {"Authorization": f"Bearer {self.api_key}"}, payload,
-        )
+        url = "https://api.openai.com/v1/responses"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        if stream:
+            try:
+                raw = assemble_openai(_http_sse(
+                    self.client, url, headers, {**payload, "stream": True}
+                ), tools)
+            except StreamProtocolError as error:
+                raise ProviderError(str(error), code="PROVIDER_STREAM_INTERRUPTED") from error
+        else:
+            raw = _http_json(self.client, url, headers, payload)
         output = raw.get("output", [])
         if not isinstance(output, list):
             raise ProviderError("OpenAI output is malformed")
@@ -198,6 +274,7 @@ class AnthropicMessages:
         self, model: str, instruction: str, prompt: str,
         tools: dict[str, ToolDefinition], max_output_tokens: int,
         previous: ProviderTurn | None = None, results: dict[str, dict] | None = None,
+        stream: bool = False,
     ) -> ProviderTurn:
         if previous is None:
             messages = [{"role": "user", "content": prompt}]
@@ -219,10 +296,17 @@ class AnthropicMessages:
             "tools": [{"name": tool.name, "description": tool.name,
                        "input_schema": tool.input_schema} for tool in tools.values()],
         }
-        raw = _http_json(
-            self.client, "https://api.anthropic.com/v1/messages",
-            {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}, payload,
-        )
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}
+        if stream:
+            try:
+                raw = assemble_anthropic(_http_sse(
+                    self.client, url, headers, {**payload, "stream": True}
+                ), tools)
+            except StreamProtocolError as error:
+                raise ProviderError(str(error), code="PROVIDER_STREAM_INTERRUPTED") from error
+        else:
+            raw = _http_json(self.client, url, headers, payload)
         content = raw.get("content", [])
         if not isinstance(content, list):
             raise ProviderError("Anthropic content is malformed")
@@ -263,6 +347,7 @@ class GeminiGenerateContent:
         self, model: str, instruction: str, prompt: str,
         tools: dict[str, ToolDefinition], max_output_tokens: int,
         previous: ProviderTurn | None = None, results: dict[str, dict] | None = None,
+        stream: bool = False,
     ) -> ProviderTurn:
         if previous is None:
             contents = [{"role": "user", "parts": [{"text": prompt}]}]
@@ -292,12 +377,21 @@ class GeminiGenerateContent:
         }
         if declarations:
             payload["tools"] = [{"functionDeclarations": declarations}]
-        raw = _http_json(
-            self.client,
+        url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{quote(model, safe='')}:generateContent",
-            {"x-goog-api-key": self.api_key}, payload,
+            f"{quote(model, safe='')}:generateContent"
         )
+        headers = {"x-goog-api-key": self.api_key}
+        if stream:
+            try:
+                raw = assemble_google(_http_sse(
+                    self.client, url.replace(":generateContent", ":streamGenerateContent")
+                    + "?alt=sse", headers, payload,
+                ))
+            except StreamProtocolError as error:
+                raise ProviderError(str(error), code="PROVIDER_STREAM_INTERRUPTED") from error
+        else:
+            raw = _http_json(self.client, url, headers, payload)
         candidates = raw.get("candidates") or []
         if not candidates:
             raise ProviderError("Google returned no candidate")
@@ -325,7 +419,7 @@ class GeminiGenerateContent:
         if total_tokens < prompt_tokens or total_tokens < prompt_tokens + candidate_tokens:
             raise ProviderError("Google usage totals are inconsistent")
         return ProviderTurn(
-            self.provider, model,
+            self.provider, raw.get("modelVersion") or model,
             "\n".join(part["text"] for part in parts if "text" in part), calls,
             candidate.get("finishReason", "unknown"),
             {"input_tokens": prompt_tokens,

@@ -4,7 +4,7 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 246 tests with 5 skips after the database outage handling;
+Python suite passed 255 tests with 5 skips after provider SSE qualification;
 scoped lint and the web production build passed. The pinned 40-case synthetic
 benchmark asset validator and all 40 baseline/reference hidden-oracle pairs
 passed. Local
@@ -196,8 +196,9 @@ not a live provider, customer repository, AWS or GitHub qualification.
   are recorded in `model_registry_events`. Only controlled probes have run;
   no account credentials or live qualification were available.
 - `platform_app/tool_broker.py`: completed and schema validated tool calls only.
-- `platform_app/providers.py`: native HTTP request and continuation adapters for
-  OpenAI, Anthropic and Google, tested against controlled API responses;
+- `platform_app/providers.py`, `provider_streams.py`: native HTTP request,
+  continuation and bounded SSE adapters for OpenAI, Anthropic and Google,
+  tested against controlled API responses and complete/interrupted streams;
   missing token usage fails closed. Anthropic cached token categories are
   included in input accounting and Google thinking tokens in output accounting.
   HTTP authentication, access, rate, timeout, overload, context and schema
@@ -206,8 +207,10 @@ not a live provider, customer repository, AWS or GitHub qualification.
   release the call reservation and leave a durable rejection receipt; timeouts
   retain their pending liability and prohibit blind replay. A billed OpenAI
   refusal retains usage and is rejected
-  after settlement in the fixture patch path. No provider account has been
-  used or qualified.
+  after settlement in the fixture patch path. Model qualification now requires
+  both complete-JSON and streamed text/tool/continuation probes, and the
+  adapter digest covers the stream assembler and tool boundary. No provider
+  account has been used or qualified.
 - `platform_app/browser_runner.py`, `verifier.py`: controlled fixture browser
   evidence and exact-tree named test receipts. The Docker development adapter
   ran all six baseline/candidate checks using Docker Engine in Ubuntu WSL;
@@ -424,8 +427,8 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 |---|---|---|
 | FR-MOD-01 | Partial | Native three-provider HTTP adapters and controlled-response tests now classify HTTP authentication, access, rate, timeout, overload, context and schema errors without leaking response bodies. OpenAI refusal is recognized and billed before rejection in the fixture patch path. No live conformance or full error taxonomy qualification. |
 | FR-MOD-02 | Partial | Operator live probe code checks text/tool/continuation/usage and exact attested metadata; admission checks revision and adapter digest. No account has been probed live, and full registry metadata remains. |
-| FR-MOD-03 | Partial | Non-streaming continuation and strict usage parsing preserve provider metadata; AES-GCM run-scoped envelope exists, but no durable integration or live checks. |
-| FR-MOD-04 | Partial | Completed call assembler and interrupted-stream test; adapters not wired. |
+| FR-MOD-03 | Partial | Native complete-JSON and SSE paths preserve provider-scoped continuation, tool IDs, stop reasons and strict usage. Google modelVersion is retained when exposed. AES-GCM run-scoped envelope exists, but no live provider or durable encrypted-state integration has been qualified. |
+| FR-MOD-04 | Partial | Bounded native SSE assembly for all three adapters withholds calls until terminal completion and validates final arguments against the registered schema. Controlled complete, interrupted, mismatched and transport-error tests passed; qualification now requires streamed text, tool and continuation calls. Live conformance and tool effect integration remain. |
 | FR-MOD-05 | Partial | `selected_model_entry=auto` now filters by explicit tenant model/data-class policy, current live qualification and tool capability checks, context/output limits, availability and fresh 30-sample model routing evidence; deterministic scoring compares recorded utility, latency and cost. Policy changes are audited through an operator CLI. No real platform benchmark evidence or live provider health exists yet, so the route fails closed in ordinary use. |
 | FR-MOD-06 | Partial | A tenant policy may preapprove an exact cross-provider alternate per source model and data class. Admission freezes the route; the fixture worker locks and rechecks current policy, pinned/current data class, qualification, capacity, completed source rejection and absence of pending effects before one switch after a definite HTTP 429. It records lineage and uses a new portable context bundle/model step; replay does not resend the source call. Timeouts remain unresolved, and general tool-cycle reconciliation, other eligible failures and live provider qualification remain. |
 | FR-MOD-07 | Partial | Register, validating, qualified, enabled and failed/disabled paths now write model registry lifecycle events. No hosted administrator UI or live account qualification. |

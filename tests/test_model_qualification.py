@@ -28,14 +28,19 @@ class ScriptedAdapter:
         self.nonce = ""
 
     def generate(
-        self, model, instruction, prompt, tools, max_output_tokens, previous=None, results=None
+        self, model, instruction, prompt, tools, max_output_tokens,
+        previous=None, results=None, stream=False,
     ):
         self.calls += 1
         assert model == "model-a"
         assert max_output_tokens == 256
+        assert stream is (self.calls > 3)
         usage = {"input_tokens": 10, "output_tokens": 5}
-        if self.calls == 1:
-            self.nonce = re.search(r"[0-9a-f]{24}", prompt).group()
+        phase = (self.calls - 1) % 3
+        if phase == 0:
+            nonce = re.search(r"[0-9a-f]{24}", prompt).group()
+            assert not self.nonce or self.nonce == nonce
+            self.nonce = nonce
             return ProviderTurn(
                 "openai",
                 "model-a-2026",
@@ -45,20 +50,20 @@ class ScriptedAdapter:
                 usage,
                 {"request_model": model},
             )
-        if self.calls == 2:
+        if phase == 1:
             assert (
                 tools["qualification_echo"].input_schema["properties"]["nonce"]["const"]
                 == self.nonce
             )
             calls = (CompletedToolCall("call-a", "qualification_echo", {"nonce": self.nonce}),)
-            if self.fail_step == 2:
+            if self.fail_step == self.calls:
                 calls = ()
             return ProviderTurn(
                 "openai", "model-a-2026", "", calls, "completed", usage, {"request_model": model}
             )
         assert previous.calls[0].call_id == "call-a"
         assert results == {"call-a": {"status": "ok", "nonce": self.nonce}}
-        text = "wrong" if self.fail_step == 3 else self.nonce
+        text = "wrong" if self.fail_step == self.calls else self.nonce
         return ProviderTurn(
             "openai", "model-a-2026", text, (), "completed", usage, {"request_model": model}
         )
@@ -110,7 +115,7 @@ def attestation():
 def test_successful_live_probe_enables_only_attested_revision(registry, attestation, monkeypatch):
     adapter = ScriptedAdapter()
     result = qualify_model_entry(registry, "entry-a", adapter, attestation, "operator-a", True)
-    assert adapter.calls == 3
+    assert adapter.calls == 6
     assert result["state"] == "enabled"
     assert result["resolved_model"] == "model-a-2026"
     with registry() as db:
@@ -124,6 +129,9 @@ def test_successful_live_probe_enables_only_attested_revision(registry, attestat
             "text",
             "schema_validated_tool",
             "continuation",
+            "streamed_text",
+            "streamed_tool",
+            "streamed_continuation",
             "usage",
         ]
         model.price_revision = "price-b"
@@ -151,6 +159,19 @@ def test_failed_probe_disables_entry_and_keeps_no_live_marker(registry, attestat
             "validating",
             "failed",
         ]
+
+
+def test_streaming_probe_failure_cannot_enable_model(registry, attestation):
+    with pytest.raises(QualificationError) as error:
+        qualify_model_entry(
+            registry, "entry-a", ScriptedAdapter(fail_step=5), attestation,
+            "operator-a", True,
+        )
+    assert error.value.code == "MODEL_QUALIFICATION_FAILED"
+    with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        assert model.state == "registered"
+        assert model.capabilities["live_qualified"] is False
 
 
 def test_mismatched_metadata_is_rejected_before_spend(registry, attestation):

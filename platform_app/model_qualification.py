@@ -1,9 +1,9 @@
 """Live, account-specific native provider qualification.
 
 The operator supplies independently reviewed limit and price metadata. The
-probe itself verifies text, a schema-checked tool call, continuation, usage,
-and the resolved model on the configured provider account. No credential or
-probe transcript is persisted.
+probe verifies complete-JSON and streamed text, schema-checked tool calls,
+continuation, usage and the resolved model on the configured provider account.
+No credential or probe transcript is persisted.
 """
 
 from __future__ import annotations
@@ -87,6 +87,7 @@ class QualificationAdapter(Protocol):
         max_output_tokens: int,
         previous: ProviderTurn | None = None,
         results: dict[str, dict] | None = None,
+        stream: bool = False,
     ) -> ProviderTurn: ...
 
 
@@ -148,9 +149,14 @@ class MetadataAttestation:
 
 
 def adapter_digest() -> str:
-    from platform_app import providers
+    from platform_app import provider_streams, providers, tool_broker
 
-    return hashlib.sha256(Path(providers.__file__).read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    for module in (providers, provider_streams, tool_broker):
+        source = Path(module.__file__)
+        digest.update(source.name.encode("utf-8"))
+        digest.update(source.read_bytes())
+    return digest.hexdigest()
 
 
 def qualification_current(model: ModelEntry) -> bool:
@@ -244,19 +250,75 @@ def probe_provider(adapter: QualificationAdapter, model_id: str, output_limit: i
         raise QualificationError(
             "MODEL_QUALIFICATION_FAILED", "Continuation probe did not complete"
         )
+    streamed_text = adapter.generate(
+        model_id, instruction, f"Reply with this token: {nonce}", {},
+        min(output_limit, 256), stream=True,
+    )
+    _check_usage(streamed_text)
+    if (
+        streamed_text.provider != adapter.provider
+        or streamed_text.calls
+        or nonce not in streamed_text.text
+        or streamed_text.stop_reason not in {"completed", "end_turn", "STOP"}
+    ):
+        raise QualificationError("MODEL_QUALIFICATION_FAILED", "Streamed text did not complete")
+    streamed_tool = adapter.generate(
+        model_id,
+        "Call qualification_echo once with the requested nonce. Do not answer in text yet.",
+        f"Call qualification_echo with nonce {nonce}.",
+        {tool.name: tool}, min(output_limit, 256), stream=True,
+    )
+    _check_usage(streamed_tool)
+    if (
+        streamed_tool.provider != adapter.provider
+        or len(streamed_tool.calls) != 1
+        or streamed_tool.calls[0].name != tool.name
+        or streamed_tool.calls[0].arguments != {"nonce": nonce}
+        or streamed_tool.stop_reason not in {"completed", "tool_use", "STOP"}
+    ):
+        raise QualificationError("MODEL_QUALIFICATION_FAILED", "Streamed tool did not complete")
+    streamed_completed = adapter.generate(
+        model_id,
+        "Reply with the nonce from the completed tool result.",
+        f"Return the nonce {nonce}.",
+        {tool.name: tool}, min(output_limit, 256),
+        previous=streamed_tool,
+        results={streamed_tool.calls[0].call_id: {"status": "ok", "nonce": nonce}},
+        stream=True,
+    )
+    _check_usage(streamed_completed)
+    if (
+        streamed_completed.provider != adapter.provider
+        or streamed_completed.calls
+        or nonce not in streamed_completed.text
+        or streamed_completed.stop_reason not in {"completed", "end_turn", "STOP"}
+        or len({
+            text_turn.model, tool_turn.model, completed.model,
+            streamed_text.model, streamed_tool.model, streamed_completed.model,
+        }) != 1
+    ):
+        raise QualificationError(
+            "MODEL_QUALIFICATION_FAILED", "Streamed continuation did not complete"
+        )
+    all_turns = (
+        text_turn, tool_turn, completed, streamed_text, streamed_tool, streamed_completed
+    )
     return {
         "status": "passed",
         "provider": adapter.provider,
         "requested_model": model_id,
         "resolved_model": text_turn.model,
         "nonce_sha256": hashlib.sha256(nonce.encode()).hexdigest(),
-        "checks": ["text", "schema_validated_tool", "continuation", "usage"],
+        "checks": [
+            "text", "schema_validated_tool", "continuation",
+            "streamed_text", "streamed_tool", "streamed_continuation", "usage",
+        ],
         "usage": {
             "input_tokens": sum(
-                turn.usage["input_tokens"] for turn in (text_turn, tool_turn, completed)
+                turn.usage["input_tokens"] for turn in all_turns
             ),
             "output_tokens": sum(
-                turn.usage["output_tokens"] for turn in (text_turn, tool_turn, completed)
+                turn.usage["output_tokens"] for turn in all_turns
             ),
         },
     }

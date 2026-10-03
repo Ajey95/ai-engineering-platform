@@ -91,8 +91,9 @@ qualify; a read-only probe cannot prove those rights.
 - Authorized review downloads include a bounded evidence ZIP with the packet,
   locally verified screenshots/logs, any verified fixture patch and a checksum
   manifest. Browser recordings remain separately delivered or revocable.
-- Native non-streaming OpenAI, Anthropic and Google API adapters with provider
-  continuation preservation and encrypted state envelopes. No live provider
+- Native complete-JSON and bounded SSE OpenAI, Anthropic and Google API
+  adapters with provider continuation preservation and encrypted state
+  envelopes. Streamed tool calls require terminal completion. No live provider
   account has been qualified.
 - Operator commands register model entries as unqualified and probe a chosen
   provider account before enabling an entry. No account has been probed here.

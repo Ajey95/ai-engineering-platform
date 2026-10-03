@@ -1288,3 +1288,17 @@ passed. This was prompted by the older running API timing out on a DB-backed
 request after WSL failed; the running process has not yet been restarted with
 the new code because its database is still unavailable. The full Python suite
 passed 246 tests with 5 skips and scoped Ruff passed after this change.
+
+2026-10-03 provider streaming increment: `provider_streams.py` assembles
+bounded OpenAI Responses, Anthropic Messages and Google GenerateContent SSE
+events. OpenAI tool argument deltas require matching `done` and a completed
+terminal response; Anthropic tool blocks require block/message stop; Google
+function calls require a normal finish and usage. No completed ProviderTurn
+is returned for an interrupted or malformed stream. Controlled HTTP/SSE
+tests passed for the three adapters, including transport failure. Google
+modelVersion is retained when exposed. Native model qualification now makes
+three complete-JSON and three streamed text/tool/continuation calls before
+marking an account qualified; controlled qualification tests passed. Adapter
+digest covers provider, stream and tool-boundary code. There are no available
+provider accounts yet, so all live behavior remains unqualified.
+Full Python suite after this change: 255 passed, 5 skipped; Ruff passed.
