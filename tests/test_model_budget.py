@@ -255,6 +255,11 @@ def test_fixture_timeout_remains_uncertain_and_cannot_reissue(scope, tmp_path):
         ))
         assert action.status == "INTENDED"
         assert reservation.status == "reserved"
+        unknown = check.scalar(select(RunEvent).where(
+            RunEvent.run_id == run.id, RunEvent.event_type == "model.uncertain"
+        ))
+        assert unknown.payload["error_code"] == "PROVIDER_TIMEOUT"
+        assert unknown.payload["liability_status"] == "reserved"
     assert len(calls) == 1
 
 

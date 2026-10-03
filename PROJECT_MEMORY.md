@@ -1401,3 +1401,45 @@ viewers receiving replay event IDs, p95 initial ID 1909.9 ms. This is local
 SQLite development evidence, not hosted 99.5% availability, connected-viewer
 delivery target, OIDC, recovery or API production capacity. The local API at
 8098 and Vite at 5173 remain running after the correction.
+
+2026-10-03 pause and provider-failure increment: `run_ledger.transition` now
+revokes intended/bootstrapping/provisioned sandbox leases when a run enters any
+PAUSED state and writes sandbox.cleanup outbox events atomically before releasing
+worker ownership. A focused test verified lease state, cleanup event and run
+event; related ledger/sandbox/model tests passed 25. This does not yet provide
+hosted midrun resume, approval expiry or snapshot reconciliation.
+
+Both fixture and hosted general proposal paths now record `model.uncertain`
+when a ProviderError is not a definitive rejected HTTP response. The event
+keeps the reservation and INTENDED effect, so replay remains blocked. The
+owner operations view reports unresolved uncertain calls. The tenant-locked
+provider warning requires 20 decided calls, >20 percent error outcomes in a
+five-minute window and five minutes of continuous samples. Focused provider,
+general-agent, operations and alert tests passed 20; the local UI showed the
+new uncertain count without page errors. Live provider accounts and pager
+delivery remain unqualified.
+
+2026-10-03 local restore drill: WSL Docker Engine 29.8.2 remains healthy when
+started with `scripts/start_wsl_docker.ps1`, but the Windows Docker CLI context
+points at the stopped Docker Desktop pipe; invoke Docker through Ubuntu-24.04
+WSL for this checkout. PostgreSQL `aip` had head c78b82d1fa40, one tenant and
+three runs. A 106,988-byte pg_dump (SHA-256 0484f4db38a96d22c16411cce3b1b0d1a5b0a0d6a0b1f72693fb74cfa8616f2d)
+restored into new isolated `aip_restore_20261003` with `--exit-on-error
+--single-transaction`; Alembic check found no drift. All 34 non-system tables
+and row counts matched source at verification, with zero unvalidated foreign
+keys or run/event sequence mismatches. Two synthetic media objects created
+under a new isolated artifact root were removed by replaying the two restored
+recording tombstones, with zero failures. Evidence and limits are in
+docs/operations/local-restore-drill-20261003.md. No hosted backup, RPO/RTO,
+Memgraph rebuild or external object restore was exercised. Full Python suite
+after pause/provider changes passed 263 tests, 5 skipped; Ruff and web build
+passed.
+
+The local PostgreSQL admission probe was rerun after the pause change and
+reported all checks true: schema roundtrip, resume, recording deletion race,
+run/inference/export quota races, owner bootstrap, cross-tenant constraints
+and one duplicate-admission run/reservation/outbox/event. Optional live local
+dependency gates were explicitly enabled against Memgraph at 127.0.0.1:7687
+and the isolated restored PostgreSQL database: Memgraph fact and code
+roundtrips plus PostgreSQL LangGraph checkpoint continuation passed 3/3.
+These are local synthetic checks, not hosted durability or customer data proof.

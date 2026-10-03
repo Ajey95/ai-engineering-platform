@@ -201,3 +201,53 @@ def test_media_and_expired_sandbox_warnings_are_tenant_scoped_and_resolve():
         assert alerts["media_encode_age"].state == "resolved"
         assert alerts["sandbox_orphan"].state == "resolved"
     engine.dispose()
+
+
+def test_provider_warning_requires_twenty_calls_and_sustained_error_samples():
+    engine = _database()
+    now = datetime(2026, 10, 2, 12, tzinfo=UTC)
+    with Session(engine) as db:
+        run = _run(db, "a", now)
+        _run(db, "b", now)
+        run.state = "COMPLETED"
+        sequence = 0
+        for minute in range(6):
+            observed = now + timedelta(minutes=minute)
+            for number in range(20):
+                if minute == 0 and number == 19:
+                    db.flush()
+                    evaluate_tenant_alerts(db, "a", now=observed)
+                    assert db.scalar(select(OperationalAlert).where(
+                        OperationalAlert.tenant_id == "a",
+                        OperationalAlert.alert_id == "provider_error_rate",
+                    )) is None
+                sequence += 1
+                step = f"model-{minute}-{number}"
+                db.add(RunEvent(
+                    tenant_id="a", run_id=run.id, sequence=sequence,
+                    event_type="model.started", payload={"step_id": step},
+                    created_at=observed - timedelta(seconds=1),
+                ))
+                sequence += 1
+                db.add(RunEvent(
+                    tenant_id="a", run_id=run.id, sequence=sequence,
+                    event_type="model.rejected" if number < 5 else "model.completed",
+                    payload={"step_id": step}, created_at=observed,
+                ))
+            db.flush()
+            evaluate_tenant_alerts(db, "a", now=observed)
+            db.commit()
+            alert = db.scalar(select(OperationalAlert).where(
+                OperationalAlert.tenant_id == "a",
+                OperationalAlert.alert_id == "provider_error_rate",
+            ))
+            assert alert.state == ("firing" if minute == 5 else "observing")
+        assert alert.evidence["sampled_calls"] >= 20
+        assert alert.evidence["error_rate"] == 0.25
+        assert not db.scalars(select(OperationalAlert).where(
+            OperationalAlert.tenant_id == "b"
+        )).all()
+        evaluate_tenant_alerts(db, "a", now=now + timedelta(minutes=12))
+        db.commit()
+        assert alert.state == "resolved"
+    engine.dispose()

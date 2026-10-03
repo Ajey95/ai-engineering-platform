@@ -17,7 +17,12 @@ from platform_app.agent_patch import _provider
 from platform_app.context_bundle import verified_memory_items
 from platform_app.general_patch import GeneralPatch, parse_general_patch
 from platform_app.memory import select_context_facts
-from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
+from platform_app.model_budget import (
+    record_uncertain_model_call,
+    reject_model_call,
+    reserve_model_call,
+    settle_model_call,
+)
 from platform_app.models import (
     BudgetEntry,
     CodeFileVersion,
@@ -318,6 +323,14 @@ def request_general_patch(
         if error.status_code in {400, 401, 403, 404, 429}:
             with session_factory() as db:
                 reject_model_call(
+                    db, db.get(Run, run_id), worker_id, fence,
+                    db.get(ToolAction, action_id), db.get(BudgetEntry, reservation_id),
+                    error.code, error.status_code,
+                )
+                db.commit()
+        else:
+            with session_factory() as db:
+                record_uncertain_model_call(
                     db, db.get(Run, run_id), worker_id, fence,
                     db.get(ToolAction, action_id), db.get(BudgetEntry, reservation_id),
                     error.code, error.status_code,

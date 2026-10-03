@@ -15,7 +15,12 @@ from sqlalchemy import select
 from platform_app.context_bundle import fixture_context_bundle
 from platform_app.context_compaction import compact_fixture_context
 from platform_app.memory import select_context_facts
-from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
+from platform_app.model_budget import (
+    record_uncertain_model_call,
+    reject_model_call,
+    reserve_model_call,
+    settle_model_call,
+)
 from platform_app.model_failover import authorize_rate_limit_failover
 from platform_app.models import BudgetEntry, MemoryFact, ModelEntry, Run, RunEvent, Task, ToolAction
 from platform_app.patch_workspace import PatchProposal, parse_patch_response
@@ -271,6 +276,14 @@ def request_fixture_patch(
                     alternate_step = authorize_rate_limit_failover(
                         db, run, worker_id, fence, action,
                     )
+                db.commit()
+        else:
+            with session_factory() as db:
+                record_uncertain_model_call(
+                    db, db.get(Run, run_id), worker_id, fence,
+                    db.get(ToolAction, action_id), db.get(BudgetEntry, reservation_id),
+                    error.code, error.status_code,
+                )
                 db.commit()
         if alternate_step:
             return request_fixture_patch(

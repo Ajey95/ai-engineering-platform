@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base
-from platform_app.models import Run, RunEvent, Tenant
+from platform_app.models import OutboxEvent, Run, RunEvent, SandboxLease, Tenant
 from platform_app.run_ledger import (
     begin_tool_action,
     claim_run,
@@ -84,6 +84,30 @@ def test_pause_releases_lease_and_cannot_be_claimed(db):
     with pytest.raises(ServiceError) as error:
         claim_run(db, "run-a", "worker-two")
     assert error.value.code == "RUN_CLOSED"
+
+
+def test_pause_revokes_active_guest_and_queues_cleanup_atomically(db):
+    run, fence = claim_run(db, "run-a", "worker-one")
+    transition(db, run, "worker-one", fence, "PREPARING")
+    db.add(SandboxLease(
+        tenant_id=run.tenant_id, project_id=run.project_id, run_id=run.id,
+        generation=1, phase="baseline", lease_fence=fence,
+        client_token="run-a-baseline", state="bootstrapping",
+        image_id="ami-123", instance_type="t3.medium", subnet_id="subnet-123",
+        security_group_id="sg-123", root_device_name="/dev/sda1", disk_gib=20,
+        expires_at=run.lease_until,
+    ))
+    db.flush()
+    transition(db, run, "worker-one", fence, "PAUSED_APPROVAL")
+    db.commit()
+    lease = db.query(SandboxLease).one()
+    assert lease.state == "revoked"
+    assert run.lease_owner is None
+    cleanup = db.query(OutboxEvent).filter_by(topic="sandbox.cleanup").one()
+    assert cleanup.payload["sandbox_lease_id"] == lease.id
+    assert db.query(RunEvent).filter_by(
+        run_id=run.id, event_type="sandbox.revoked"
+    ).count() == 1
 
 
 def test_three_identical_completed_actions_without_progress_fail_run(db):

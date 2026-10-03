@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from platform_app.action_policy import ActionIntent, authorize_run_effect
 from platform_app.config import settings
 from platform_app.model_qualification import qualification_for_pinned_run
-from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
+from platform_app.models import BudgetEntry, ModelEntry, Run, RunEvent, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import set_safe_attributes, tracer
@@ -372,3 +372,32 @@ def reject_model_call(
     append_event(db, run, "budget.updated", {
         "step_id": action.step_id, "reserved_usd": "0", "actual_usd": "0",
     })
+
+
+def record_uncertain_model_call(
+    db: Session, run: Run, worker_id: str, fence: int,
+    action: ToolAction, reservation: BudgetEntry,
+    error_code: str, status_code: int | None,
+) -> None:
+    """Record a failed call without releasing liability or authorizing replay."""
+    assert_fence(run, worker_id, fence)
+    if (
+        action.tenant_id != run.tenant_id or action.run_id != run.id
+        or reservation.tenant_id != run.tenant_id or reservation.run_id != run.id
+        or action.status != "INTENDED" or reservation.status != "reserved"
+        or reservation.category != f"call:{action.step_id}"
+    ):
+        raise ServiceError("LEDGER_STATE", "Model uncertainty ledger does not match", 409)
+    prior = db.scalar(select(RunEvent.id).where(
+        RunEvent.tenant_id == run.tenant_id,
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "model.uncertain",
+        RunEvent.payload["step_id"].as_string() == action.step_id,
+    ).limit(1))
+    if prior is None:
+        append_event(db, run, "model.uncertain", {
+            "step_id": action.step_id,
+            "error_code": error_code[:80],
+            "http_status": status_code if isinstance(status_code, int) else None,
+            "liability_status": "reserved",
+        })

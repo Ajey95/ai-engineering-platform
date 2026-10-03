@@ -3,8 +3,8 @@
 These runbooks describe the intended response for the reference deployment.
 The current checkout runs locally. It has no configured external pager, hosted
 sandbox, CDN, or qualified restore region. A local operational evaluator persists queue,
-graph and budget-breach alert state; the other catalog conditions need their
-own evidence producers. An owner verifies the tenant, run, revision and
+graph, provider-error, media-job, expired-sandbox and budget-breach alert state.
+An owner verifies the tenant, run, revision and
 time window before taking action. Keep restricted evidence out of ordinary
 chat, dashboards and tickets. The machine-readable owner and impact catalog is
 `platform_app/ops_alerts.py`.
@@ -139,7 +139,9 @@ deletion state may be unavailable or inconsistent.
 3. Reapply recording/memory deletion ledgers before making artifacts reachable.
    Rebuild derived Memgraph scopes and caches from canonical PostgreSQL.
 4. Run authorization and recovery checks, then reopen traffic gradually. The
-   current repository has no qualified hosted restore drill.
+   [2026-10-03 local restore drill](local-restore-drill-20261003.md) verified an
+   isolated PostgreSQL dump/restore and synthetic deletion replay. A hosted
+   restore drill is still required.
 
 ## Publication ambiguity
 

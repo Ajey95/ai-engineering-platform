@@ -86,6 +86,7 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             (4, "model.started", "call-2", 3),
             (5, "model.rejected", "call-2", 2),
             (6, "model.started", "call-3", 1),
+            (7, "model.uncertain", "call-3", 0),
         ):
             db.add(RunEvent(
                 tenant_id="tenant-a", run_id="passed", sequence=sequence,
@@ -128,6 +129,7 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["model_calls"] == {
             "status": "MEASURED", "completed_count": 1,
             "definite_rejection_count": 1, "unsettled_count": 1,
+            "uncertain_count": 1,
             "completed_latency_ms_p50": 1000,
             "completed_latency_ms_p95": 1000,
             "definite_rejection_rate": 0.5,

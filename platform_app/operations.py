@@ -40,14 +40,18 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
     rows = db.scalars(select(RunEvent).where(
         RunEvent.tenant_id == tenant_id,
         RunEvent.created_at >= cutoff,
-        RunEvent.event_type.in_(["model.started", "model.completed", "model.rejected"]),
+        RunEvent.event_type.in_([
+            "model.started", "model.completed", "model.rejected", "model.uncertain",
+        ]),
     ).order_by(RunEvent.run_id, RunEvent.sequence).limit(10_001)).all()
     if len(rows) > 10_000:
         return {"status": "TRUNCATED", "completed_count": None,
-                "definite_rejection_count": None, "unsettled_count": None,
+                "definite_rejection_count": None, "uncertain_count": None,
+                "unsettled_count": None,
                 "completed_latency_ms_p50": None, "completed_latency_ms_p95": None,
                 "definite_rejection_rate": None}
     starts: dict[tuple[str, str], datetime] = {}
+    uncertain_steps: set[tuple[str, str]] = set()
     completed = rejected = 0
     latencies: list[int] = []
     for event in rows:
@@ -63,9 +67,13 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
         elif event.event_type == "model.completed" and key in starts:
             completed += 1
             latencies.append(max(0, int((instant - starts.pop(key)).total_seconds() * 1000)))
+            uncertain_steps.discard(key)
         elif event.event_type == "model.rejected" and key in starts:
             rejected += 1
             starts.pop(key)
+            uncertain_steps.discard(key)
+        elif event.event_type == "model.uncertain" and key in starts:
+            uncertain_steps.add(key)
     latencies.sort()
 
     def percentile(fraction: float) -> int | None:
@@ -75,6 +83,7 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
     return {
         "status": "MEASURED", "completed_count": completed,
         "definite_rejection_count": rejected, "unsettled_count": len(starts),
+        "uncertain_count": len(uncertain_steps),
         "completed_latency_ms_p50": percentile(0.5),
         "completed_latency_ms_p95": percentile(0.95),
         "definite_rejection_rate": round(rejected / decided, 4) if decided else None,
@@ -233,7 +242,7 @@ def operations_snapshot(
             "delivered_count_24h": delivered_notifications,
         },
         "unavailable": [
-            "provider_time_to_first_event", "provider_uncertain_outcomes",
+            "provider_time_to_first_event",
             "context_size_and_compaction_rate",
             "token_estimation_error", "sandbox_utilization", "abr_playback_quality",
         ],

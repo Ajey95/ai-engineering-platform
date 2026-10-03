@@ -23,6 +23,7 @@ from platform_app.service import ServiceError
 MAX_SAMPLE_GAP = timedelta(seconds=90)
 QUEUE_SUSTAINED = timedelta(minutes=10)
 SANDBOX_CLEANUP_GRACE = timedelta(minutes=5)
+PROVIDER_WINDOW = timedelta(minutes=5)
 
 
 def _aware(value: datetime) -> datetime:
@@ -87,6 +88,38 @@ def _evaluate_threshold(
         _transition(db, alert, "firing", "operations-monitor", "Sustained threshold met", now)
 
 
+def _provider_error_sample(db: Session, tenant_id: str, now: datetime) -> dict | None:
+    rows = db.scalars(select(RunEvent).where(
+        RunEvent.tenant_id == tenant_id,
+        RunEvent.created_at >= now - PROVIDER_WINDOW,
+        RunEvent.created_at <= now,
+        RunEvent.event_type.in_([
+            "model.started", "model.completed", "model.rejected", "model.uncertain",
+        ]),
+    ).order_by(RunEvent.run_id, RunEvent.sequence).limit(10_001)).all()
+    if len(rows) > 10_000:
+        return None
+    outcomes: dict[tuple[str, str], bool | None] = {}
+    for event in rows:
+        step_id = event.payload.get("step_id") if isinstance(event.payload, dict) else None
+        if not isinstance(step_id, str) or not step_id:
+            continue
+        key = event.run_id, step_id
+        if event.event_type == "model.started":
+            outcomes.setdefault(key, None)
+        elif key in outcomes and event.event_type == "model.completed":
+            outcomes[key] = outcomes[key] is True
+        elif key in outcomes:
+            outcomes[key] = True
+    decided = [outcome for outcome in outcomes.values() if outcome is not None]
+    errors = sum(decided)
+    return {
+        "sampled_calls": len(decided), "errors": errors,
+        "error_rate": round(errors / len(decided), 4) if decided else None,
+        "window_seconds": int(PROVIDER_WINDOW.total_seconds()),
+    }
+
+
 def evaluate_tenant_alerts(
     db: Session, tenant_id: str, *, now: datetime | None = None,
 ) -> list[OperationalAlert]:
@@ -149,6 +182,15 @@ def evaluate_tenant_alerts(
                   "cleanup_grace_seconds": int(SANDBOX_CLEANUP_GRACE.total_seconds())},
         now=now, sustained_for=timedelta(), current=current,
     )
+    provider_sample = _provider_error_sample(db, tenant_id, now)
+    if provider_sample is not None:
+        _evaluate_threshold(
+            db, tenant_id=tenant_id, alert_id="provider_error_rate",
+            exceeded=(provider_sample["sampled_calls"] >= 20
+                      and provider_sample["error_rate"] > 0.20),
+            evidence=provider_sample, now=now,
+            sustained_for=PROVIDER_WINDOW, current=current,
+        )
     newest_breach = db.scalar(select(RunEvent).join(
         Run, (RunEvent.run_id == Run.id) & (RunEvent.tenant_id == Run.tenant_id)
     ).where(

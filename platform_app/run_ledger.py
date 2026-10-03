@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from platform_app.config import settings
 from platform_app.db import utcnow
-from platform_app.models import AuditEvent, OutboxEvent, Run, Tenant, ToolAction
+from platform_app.models import AuditEvent, OutboxEvent, Run, SandboxLease, Tenant, ToolAction
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
 
@@ -97,6 +97,23 @@ def transition(
     run.state = next_state
     if next_state.startswith("PAUSED"):
         run.resume_target = previous_state
+        # Pausing releases capacity in the same canonical transaction. Cleanup
+        # reconciles a launch with no stored instance ID by its client token.
+        leases = db.scalars(select(SandboxLease).where(
+            SandboxLease.tenant_id == run.tenant_id,
+            SandboxLease.run_id == run.id,
+            SandboxLease.state.in_(["intended", "bootstrapping", "provisioned"]),
+        ).with_for_update()).all()
+        for lease in leases:
+            lease.state = "revoked"
+            lease.updated_at = utcnow()
+            db.add(OutboxEvent(
+                tenant_id=run.tenant_id, topic="sandbox.cleanup",
+                payload={"run_id": run.id, "sandbox_lease_id": lease.id, **inject_trace()},
+            ))
+            append_event(db, run, "sandbox.revoked", {
+                "sandbox_lease_id": lease.id, "reason": "paused",
+            })
     if verdict is not None:
         if verdict not in {"PASSED", "FAILED", "INCONCLUSIVE", "NOT_RUN"}:
             raise ServiceError("INVALID_VERDICT", "Unknown verification verdict", 400)
