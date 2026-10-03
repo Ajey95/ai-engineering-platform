@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "case_id": "nonbug-consent-006",
+  "fixture_revision": "1.0",
+  "category": "non_bug",
+  "language": "python",
+  "report": "Declined consent was rejected.",
+  "start_command": [
+    "python",
+    "-m",
+    "uvicorn",
+    "server:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8001"
+  ],
+  "health_url": "http://127.0.0.1:8001/__aip_health",
+  "allowed_origin": "http://127.0.0.1:8001",
+  "named_tests": {
+    "baseline": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests"
+    ]
+  },
+  "scenario": {
+    "steps": [
+      {
+        "action": "goto",
+        "path": "/"
+      },
+      {
+        "action": "fill",
+        "role": "textbox",
+        "name": "Value",
+        "value": "no"
+      },
+      {
+        "action": "click",
+        "role": "button",
+        "name": "Check"
+      },
+      {
+        "action": "expect_text",
+        "text": "422:Rejected"
+      }
+    ],
+    "mask_selectors": []
+  },
+  "expected_baseline": "success",
+  "oracle_revision": "1.0"
+}

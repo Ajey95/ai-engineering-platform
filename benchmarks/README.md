@@ -22,7 +22,19 @@ cases. Supplied result booleans are not independently attested by this tool;
 its output is labelled `UNVERIFIED_RESULTS` and `metric_targets_met` is not a
 release verdict.
 
-Only the `form-submit-001` development fixture currently exists. The other
-39 reviewed cases, held-out oracle execution, provider-run evidence binding,
-and repeated-trial qualification are still required before this benchmark
-can report a platform result.
+The catalog now includes `form-submit-001` and 39 additional, distinct
+synthetic fixture trees: nine form cases, ten API status cases, ten CSV or
+timestamp cases and ten non-bug cases. Hidden oracles and reference versions
+live outside the repair source trees. The generated catalog is checked by
+`python -m scripts.verify_benchmark_cases`: bug baselines must fail the hidden
+checks, non-bug baselines must pass, and every reference must pass. Browser
+reproduction is checked with `python -m scripts.verify_benchmark_browser`.
+
+After committing fixture, oracle and lock assets, run
+`python -m scripts.build_benchmark_manifest --image-digest sha256:<built-image-id>`
+to pin their exact commit and the locally built sandbox image in
+`benchmarks/suite-v1.json`; then use `scripts.validate_benchmark` above. This
+local image ID is not a pushed registry digest. Provider-run evidence binding,
+held-out model evaluation, repeated-trial scores and hosted qualification
+remain separate gates. The synthetic cases exercise a narrow shared app
+shape; their oracle results do not establish general repair success.

@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "case_id": "api-rate-010",
+  "fixture_revision": "1.0",
+  "category": "api_contract",
+  "language": "python",
+  "report": "Rate limit returns HTTP 200 instead of 429.",
+  "start_command": [
+    "python",
+    "-m",
+    "uvicorn",
+    "server:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8001"
+  ],
+  "health_url": "http://127.0.0.1:8001/__aip_health",
+  "allowed_origin": "http://127.0.0.1:8001",
+  "named_tests": {
+    "baseline": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests"
+    ]
+  },
+  "scenario": {
+    "steps": [
+      {
+        "action": "goto",
+        "path": "/"
+      },
+      {
+        "action": "fill",
+        "role": "textbox",
+        "name": "Value",
+        "value": "rate-exhausted"
+      },
+      {
+        "action": "click",
+        "role": "button",
+        "name": "Check"
+      },
+      {
+        "action": "expect_text",
+        "text": "429:Rejected"
+      }
+    ],
+    "mask_selectors": []
+  },
+  "expected_baseline": "failure",
+  "oracle_revision": "1.0"
+}
