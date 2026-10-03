@@ -1870,3 +1870,13 @@ Under no-network, read-only, capability-dropped flags it imported the worker
 and encoded the fresh UI run's real WebM through `encode_hls`, producing a
 master playlist. Neither image has been pushed or hosted; the AWS queue,
 OIDC, EFS, Memgraph server, CDN and provider accounts remain unqualified.
+
+2026-10-03 hosted trace continuity: the run SQS consumer now starts its
+`dispatch.consume` span from the canonical outbox trace, and media staging
+stores the active trace in its durable media outbox. The media SQS consumer
+starts `media.consume` from that parent. Both hosted worker entry points enable
+the configured OTLP exporter; no endpoint is assumed or credentials logged.
+The focused lineage and media replay tests passed, Ruff passed, and the full
+PostgreSQL/Memgraph-enabled regression suite passed 293 with two Windows
+symlink skips. Actual collector delivery and hosted trace correlation are not
+yet qualified.

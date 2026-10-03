@@ -97,6 +97,10 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{(tmp_path / 'media.db').as_posix()}")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        "platform_app.hosted_media.inject_trace",
+        lambda: {"traceparent": "00-" + "1" * 32 + "-" + "2" * 16 + "-01"},
+    )
     output = _guest_output()
     with factory() as db:
         db.add(Tenant(id="tenant-a", name="A"))
@@ -131,7 +135,9 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
         )
         db.commit()
         assert run.media_status == "PROCESSING"
-        assert db.get(OutboxEvent, media_event_id("run-a", "baseline")).status == "pending"
+        media_event = db.get(OutboxEvent, media_event_id("run-a", "baseline"))
+        assert media_event.status == "pending"
+        assert media_event.payload["traceparent"].startswith("00-")
 
     encode_calls = []
 

@@ -11,6 +11,7 @@ from platform_app.models import OutboxEvent, Run
 from platform_app.queue_consumer import _valid_message, _VisibilityHeartbeat
 from platform_app.run_ledger import aware
 from platform_app.service import ServiceError
+from platform_app.telemetry import extract_trace, set_safe_attributes, tracer
 
 
 def publish_media_dispatches(db, sqs, queue_url: str, limit: int = 20) -> int:
@@ -81,13 +82,18 @@ def consume_one_media_dispatch(
         ):
             return False
         status = event.status
+        trace_carrier = dict(event.payload)
         expired = (
             status == "processing" and event.processing_lease_until is not None
             and aware(event.processing_lease_until) <= utcnow()
         )
     if status == "pending" or expired:
         with _VisibilityHeartbeat(sqs, queue_url, receipt):
-            process_event(event.id)
+            with tracer.start_as_current_span(
+                "media.consume", context=extract_trace(trace_carrier)
+            ):
+                set_safe_attributes(run_id=payload["run_id"], event_id=event.id)
+                process_event(event.id)
         with session_factory() as db:
             current = db.get(OutboxEvent, event.id)
             status = current.status if current else "missing"

@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 import pytest
@@ -10,7 +11,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base
+from platform_app.media_queue import consume_one_media_dispatch
 from platform_app.models import ModelEntry, OutboxEvent, Project, Task, Tenant
+from platform_app.queue_consumer import consume_one_run_dispatch
 from platform_app.schemas import RunCreate
 from platform_app.service import admit_run
 from platform_app.telemetry import extract_trace, inject_trace, set_safe_attributes, tracer
@@ -105,4 +108,73 @@ def test_admission_persists_traceparent_for_dispatch(exporter):
             "dispatch.consume", context=extract_trace(event.payload)
         ) as dispatch:
             assert dispatch.get_span_context().trace_id == request.get_span_context().trace_id
+    engine.dispose()
+
+
+def test_hosted_run_and_media_consumers_resume_recorded_parent(exporter):
+    class FakeSQS:
+        def __init__(self, event_id):
+            self.event_id = event_id
+            self.deleted = False
+
+        def receive_message(self, **_):
+            if self.deleted:
+                return {"Messages": []}
+            return {"Messages": [{
+                "Body": json.dumps({
+                    "version": 1, "event_id": self.event_id,
+                    "tenant_id": "tenant-a", "run_id": "run-a",
+                }),
+                "ReceiptHandle": "receipt-a",
+            }]}
+
+        def change_message_visibility(self, **_):
+            return {}
+
+        def delete_message(self, **_):
+            self.deleted = True
+
+    exporter.clear()
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    with tracer.start_as_current_span("run.parent") as parent:
+        parent_id = parent.get_span_context().trace_id
+        carrier = inject_trace()
+    with Session(engine) as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        for event_id, topic in (("run-event", "run.dispatch"),
+                                ("media-event", "media.transcode")):
+            db.add(OutboxEvent(
+                id=event_id, tenant_id="tenant-a", topic=topic,
+                payload={"run_id": "run-a", **carrier},
+            ))
+        db.commit()
+
+    def finish(event_id):
+        assert trace.get_current_span().get_span_context().trace_id == parent_id
+        with Session(engine) as db:
+            db.get(OutboxEvent, event_id).status = "delivered"
+            db.commit()
+        return event_id
+
+    def factory():
+        return Session(engine)
+    queue_url = "https://sqs.example.test/123/events"
+    assert consume_one_run_dispatch(
+        factory, FakeSQS("run-event"), queue_url, finish, wait_seconds=0,
+    )
+    assert consume_one_media_dispatch(
+        factory, FakeSQS("media-event"), queue_url, finish, wait_seconds=0,
+    )
+    spans = [span for span in exporter.get_finished_spans()
+             if span.name in {"run.parent", "dispatch.consume", "media.consume"}]
+    assert {span.name for span in spans} == {
+        "run.parent", "dispatch.consume", "media.consume",
+    }
+    assert all(span.context.trace_id == parent_id for span in spans)
+    assert all(span.parent.span_id == next(
+        item.context.span_id for item in spans if item.name == "run.parent"
+    ) for span in spans if span.name != "run.parent")
     engine.dispose()

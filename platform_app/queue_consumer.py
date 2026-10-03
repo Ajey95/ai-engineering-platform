@@ -9,6 +9,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session
 
 from platform_app.models import OutboxEvent
+from platform_app.telemetry import extract_trace, set_safe_attributes, tracer
 
 
 def _valid_message(body: str) -> dict | None:
@@ -84,9 +85,14 @@ def consume_one_run_dispatch(
         ):
             return False
         status = event.status
+        trace_carrier = dict(event.payload)
     if status == "pending":
         with _VisibilityHeartbeat(sqs, queue_url, receipt):
-            process_event(payload["event_id"])
+            with tracer.start_as_current_span(
+                "dispatch.consume", context=extract_trace(trace_carrier)
+            ):
+                set_safe_attributes(run_id=payload["run_id"], event_id=payload["event_id"])
+                process_event(payload["event_id"])
         with session_factory() as db:
             event = db.get(OutboxEvent, payload["event_id"])
             status = event.status if event else "missing"

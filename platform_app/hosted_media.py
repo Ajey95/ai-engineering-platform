@@ -17,6 +17,7 @@ from platform_app.run_ledger import assert_fence
 from platform_app.safe_archive import UnsafeArchive, extract_regular_tar
 from platform_app.sandbox_transport import GuestOutput
 from platform_app.service import ServiceError, append_event
+from platform_app.telemetry import inject_trace
 
 _RECORDING = re.compile(r"[A-Za-z0-9_-]{1,80}\.webm\Z")
 
@@ -100,7 +101,7 @@ def stage_hosted_recording(
     if event is None:
         db.add(OutboxEvent(
             id=event_id, tenant_id=run.tenant_id,
-            topic="media.transcode", payload=payload,
+            topic="media.transcode", payload={**payload, **inject_trace()},
         ))
         append_event(db, run, "media.queued", {"label": label, "source_sha256": digest})
         run.media_status = "PROCESSING"

@@ -12,6 +12,7 @@ from platform_app.config import settings
 from platform_app.db import SessionLocal
 from platform_app.hosted_media_worker import dispatch_one_hosted_media
 from platform_app.media_queue import consume_one_media_dispatch, publish_media_dispatches
+from platform_app.telemetry import configure_telemetry
 
 
 def main() -> int:
@@ -27,6 +28,7 @@ def main() -> int:
         parser.error("A private media bucket is required")
     if not config.media_queue_url.startswith("https://"):
         parser.error("A hosted media SQS queue URL is required")
+    configure_telemetry()
     root = Path(config.artifact_dir).resolve()
     s3 = boto3.client("s3")
     sqs = boto3.client("sqs")

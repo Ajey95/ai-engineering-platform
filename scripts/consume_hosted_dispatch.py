@@ -15,6 +15,7 @@ from platform_app.hosted_worker import HostedWorker
 from platform_app.queue_consumer import consume_one_run_dispatch
 from platform_app.queue_dispatch import publish_run_dispatches
 from platform_app.sandbox_broker import SandboxSpec
+from platform_app.telemetry import configure_telemetry
 
 
 def main() -> int:
@@ -44,6 +45,7 @@ def main() -> int:
         parser.error(f"Hosted sandbox settings are invalid: {type(error).__name__}")
     if len(envelope_key) != 32:
         parser.error("Sandbox envelope key must be 32 bytes")
+    configure_telemetry()
     artifact_root = Path(config.artifact_dir).resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
     work_root = artifact_root / "_trusted_work"
