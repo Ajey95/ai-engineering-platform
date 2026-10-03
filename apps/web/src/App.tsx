@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, BarChart3, BookOpen, CheckCircle2, ChevronDown, CircleHelp,
   ClipboardList, Code2, FolderGit2, Gauge, Layers3, Menu, Play, Plus,
@@ -117,6 +117,7 @@ export default function App({ identity, onSignOut }: {
   const [packet, setPacket] = useState<ReviewPacket | null>(null)
   const [tab, setTab] = useState<'evidence' | 'changes' | 'logs' | 'environment'>('evidence')
   const [dialog, setDialog] = useState<'project' | 'task' | 'run' | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [connectionBusy, setConnectionBusy] = useState(false)
   const [error, setError] = useState('')
@@ -146,6 +147,17 @@ export default function App({ identity, onSignOut }: {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!dialog) return
+    const previous = document.activeElement instanceof HTMLElement
+      ? document.activeElement : null
+    dialogRef.current?.querySelector<HTMLElement>('form input, form textarea, form select')?.focus()
+    return () => {
+      if (previous?.isConnected) previous.focus()
+      else document.querySelector<HTMLElement>('main')?.focus()
+    }
+  }, [dialog])
 
   const refresh = useCallback(async () => {
     try {
@@ -547,7 +559,7 @@ export default function App({ identity, onSignOut }: {
   }
 
   return <div className="app-shell">
-    <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
+    <aside className={`sidebar ${menuOpen ? 'open' : ''}`} inert={Boolean(dialog)} aria-hidden={Boolean(dialog)}>
       <div className="brand"><span className="brand-mark"><Code2 size={18} /></span><span>Forge</span></div>
       <nav id="app-navigation" aria-label="Main navigation">
         {nav.map(item => <button key={item.id} type="button" className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}>
@@ -556,7 +568,7 @@ export default function App({ identity, onSignOut }: {
       </nav>
       <div className="sidebar-footer"><span className="avatar">{identity.subject.slice(0, 2).toUpperCase()}</span><div><strong>{identity.development ? 'Local development' : identity.subject}</strong><small>{identity.tenant_id}</small></div></div>
     </aside>
-    <div className="app-content">
+    <div className="app-content" inert={Boolean(dialog)} aria-hidden={Boolean(dialog)}>
       <header className="topbar">
         <button type="button" className="icon-button mobile-menu" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} aria-controls="app-navigation" onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
         <div className="project-picker"><FolderGit2 size={17} /><select aria-label="Selected project" value={selectedProject} onChange={event => setSelectedProject(event.target.value)}>
@@ -571,7 +583,7 @@ export default function App({ identity, onSignOut }: {
         <button type="button" className="icon-button" aria-label="Refresh workspace" onClick={() => void refresh()}><RefreshCw size={17} /></button>
         {onSignOut && <button type="button" className="icon-button" aria-label="Sign out" onClick={onSignOut}><Square size={17} /></button>}
       </header>
-      <main>
+      <main tabIndex={-1}>
         {error && <div className="error-banner" role="alert"><XCircle size={18} />{error}<button type="button" aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
         {page === 'projects' && <section className="page-section">
           <div className="page-heading"><div><h1>Projects</h1><p>Connect an authorized repository and a reproducible test environment.</p></div><button className="primary-button" onClick={() => setDialog('project')}><Plus size={17} /> New project</button></div>
@@ -701,7 +713,16 @@ export default function App({ identity, onSignOut }: {
         </> : <Empty title="No local evaluation loaded" description="Run the controlled fixture evaluator to produce recorded evidence." />}</section>}
       </main>
     </div>
-    {dialog && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="panel-heading"><h2 id="dialog-title">{dialog === 'project' ? 'New project' : dialog === 'task' ? 'New bug report' : 'Start run'}</h2><button className="icon-button" aria-label="Close" onClick={() => setDialog(null)}><XCircle size={19} /></button></div>
+    {dialog && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null) }}><div ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" onKeyDown={event => {
+      if (event.key === 'Escape') { event.stopPropagation(); setDialog(null); return }
+      if (event.key !== 'Tab') return
+      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'))
+        .filter(element => element.getClientRects().length > 0)
+      if (!controls.length) return
+      const first = controls[0]; const last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }}><div className="panel-heading"><h2 id="dialog-title">{dialog === 'project' ? 'New project' : dialog === 'task' ? 'New bug report' : 'Start run'}</h2><button className="icon-button" aria-label="Close" onClick={() => setDialog(null)}><XCircle size={19} /></button></div>
       {dialog === 'project' && <form onSubmit={submitProject}><label>Name<input name="name" minLength={2} required placeholder="Web application" /></label><label>Repository URL<input name="repository_url" type="url" placeholder="https://github.com/organization/repository" /></label><label>Test URL<input name="test_url" type="url" placeholder="https://staging.example.com" /></label><label>Environment manifest (JSON)<textarea name="manifest" rows={5} defaultValue={'{"named_tests": {}}'} /></label><button className="primary-button" disabled={busy}>Create project</button></form>}
       {dialog === 'task' && <form onSubmit={submitTask}><label>Bug report<textarea name="report" rows={4} minLength={10} required placeholder="Describe the failure and reproduction steps" /></label><label>Expected behavior<textarea name="expected_behavior" rows={2} required /></label><label>Actual behavior<textarea name="actual_behavior" rows={2} required /></label><button className="primary-button" disabled={busy}>Submit report</button></form>}
       {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Run budget in USD<input name="max_spend_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" placeholder="Operator default" /><small>Optional lower cap for this run. An owner may approve an increase up to the operator limit after a budget pause.</small></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><label>Repair scope for hosted runs<input name="repair_paths" placeholder="src/app.py, src/routes.py" /><small>List up to four existing source files, separated by commas. The agent can edit only these files.</small></label><button className="primary-button" disabled={busy}>Admit run</button></form>}

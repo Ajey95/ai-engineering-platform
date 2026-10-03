@@ -1896,3 +1896,11 @@ development loopback OTLP endpoint, emitted `hosted.export.smoke`, flushed its
 batch processor, and a controlled local HTTP receiver parsed the protobuf
 request and found exactly that span. `tests/test_telemetry.py` passed 4/4.
 This verifies local export wiring, not a hosted collector or correlated load.
+
+2026-10-03 dialog keyboard behavior: React project, report and run dialogs now
+focus the first form field on open, trap Tab and Shift+Tab within visible
+controls, close with Escape and restore focus to the opening control (or main
+landmark if it is gone). The background is inert and hidden from assistive
+technology while a dialog is open. TypeScript and Vite production build passed.
+Chromium verified all three dialogs, including the project dialog at 390 px,
+with zero page errors. A full accessibility audit remains.
