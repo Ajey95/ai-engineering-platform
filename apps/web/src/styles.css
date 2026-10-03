@@ -20,3 +20,10 @@
 .settings-grid form input,.settings-grid form select{width:100%;min-width:0;border:1px solid #cbd9e1;border-radius:6px;padding:10px 11px;background:#fff;color:#102239}
 .settings-grid form button{justify-self:start}
 .settings-grid .list-row span{overflow-wrap:anywhere}
+.plugin-row{display:grid;gap:7px;padding:14px 0;border-top:1px solid #e3eaf0;color:#102239}
+.plugin-row strong{overflow-wrap:anywhere}.plugin-row small{color:#657687}
+.plugin-row .status{justify-self:start}
+.plugin-access-panel form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;max-width:650px;margin-top:6px}
+.plugin-access-panel form label{display:grid;gap:6px;color:#536879;font-size:12px;font-weight:700}
+.plugin-access-panel form input{width:100%;min-width:0;border:1px solid #cbd9e1;border-radius:6px;padding:10px 11px;background:#fff;color:#102239}
+@media(max-width:600px){.plugin-access-panel form{grid-template-columns:1fr}.plugin-access-panel form button{justify-self:start}}

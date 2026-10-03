@@ -16,7 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from platform_app.db import utcnow
-from platform_app.models import PluginEntry, PluginRegistryEvent, Tenant
+from platform_app.models import AuditEvent, PluginEntry, PluginRegistryEvent, Tenant
+from platform_app.service import canonical_hash
 
 PLUGIN_ID = re.compile(r"^[a-z][a-z0-9._-]{2,99}$")
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$")
@@ -228,6 +229,86 @@ def disable_plugin(db: Session, entry: PluginEntry, actor: str) -> None:
         return
     entry.state = "disabled"
     _event(db, entry, actor, "disable", "disabled")
+
+
+def tenant_plugin_catalog(db: Session, tenant: Tenant) -> list[dict]:
+    allowed = set(tenant.plugin_allowlist or [])
+    entries = db.scalars(select(PluginEntry).order_by(
+        PluginEntry.plugin_id, PluginEntry.version,
+    ).limit(500)).all()
+    result = []
+    for entry in entries:
+        try:
+            manifest = PluginManifest.model_validate(entry.manifest)
+            intact = (
+                manifest_digest(manifest) == entry.manifest_sha256
+                and manifest.artifact_sha256 == entry.artifact_sha256
+            )
+        except ValueError:
+            intact = False
+            manifest = None
+        result.append({
+            "plugin_id": entry.plugin_id, "version": entry.version,
+            "state": entry.state if intact else "invalid",
+            "transport": manifest.transport if manifest else "unknown",
+            "tools": [tool.name for tool in manifest.tools] if manifest else [],
+            "allowed": f"{entry.plugin_id}@{entry.version}" in allowed,
+            "ready": bool(
+                intact and entry.state == "enabled" and entry.validated_at
+                and manifest is not None and manifest.transport != "mcp_http"
+            ),
+        })
+    return result
+
+
+def set_tenant_plugin_access(
+    db: Session, tenant_id: str, actor: str,
+    plugin_id: str, version: str, allowed: bool, reason: str,
+) -> dict:
+    reason = reason.strip()
+    if not 8 <= len(reason) <= 2000:
+        raise PluginError("PLUGIN_REASON_REQUIRED", "A change reason is required")
+    if not PLUGIN_ID.fullmatch(plugin_id) or not VERSION.fullmatch(version):
+        raise PluginError("PLUGIN_ID_INVALID", "Plugin identity is invalid")
+    tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
+    if tenant is None or tenant.status != "active":
+        raise PluginError("TENANT_DISABLED", "Tenant is unavailable")
+    entry = db.scalar(select(PluginEntry).where(
+        PluginEntry.plugin_id == plugin_id, PluginEntry.version == version,
+    ).with_for_update())
+    if entry is None:
+        raise PluginError("PLUGIN_UNAVAILABLE", "Plugin version is unavailable")
+    if allowed:
+        try:
+            manifest = PluginManifest.model_validate(entry.manifest)
+        except ValueError as error:
+            raise PluginError("PLUGIN_ARTIFACT_INVALID", "Plugin manifest is invalid") from error
+        if (
+            manifest_digest(manifest) != entry.manifest_sha256
+            or manifest.artifact_sha256 != entry.artifact_sha256
+        ):
+            raise PluginError("PLUGIN_ARTIFACT_INVALID", "Plugin manifest changed")
+        if manifest.transport == "mcp_http":
+            raise PluginError("PLUGIN_TRANSPORT_UNAVAILABLE", "Remote MCP is not qualified")
+        if entry.state != "enabled" or entry.validated_at is None:
+            raise PluginError("PLUGIN_UNAVAILABLE", "Plugin version is not ready")
+    key = f"{plugin_id}@{version}"
+    before = sorted(set(tenant.plugin_allowlist or []))
+    after = sorted((set(before) | {key}) if allowed else (set(before) - {key}))
+    if before != after:
+        tenant.plugin_allowlist = after
+        db.add(AuditEvent(
+            tenant_id=tenant_id, actor=actor, action="tenant.plugins.update",
+            target_ref=key,
+            arguments_hash=canonical_hash({
+                "before": before, "after": after, "reason": reason,
+            }),
+            policy_revision=tenant.policy_revision, outcome="allowed",
+        ))
+    return {
+        "plugin_id": plugin_id, "version": version,
+        "allowed": allowed, "ready": entry.state == "enabled" and entry.validated_at is not None,
+    }
 
 
 @dataclass(frozen=True)

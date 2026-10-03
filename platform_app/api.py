@@ -94,6 +94,11 @@ from platform_app.models import (
 )
 from platform_app.operational_alerts import alert_read, resolve_alert
 from platform_app.operations import operations_snapshot
+from platform_app.plugin_registry import (
+    PluginError,
+    set_tenant_plugin_access,
+    tenant_plugin_catalog,
+)
 from platform_app.private_media import media_prefix, sign_recording_grant
 from platform_app.publication import approve_draft_pr
 from platform_app.publication_queue import enqueue_approved_draft
@@ -111,6 +116,7 @@ from platform_app.schemas import (
     EventRead,
     MemoryTransitionCreate,
     ModelRegister,
+    PluginAccessSet,
     ProjectCreate,
     ProjectMembershipSet,
     ProjectRead,
@@ -989,6 +995,37 @@ def set_tenant_quotas(
 ):
     require_owner(db, identity)
     result = update_quotas(db, identity[0], identity[1], body)
+    db.commit()
+    return result
+
+
+@app.get("/v1/tenant/plugins")
+def list_tenant_plugins(
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    tenant = db.get(Tenant, identity[0])
+    if tenant is None:
+        raise ServiceError("NOT_FOUND", "Workspace not found", 404)
+    return tenant_plugin_catalog(db, tenant)
+
+
+@app.put("/v1/tenant/plugins/{plugin_id}/{version}")
+def set_tenant_plugin(
+    plugin_id: str,
+    version: str,
+    body: PluginAccessSet,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    try:
+        result = set_tenant_plugin_access(
+            db, identity[0], identity[1], plugin_id, version, body.allowed, body.reason,
+        )
+    except PluginError as error:
+        raise ServiceError(error.code, str(error), 409) from error
     db.commit()
     return result
 

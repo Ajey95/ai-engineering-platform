@@ -62,6 +62,11 @@ class TenantQuotasSet(StrictModel):
         return self
 
 
+class PluginAccessSet(StrictModel):
+    allowed: bool
+    reason: str = Field(min_length=8, max_length=2000)
+
+
 class ProjectMembershipSet(StrictModel):
     role: Literal["maintainer", "contributor", "reviewer", "viewer"]
     status: Literal["active", "disabled"] = "active"

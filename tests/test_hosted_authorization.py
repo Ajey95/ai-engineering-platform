@@ -16,6 +16,7 @@ from platform_app.config import Settings
 from platform_app.db import Base
 from platform_app.models import (
     AuditEvent,
+    PluginEntry,
     Project,
     ProjectMembership,
     Run,
@@ -23,6 +24,7 @@ from platform_app.models import (
     Tenant,
     TenantMembership,
 )
+from platform_app.plugin_registry import PluginManifest, manifest_digest
 from platform_app.service import ServiceError
 
 
@@ -85,6 +87,18 @@ def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
     Base.metadata.create_all(engine)
     monkeypatch.setattr(api, "SessionLocal", sessionmaker(bind=engine))
     with Session(engine) as db:
+        plugin_manifest = PluginManifest.model_validate({
+            "plugin_id": "example.read-tool", "version": "1.0.0",
+            "contract_version": "1.0", "publisher": "Reviewed team",
+            "artifact_sha256": "a" * 64, "category": "retrieval",
+            "transport": "internal", "tools": [{
+                "name": "read_fact", "input_schema": {"type": "object"},
+                "output_schema": {"type": "object"},
+                "permission_scopes": ["memory.read"], "side_effect_class": "read",
+            }], "allowed_network_destinations": [], "credential_types": [],
+            "max_runtime_seconds": 10, "max_output_bytes": 4096,
+            "compatibility_constraints": {},
+        })
         db.add_all(
             [
                 Tenant(id="tenant-a", name="A"),
@@ -92,6 +106,13 @@ def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
                 TenantMembership(tenant_id="tenant-a", subject="alice", role="member"),
                 TenantMembership(tenant_id="tenant-a", subject="bob", role="member"),
                 TenantMembership(tenant_id="tenant-a", subject="owner", role="owner"),
+                PluginEntry(
+                    plugin_id=plugin_manifest.plugin_id, version=plugin_manifest.version,
+                    manifest=plugin_manifest.model_dump(mode="json"),
+                    manifest_sha256=manifest_digest(plugin_manifest),
+                    artifact_sha256=plugin_manifest.artifact_sha256,
+                    state="enabled", validated_at=datetime.now(UTC),
+                ),
                 Project(id="project-a", tenant_id="tenant-a", name="Allowed"),
                 Project(id="project-b", tenant_id="tenant-a", name="Hidden"),
                 Project(id="project-c", tenant_id="tenant-b", name="Other tenant"),
@@ -175,6 +196,23 @@ def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
                 json={"role": "viewer"},
             ).status_code == 404
             assert client.get("/v1/tenant/quotas", headers=bob).status_code == 403
+            assert client.get("/v1/tenant/plugins", headers=bob).status_code == 403
+            assert client.get("/v1/tenant/plugins", headers=owner).json()[0]["ready"] is True
+            assert client.put(
+                "/v1/tenant/plugins/example.tool/1.0.0", headers=bob,
+                json={"allowed": True, "reason": "Approve reviewed plugin"},
+            ).status_code == 403
+            plugin_path = "/v1/tenant/plugins/example.read-tool/1.0.0"
+            assert client.put(
+                plugin_path, headers=owner,
+                json={"allowed": True, "reason": "Approve read-only plugin"},
+            ).status_code == 200
+            assert client.get("/v1/tenant/plugins", headers=owner).json()[0]["allowed"] is True
+            assert client.put(
+                plugin_path, headers=owner,
+                json={"allowed": False, "reason": "Revoke plugin access"},
+            ).status_code == 200
+            assert client.get("/v1/tenant/plugins", headers=owner).json()[0]["allowed"] is False
             assert client.put("/v1/tenant/quotas", headers=bob, json={
                 "daily_inference_cap_usd": "5", "monthly_inference_cap_usd": "50",
                 "max_concurrent_runs": 2, "daily_export_cap_bytes": 100_000,

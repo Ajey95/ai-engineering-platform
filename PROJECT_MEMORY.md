@@ -1603,3 +1603,53 @@ there were zero page errors. Screenshot outside repo:
 plane proof, not hosted identity/load qualification.
 The full Python suite passed 271 with 5 skips, TypeScript and Vite production
 build passed, scoped Ruff and `git diff --check` passed.
+
+2026-10-03 pause-integrity increment: `platform_app/pause_integrity.py`
+records a canonical checkpoint in each new paused `run.state_changed` event:
+the pinned run plan, completed tool receipt digests and recorded guest result
+digests. Input, emergency-model and run-budget resume now verify the event
+checksum and require all previously completed evidence to match before
+requeueing; later reconciled effects remain allowed. Budget approval also
+requires the existing run-cap reservation to equal the old cap. Targeted
+tamper/approval/worker tests passed 23/23 and the new eight-test pause/budget
+subset passed; scoped Ruff and diff whitespace checks passed. Controlled WSL
+Docker budget pause/replay run `a8ba3ed7-4404-4637-88b6-31e5db732d2f`
+passed at artifact directory `artifacts/worker-verification/82045c9c1fe9`:
+zero provider requests before the pause, one after approval, 10 completed
+effects, candidate checks passing, both media ready, REVIEW_READY/PASSED.
+The provider response was controlled data. Full suite and PostgreSQL probe
+were pending at this checkpoint.
+Those gates then passed: full Python suite 274 with 5 skips; disposable
+PostgreSQL admission/race probe at migration head `c78b82d1fa40` passed.
+
+2026-10-03 injection boundary increment: a native adapter receiving an
+unregistered complete-JSON provider tool call now raises sanitized
+`PROVIDER_TOOL_DENIED` instead of leaking an uncaught `ToolCallError` out of
+the worker. The same classification covers completed OpenAI/Anthropic streamed
+tool calls; incomplete streams still have their distinct interruption code.
+Both fixture and general model paths retain uncertain provider liability,
+emit `tool.denied`, and audit the denied authorization without persisting
+provider-supplied tool arguments. A controlled poisoned-source comment plus
+`publish_code` response produced no publication tool effect; exact test checked
+the event/audit and preserved reservation. Targeted provider/stream/budget
+tests passed 38/38 and scoped Ruff passed. This is a controlled AC-24 style
+test, not a live hostile-repository or credential access drill. The full suite
+was running at this checkpoint.
+The full suite subsequently passed 277 tests with 5 skips.
+
+2026-10-03 plugin administration increment: owner-only
+`GET/PUT /v1/tenant/plugins` provides a sanitized version catalog and
+per-tenant allow/revoke with a required reason. Grant requires an enabled,
+validated entry whose manifest/artifact digests still match; the tenant row
+is locked and changed decisions are audited. It never enables remote MCP
+transport, which remains blocked by the registry. Settings displays the
+catalog and a reasoned access form. Direct registry and hosted OIDC/API tests
+passed 6/6, TypeScript and Ruff passed. Chromium displayed and submitted an
+intercepted ready-plugin allow state with no page errors; backend success was
+separately verified in the API test. The inspected screenshot outside repo is
+`D:\projects\frontend-plugin-settings-20261003.png`. Remote plugin execution
+and live credential audience qualification are still absent.
+The full Python suite passed 278 with 5 skips; the final targeted plugin/API
+suite passed 6/6 after an explicit forged remote-MCP-enabled state rejection.
+The final TypeScript/Vite build and scoped Ruff passed; diff whitespace check
+passed. The local API on port 8098 was restarted with the plugin endpoints.

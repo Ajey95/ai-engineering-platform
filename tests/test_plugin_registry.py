@@ -7,13 +7,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from platform_app.db import Base
-from platform_app.models import PluginRegistryEvent, Tenant
+from platform_app.models import AuditEvent, PluginRegistryEvent, Tenant
 from platform_app.plugin_registry import (
     PluginError,
     PluginManifest,
     enable_plugin,
     register_plugin,
     resolve_plugin_tool,
+    set_tenant_plugin_access,
+    tenant_plugin_catalog,
     validate_plugin_artifact,
 )
 
@@ -139,3 +141,55 @@ def test_remote_endpoint_must_be_allowlisted_and_cannot_be_enabled(db, tmp_path)
     with pytest.raises(PluginError) as unavailable:
         enable_plugin(db, entry, "operator")
     assert unavailable.value.code == "PLUGIN_TRANSPORT_UNAVAILABLE"
+    entry.state = "enabled"  # Even an externally corrupted state cannot grant remote use.
+    with pytest.raises(PluginError) as denied:
+        set_tenant_plugin_access(
+            db, "tenant-a", "owner", entry.plugin_id, entry.version,
+            True, "Attempt remote access",
+        )
+    assert denied.value.code == "PLUGIN_TRANSPORT_UNAVAILABLE"
+
+
+def test_owner_allowlist_requires_ready_intact_version_and_audits_change(db, tmp_path):
+    artifact = b"reviewed plugin"
+    path = tmp_path / "reviewed.tar"
+    path.write_bytes(artifact)
+    entry = register_plugin(db, manifest(artifact), "operator")
+    with pytest.raises(PluginError) as early:
+        set_tenant_plugin_access(
+            db, "tenant-a", "owner", entry.plugin_id, entry.version,
+            True, "Approved read-only tool",
+        )
+    assert early.value.code == "PLUGIN_UNAVAILABLE"
+    validate_plugin_artifact(db, entry, path, "operator")
+    enable_plugin(db, entry, "operator")
+    granted = set_tenant_plugin_access(
+        db, "tenant-a", "owner", entry.plugin_id, entry.version,
+        True, "Approved read-only tool",
+    )
+    db.commit()
+    assert granted["allowed"] is True
+    assert tenant_plugin_catalog(db, db.get(Tenant, "tenant-a"))[0]["ready"] is True
+    assert resolve_plugin_tool(
+        db, db.get(Tenant, "tenant-a"), entry.plugin_id, entry.version,
+        "read_fact", {"fact_id": "fact-a"}, {"memory.read"},
+    ).tool.name == "read_fact"
+    set_tenant_plugin_access(
+        db, "tenant-a", "owner", entry.plugin_id, entry.version,
+        True, "Approved read-only tool",
+    )
+    assert db.query(AuditEvent).filter_by(action="tenant.plugins.update").count() == 1
+    set_tenant_plugin_access(
+        db, "tenant-a", "owner", entry.plugin_id, entry.version,
+        False, "Revoke tool access",
+    )
+    db.commit()
+    assert db.get(Tenant, "tenant-a").plugin_allowlist == []
+    assert db.query(AuditEvent).filter_by(action="tenant.plugins.update").count() == 2
+    entry.manifest = {**entry.manifest, "max_output_bytes": 123}
+    with pytest.raises(PluginError) as tampered:
+        set_tenant_plugin_access(
+            db, "tenant-a", "owner", entry.plugin_id, entry.version,
+            True, "Re-enable reviewed tool",
+        )
+    assert tampered.value.code == "PLUGIN_ARTIFACT_INVALID"

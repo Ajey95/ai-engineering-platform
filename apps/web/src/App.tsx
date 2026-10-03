@@ -21,6 +21,8 @@ type MemoryStatus = 'proposed' | 'verified' | 'rejected' | 'superseded' | 'expir
 type Membership = { subject: string; role: string; status: 'active' | 'disabled' }
 type TenantQuotas = { daily_inference_cap_usd: string; monthly_inference_cap_usd: string
   max_concurrent_runs: number; daily_export_cap_bytes: number }
+type PluginCatalogEntry = { plugin_id: string; version: string; state: string
+  transport: string; tools: string[]; allowed: boolean; ready: boolean }
 type MemoryRecord = {
   id: string; fact_type: string; repository_ref: string; source_revision: string
   subject: string; statement: string; source_refs: string[]; verification_scope: string | null
@@ -75,7 +77,7 @@ const date = (value: string) => new Date(value).toLocaleString()
 function Status({ value }: { value: string }) {
   const style = ['FAILED', 'CANCELLED', 'DISABLED'].includes(value) ? 'bad'
     : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET', 'PAUSED_APPROVAL', 'FIXTURE ONLY'].includes(value) ? 'warn'
-      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED', 'ACTIVE'].includes(value) ? 'good' : 'neutral'
+      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED', 'ACTIVE', 'READY', 'ALLOWED'].includes(value) ? 'good' : 'neutral'
   return <span className={`status ${style}`}>{value.replaceAll('_', ' ')}</span>
 }
 
@@ -116,6 +118,7 @@ export default function App({ identity, onSignOut }: {
   const [tenantMembers, setTenantMembers] = useState<Membership[]>([])
   const [projectMembers, setProjectMembers] = useState<Membership[]>([])
   const [quotas, setQuotas] = useState<TenantQuotas | null>(null)
+  const [plugins, setPlugins] = useState<PluginCatalogEntry[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
@@ -178,14 +181,16 @@ export default function App({ identity, onSignOut }: {
   }, [page])
 
   const loadMemberships = useCallback(async () => {
-    const [tenantRows, projectRows, currentQuotas] = await Promise.all([
+    const [tenantRows, projectRows, currentQuotas, catalog] = await Promise.all([
       api<Membership[]>('/memberships'),
       selectedProject ? api<Membership[]>(`/projects/${selectedProject}/members`) : Promise.resolve([]),
       api<TenantQuotas>('/tenant/quotas'),
+      api<PluginCatalogEntry[]>('/tenant/plugins'),
     ])
     setTenantMembers(tenantRows)
     setProjectMembers(projectRows)
     setQuotas(currentQuotas)
+    setPlugins(catalog)
     setSettingsLoaded(true)
     setSettingsError('')
   }, [selectedProject])
@@ -286,6 +291,23 @@ export default function App({ identity, onSignOut }: {
       form.reset()
     } catch (cause) {
       setSettingsError(cause instanceof Error ? cause.message : 'Quota update failed')
+    } finally { setBusy(false) }
+  }
+
+  async function savePluginAccess(
+    event: React.FormEvent<HTMLFormElement>, plugin: PluginCatalogEntry,
+  ) {
+    event.preventDefault(); setBusy(true); setSettingsError('')
+    const form = event.currentTarget
+    const reason = String(new FormData(form).get('reason') || '').trim()
+    try {
+      await api(`/tenant/plugins/${encodeURIComponent(plugin.plugin_id)}/${encodeURIComponent(plugin.version)}`, {
+        method: 'PUT', body: jsonBody({ allowed: !plugin.allowed, reason }),
+      })
+      setPlugins(await api<PluginCatalogEntry[]>('/tenant/plugins'))
+      form.reset()
+    } catch (cause) {
+      setSettingsError(cause instanceof Error ? cause.message : 'Plugin access update failed')
     } finally { setBusy(false) }
   }
 
@@ -590,6 +612,7 @@ export default function App({ identity, onSignOut }: {
           <div className="page-heading"><div><h1>Settings</h1><p>Model readiness, workspace budgets and owner-managed access.</p></div></div>
           {settingsError && <div className="notice" role="alert">{settingsError}</div>}
           <div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Register a model through the versioned registry. Live conformance is required before enabling it." />}</div>
+          {settingsLoaded && <div className="content-panel plugin-access-panel"><h2>Plugin access</h2><p className="muted">A trusted operator validates plugin versions first. Workspace owners can allow an enabled version or revoke access. Allowing a version does not qualify its execution adapter.</p>{plugins.length ? plugins.map(plugin => <div className="plugin-row" key={`${plugin.plugin_id}@${plugin.version}`}><strong>{plugin.plugin_id} · {plugin.version}</strong><small>{plugin.transport} · {plugin.tools.join(', ') || 'No reviewed tools'} · {plugin.state}</small><Status value={plugin.ready ? plugin.allowed ? 'ALLOWED' : 'READY' : 'UNAVAILABLE'} /><form onSubmit={event => void savePluginAccess(event, plugin)}><label>Reason for {plugin.allowed ? 'revocation' : 'access'}<input name="reason" minLength={8} maxLength={2000} required placeholder="Reviewed plugin access decision" /></label><button className="secondary-button" disabled={busy || (!plugin.ready && !plugin.allowed)}>{plugin.allowed ? 'Revoke access' : 'Allow plugin'}</button></form></div>) : <p className="muted">No plugin versions are registered. An operator must validate one before it can be allowed.</p>}</div>}
           {settingsLoaded && <div className="ops-grid settings-grid">
             {quotas && <div className="content-panel"><h2>Workspace quotas</h2><p className="muted">Changes apply to new reservations and admissions. Existing settled charges remain in the ledger.</p><form key={JSON.stringify(quotas)} onSubmit={event => void saveQuotas(event)}><label>Daily inference cap (USD)<input name="daily_inference_cap_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" defaultValue={quotas.daily_inference_cap_usd} required /></label><label>Monthly inference cap (USD)<input name="monthly_inference_cap_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" defaultValue={quotas.monthly_inference_cap_usd} required /></label><label>Maximum concurrent runs<input name="max_concurrent_runs" type="number" min="1" max="1000" step="1" defaultValue={quotas.max_concurrent_runs} required /></label><label>Daily evidence export cap (bytes)<input name="daily_export_cap_bytes" type="number" min="1" max="2000000000" step="1" defaultValue={quotas.daily_export_cap_bytes} required /></label><label>Reason for change<input name="reason" minLength={8} maxLength={2000} required placeholder="Approved spending and capacity policy" /></label><button className="secondary-button" disabled={busy}>Save quotas</button></form></div>}
             <div className="content-panel"><h2>Workspace members</h2><p className="muted">Only owners can change tenant access. The last active owner cannot be disabled.</p>{tenantMembers.map(member => <div className="list-row" key={member.subject}><span>{member.subject} · {member.role}</span><Status value={member.status.toUpperCase()} /></div>)}{!tenantMembers.length && <p className="muted">No members recorded.</p>}<form onSubmit={event => void saveMembership(event, 'tenant')}><label>Identity subject<input name="subject" required maxLength={200} placeholder="OIDC subject" /></label><label>Workspace role<select name="role"><option value="member">Member</option><option value="owner">Owner</option></select></label><label>Status<select name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></label><button className="secondary-button" disabled={busy}>Save workspace access</button></form></div>
