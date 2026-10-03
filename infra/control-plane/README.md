@@ -13,8 +13,8 @@ wsl -d Ubuntu-24.04 -u root -- docker build -f /mnt/d/projects/aiplatform/infra/
 ```
 
 The current local image built from revision
-`c74dbb60aaf1c778ce21b08fd459f242e948f9c5` as
-`sha256:d74d049c419e8bc754047231f462f2a27c92a82d9ba94487cae44116e7ba1885`.
+`70aa0e12a7f3966d4d947c53c47bbe922bb3e37a` as
+`sha256:07a2fb0d38470c8a97f320b2f5e3c7b59c78fba6d1681e0ae4b9c70b7fa7daa4`.
 Its non-root, read-only, capability-dropped smoke container served internal
 health and readiness 200. These are local image checks, not hosted release
 qualification.

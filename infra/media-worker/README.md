@@ -9,8 +9,8 @@ executed in this image. The image expects the shared private artifact EFS
 volume and a migrated PostgreSQL URL.
 
 The current local image built from revision
-`c74dbb60aaf1c778ce21b08fd459f242e948f9c5` as
-`sha256:c38b984b501b1580bfaa53b63c17051191f0ee8d7df60eee0c858da0bb380d26`.
+`70aa0e12a7f3966d4d947c53c47bbe922bb3e37a` as
+`sha256:d6683e7550fb5073eaa51a1c7621a63f5623fabc2d0d8548826d968612234f41`.
 It imported the worker modules and encoded a real browser WebM through
 `platform_app.media.encode_hls` as the non-root user under no-network,
 read-only, capability-dropped container flags on 2026-10-03.

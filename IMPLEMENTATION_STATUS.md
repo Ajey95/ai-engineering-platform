@@ -4,7 +4,7 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 292 tests with 2 Windows symlink skips when local PostgreSQL
+Python suite passed 293 tests with 2 Windows symlink skips when local PostgreSQL
 and Memgraph integration gates were enabled; Ruff and the web production build
 passed. The pinned 40-case synthetic benchmark asset validator and all 40
 baseline/reference hidden-oracle pairs passed. Local PostgreSQL is at migration
@@ -106,8 +106,8 @@ not a live provider, customer repository, AWS or GitHub qualification.
 - `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
   code as a non-root image separate from the synthetic fixture runner. The
   current WSL Docker build produced local image digest
-  `sha256:d74d049c419e8bc754047231f462f2a27c92a82d9ba94487cae44116e7ba1885`
-  from revision `c74dbb60aaf1c778ce21b08fd459f242e948f9c5`.
+  `sha256:07a2fb0d38470c8a97f320b2f5e3c7b59c78fba6d1681e0ae4b9c70b7fa7daa4`
+  from revision `70aa0e12a7f3966d4d947c53c47bbe922bb3e37a`.
   Its non-root, read-only, capability-dropped container returned internal health
   and readiness 200 and served the local-only development projects route. It has not
   been pushed, deployed, or run against hosted PostgreSQL/OIDC.
@@ -123,7 +123,7 @@ not a live provider, customer repository, AWS or GitHub qualification.
   passed for the root and new modules. No account plan/apply, app DB bootstrap,
   hosted restore or live network/IAM qualification exists; the Memgraph server and
   telemetry collection remain outside this stack. The current media image
-  `sha256:c38b984b501b1580bfaa53b63c17051191f0ee8d7df60eee0c858da0bb380d26`
+  `sha256:d6683e7550fb5073eaa51a1c7621a63f5623fabc2d0d8548826d968612234f41`
   built locally and encoded a real fixture WebM through `encode_hls` in a
   non-root, read-only, no-network container. It has not consumed a live AWS queue.
 - Scoped GitHub repository connection records accept canonical HTTPS

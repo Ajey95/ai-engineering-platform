@@ -1880,3 +1880,13 @@ The focused lineage and media replay tests passed, Ruff passed, and the full
 PostgreSQL/Memgraph-enabled regression suite passed 293 with two Windows
 symlink skips. Actual collector delivery and hosted trace correlation are not
 yet qualified.
+
+2026-10-03 deployment images after trace continuity: revision
+`70aa0e12a7f3966d4d947c53c47bbe922bb3e37a` rebuilt as control-plane
+`sha256:07a2fb0d38470c8a97f320b2f5e3c7b59c78fba6d1681e0ae4b9c70b7fa7daa4`
+and media
+`sha256:d6683e7550fb5073eaa51a1c7621a63f5623fabc2d0d8548826d968612234f41`.
+The control image imported API and hosted consumer modules as non-root under
+read-only/no-network/capability-dropped flags. The media image completed an
+actual `encode_hls` of the UI run WebM under the same flags with a writable
+tmpfs. These are local image checks; neither image was pushed or hosted.
