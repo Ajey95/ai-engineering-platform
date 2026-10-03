@@ -1,278 +1,160 @@
 # AI Engineering Platform
 
-This repository implements the AI Engineering Platform PRD v1.0 (1 October
-2026). It investigates browser-reproducible application bugs, records evidence,
-proposes bounded code changes and presents independently checked results for
-human review. The current system is a **working local development prototype**,
-not a qualified hosted release. No customer repository or live model account
-has been exercised. [Implementation status](IMPLEMENTATION_STATUS.md) records
-requirement-by-requirement evidence and open release gates. The source PRD was
-supplied separately and is not included in this repository.
+<div align="center">
 
-## Core features and their verified scope
+### From a bug report to a reviewable, evidence-backed repair
 
-| Area | Implemented behavior | Current verification |
+**FastAPI · PostgreSQL · LangGraph · Playwright · React · FFmpeg · Memgraph**
+
+`Pinned source` · `Durable runs` · `Bounded model calls` · `Independent verification` · `Private evidence`
+
+</div>
+
+The platform turns a reported application failure into a reproducible investigation. It records the exact source revision, executes checks in an isolated workspace, collects browser evidence, evaluates a bounded candidate patch, and gives a reviewer the diff and test receipts. A result can also be **inconclusive** when the evidence does not justify a repair claim.
+
+This README describes implemented code paths and the way they have been exercised locally. The [project checkpoint](PROJECT_MEMORY.md) tracks completion and the next work session; the [requirement ledger](IMPLEMENTATION_STATUS.md) contains detailed PRD traceability.
+
+## The use case
+
+Consider a report that a form does not submit correctly. A developer needs more than a suggested line of code: they need the failing behavior at a known commit, the evidence behind a proposed change, and a repeatable check of the patched tree.
+
+| Step | What the platform records | What the reviewer receives |
 |---|---|---|
-| Workspace and identity | Project, report, run, review, usage, Settings and Operations screens; tenant/project role checks; OIDC bearer and browser PKCE session paths | Local UI and controlled issuer tests; real issuer pending |
-| Admission and lifecycle | Idempotent task/run admission, frozen commit/policy/model snapshot, spend reservation, durable outbox, fenced leases, cancellation and explicit inconclusive results | SQLite and migrated PostgreSQL tests; local fixture runs |
-| Agent and model routing | LangGraph checkpointed fixture workflow; bounded hosted coordinator; native OpenAI, Anthropic and Google adapters; model qualification, budget/usage accounting, controlled fallback and context compaction | Controlled HTTP/model responses only; live provider qualification pending |
-| Repository and sandbox | Pinned Git archive/fetch, approved repair paths, independent baseline and candidate execution, per-run VM launch/cleanup and scoped S3 guest transport | WSL containers for synthetic fixtures; fake AWS tests; hosted VM isolation pending |
-| Browser and repair evidence | Named tests, browser actions, screenshots, WebM, sanitized logs, hidden synthetic oracle, exact-tree patch/diff and review packet | Real browser and FFmpeg for local fixture; no customer repository |
-| Media delivery | Separate media queue/worker, digest-verified HLS variants, private S3 publication, path-scoped CloudFront grant, deletion/invalidation, playback rendition and first-frame metrics | Local playback and controlled S3/CDN clients; live CDN pending |
-| Memory and retrieval | Canonical lifecycle/provenance in PostgreSQL, revision-pinned code index, bounded graph projection to Memgraph and scoped fallback | Local PostgreSQL/Memgraph gates; hosted graph service pending |
-| Plugins and tools | Reviewed versioned manifests, JSON schemas, permission scopes, artifact digests, tenant allowlist, typed tool results and full-log artifacts | Internal/controlled tools; remote MCP execution remains disabled |
-| Governance and operations | Tenant inference, concurrency, export, sandbox-minute, media-minute and private-HLS-byte quotas; deletion records; audits, alerts, runbooks and trace propagation | Local concurrency/restore/OTLP probes; hosted paging and recovery pending |
-| Evaluation and deployment | Forty pinned synthetic benchmark cases, CI checks, Terraform network/ECS/RDS/SQS/S3/edge definitions, Packer guest image and separate control/media Docker images | Baseline/reference cases and local image smoke passed; no AWS apply or paid-pilot release gate |
+| Report | Project, expected and actual behavior, reproduction data, pinned Git commit | A task with a stable source identity |
+| Reproduce | Named test, browser scenario, screenshot, recording, sanitized output and hidden oracle receipt | A baseline result with linked artifacts |
+| Investigate | Scoped source excerpts, code symbols, verified project memory and bounded evidence | A traceable context bundle |
+| Patch | Exact-tree candidate workspace, changed files and patch digest | A unified diff tied to the source commit |
+| Verify | Separate named, browser and oracle checks against the candidate | Before/after results and recordings |
+| Review | Run events, verdict, patch, media, evidence ZIP and decision history | One review packet that preserves the test outcome |
 
-**What an end-to-end local run does.** A user selects the synthetic project,
-submits a report and admits a run from the React workspace. FastAPI commits the
-run, reservation, event and outbox together. The development worker claims a
-fenced lease, checks out the pinned fixture, runs named/browser/oracle checks
-in separate WSL containers, stores evidence and encodes authenticated local
-HLS. Without a qualified provider it correctly ends `INCONCLUSIVE`. A separate
-controlled-provider verifier sends a predetermined HTTP response through the
-native adapter, applies a bounded candidate patch, independently reruns the
-checks and reaches a `REVIEW_READY` packet with a passing synthetic verdict.
-That controlled result is protocol evidence, not live autonomous repair.
+The included `form-submit-001` fixture exercises this flow. A normal local run reproduces the defect and reports `INCONCLUSIVE` when no model is qualified. A controlled provider response can drive the candidate path to `REVIEW_READY/PASSED`; that mode verifies the protocol with a predetermined response.
 
-**Hosted design.** The trusted API and workers use PostgreSQL, SQS and private
-artifact storage. A run-pinned source is staged to S3; separate baseline and
-candidate EC2 guests receive exact, short-lived object capabilities and return
-bounded evidence. The control plane validates receipts before review, and a
-separate media worker publishes private HLS. Draft GitHub PR publication needs
-an explicit review approval and reconciles uncertain writes. Hosted admission
-defaults off until the selected account passes isolation, identity, provider,
-repository, CDN and restore qualification. The Terraform stack does not yet
-provision the Memgraph server or telemetry collector.
+## Backend architecture
 
-The [benchmark contract](benchmarks/README.md) rejects incomplete or duplicate
-case suites. Its 40 baseline/reference fixture pairs passed locally; no model
-has completed all 40 cases, so model success metrics are unavailable.
+### 1. Request, execution and evidence planes
 
-## What runs today
-
-- FastAPI project, task, model registry, run, event, cancellation, review packet,
-  usage and scoped canonical memory endpoints.
-- An owner-only Operations page reports tenant-scoped persisted run, queue,
-  graph, tool, media and inference budget snapshots. Missing instrumentation is
-  shown as unavailable. A separate evaluator persists sustained queue warnings,
-  graph lag and budget-breach alerts; start it with
-  `python -m scripts.evaluate_operations --serve --poll-seconds 30`.
-  [Operations runbooks](docs/operations/runbooks.md) and a machine-readable
-  owner/impact catalog cover the required incident classes. A separate signed
-  webhook dispatcher can deliver durable alert transitions with retries when
-  `AIP_PAGER_WEBHOOK_URL` and `AIP_PAGER_WEBHOOK_SECRET` are configured; no live
-  paging destination has been qualified.
-- Canonical memory supports proposed, verified, rejected, superseded, expired
-  and deleted states. Scoped transition history records the actor and reason;
-  retrieval only serves current verified facts. New reviewer outcomes create
-  decision records linked to their exact run events and scoped as human review
-  decisions, not independent proof of repair correctness.
-- Project scoped GitHub connection registration with opaque secret references,
-  maintainer authorization and a read-only credential qualification command,
-  visible on the Projects screen. No GitHub account has been connected or probed.
-- A distinct draft PR approval endpoint binds a reviewed run to its repository,
-  base commit, patch and passing test receipts for 24 hours. Publication remains
-  unavailable in ordinary use until a repository connection and live provider
-  are qualified. The controlled GitHub REST adapter and operator command can
-  create a draft PR only after that approval and a process secret are present;
-  they have not been exercised against a live GitHub account.
-
-For an operator-managed GitHub connection, register a repository with
-`credential_ref=secret://env/AIP_GITHUB_TOKEN`, place the token in that process
-environment, and run:
-
-```powershell
-uv run python -m scripts.qualify_github_connection --connection-id CONNECTION_ID --actor OPERATOR_ID
+```mermaid
+flowchart LR
+    UI["React workspace"] -->|REST + SSE| API["FastAPI control plane"]
+    API -->|atomic admission| DB[(PostgreSQL)]
+    DB -->|dispatch row| WORKER["Development worker<br/>fenced lease"]
+    WORKER --> GRAPH["LangGraph<br/>checkpointed phases"]
+    GRAPH --> CONTEXT["Context bundle<br/>pinned code + verified memory"]
+    GRAPH --> MODEL["Model adapter<br/>reservation + usage ledger"]
+    GRAPH --> POLICY["Tool policy<br/>effect intent + receipt"]
+    POLICY --> BOX["Isolated WSL containers<br/>tests · browser · oracle"]
+    BOX --> EVIDENCE["Hashed artifacts<br/>logs · PNG · WebM"]
+    EVIDENCE --> MEDIA["FFmpeg HLS encoder"]
+    MEDIA --> PLAYER["Scoped playback"]
+    DB -->|scoped projection| MEM[(Memgraph)]
+    MEM --> CONTEXT
+    DB -->|committed events| API
+    API -->|SSE replay| UI
+    EVIDENCE --> API
+    PLAYER --> UI
 ```
 
-The command checks the repository identity, reported push permission, default
-branch ref and pull request read access without creating GitHub objects. It
-marks the connection ready only after all checks pass. The draft publication
-command repeats the check immediately before use. GitHub branch rules and
-pull request write permission still require an actual approved publication to
-qualify; a read-only probe cannot prove those rights.
-- Transactional run admission with an idempotency key, a budget reservation,
-  a durable event and a dispatch outbox row.
-- Tenant daily/monthly inference caps and concurrent run admission limits,
-  serialized on the tenant row in PostgreSQL. A crossing of 80 percent emits
-  a run budget warning.
-- Evidence ZIP exports have a per-tenant daily byte cap (100 MB default). Each
-  successful response records its size and SHA-256 in a scoped export ledger;
-  excess requests return 429 and crossing 80 percent writes an audit warning.
-  The trusted `scripts.set_tenant_quotas` command accepts
-  `--daily-export-cap-bytes`, `--daily-sandbox-minutes`,
-  `--daily-media-minutes` and `--artifact-cap-bytes` for an operator change.
-- Fenced lease, state transition and tool effect ledger primitives.
-- A deterministic development effect policy checks tenant/project/run scope,
-  reviewed action and version, target and tool budget before execution.
-- OpenTelemetry spans cover the API, admission, durable dispatch, worker,
-  context lookup, tool policy, model calls and media work. Export requires
-  `AIP_OTLP_TRACES_ENDPOINT`.
-- JSON schema tool-call assembler that discards incomplete arguments.
-- Token envelope and spend preflight calculations.
-- A bounded, source-backed ContextBundle for the synthetic repair call, with
-  commit/file hashes, scoped evidence and explicit trust labels.
-- Synthetic test and oracle output streams to artifact files with byte counts
-  and digests; the repair context includes bounded, verified excerpts and
-  references paired to completed tool action IDs and typed ToolResult records.
-- Local FFmpeg HLS encoding with staging and immutable publication.
-- A controlled private-media publisher uploads complete HLS files with SHA-256
-  checksums and server-side encryption to a scoped S3 prefix, then records a
-  ready publication. An authorized viewer can receive five-minute CloudFront
-  signed cookies for exactly one recording path; the player refreshes them.
-  Deletion revokes new grants immediately and stays pending until a separate
-  worker verifies S3 cleanup and CloudFront invalidation. These paths have
-  local fake-client tests only; no AWS bucket or distribution is configured.
-- A per-recording delete route and Review control for closed runs. It revokes
-  local media access, removes that side's raw WebM and HLS files, and retains
-  the run transcript and screenshot with a durable deletion record.
-- A controlled synthetic form bug evaluation: real browser before/after
-  recordings, exact-tree test receipts, an independent oracle, a review packet,
-  and local HLS playback on the Evaluations page. The candidate is manual.
-- Authorized review downloads include a bounded evidence ZIP with the packet,
-  locally verified screenshots/logs, any verified fixture patch and a checksum
-  manifest. Browser recordings remain separately delivered or revocable.
-- Native complete-JSON and bounded SSE OpenAI, Anthropic and Google API
-  adapters with provider continuation preservation and encrypted state
-  envelopes. Streamed tool calls require terminal completion. No live provider
-  account has been qualified.
-- Operator commands register model entries as unqualified and probe a chosen
-  provider account before enabling an entry. `python -m scripts.manage_model`
-  records reasoned enable, deprecate and emergency disable transitions. No
-  account has been probed here.
-- React workspace with project onboarding, report submission, run history,
-  review and usage views. It reads real API records; no fake run evidence is shown.
+PostgreSQL owns run state and provenance. The graph is a scoped retrieval projection. The queue or outbox delivers work; a database lease and fencing token decide which worker may change a run. Media completion is tracked separately from code verification.
 
-No provider model is automatically qualified or enabled. The reviewed local
-fixture model is a separate synthetic-only exception; the UI labels it and
-cannot use it for customer repositories.
-Hosted API identity supports OIDC bearer tokens and a browser authorization-code
-flow with PKCE. Browser sessions are opaque, stored server-side and protected by
-Secure, HttpOnly, SameSite cookies and a CSRF header. This flow has passed only
-controlled issuer tests; a real issuer has not been connected. Customer run
-admission remains disabled until the production sandbox is qualified. Hosted
-private media code is present, but its AWS origin, edge policy and playback have
-not been qualified with a live account.
+### 2. Durable run lifecycle
 
-The [control-plane image](infra/control-plane/README.md) packages the locked
-API and trusted worker code as a non-root container. A local read-only Docker
-smoke test passed; no hosted control plane has been deployed.
-
-## Local setup
-
-Requirements: Python 3.12, `uv`, Node 22.12 or newer, npm, and FFmpeg for media tests.
-Docker Engine is required for the isolated synthetic fixture path. This machine
-uses Docker Engine in Ubuntu-24.04 WSL because Docker Desktop 4.67.0 fails at
-its `dockerInference` socket during startup. Docker Desktop's data was not reset.
-The WSL Engine has its own image and volume store.
-
-For an existing local SQLite file created before paused-run or tenant quota
-columns were added, back it up and apply the additive development upgrade once:
-
-```powershell
-uv run python -m scripts.upgrade_local_sqlite
+```mermaid
+sequenceDiagram
+    actor User
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant Worker as Worker + LangGraph
+    participant Box as Isolated containers
+    participant Review as Review UI
+    User->>API: Submit report and admit run
+    API->>DB: Commit run + snapshot + budget + event + outbox
+    DB-->>Worker: Dispatch eligible run
+    Worker->>DB: Claim fenced lease and checkpoint phase
+    Worker->>Box: Run pinned baseline checks
+    Box-->>Worker: Receipt + hashed evidence
+    Worker->>DB: Persist effect receipt and events
+    Worker->>Box: Execute patched candidate checks
+    Box-->>Worker: Independent candidate receipts
+    Worker->>DB: Persist verification and review state
+    DB-->>API: Ordered events and packet
+    API-->>Review: Replay events and serve packet
+    Review-->>User: Diff, tests, screenshots and video
 ```
 
-To make the local UI runnable without provider credentials, seed the reviewed
-synthetic form case and keep its development worker polling the durable outbox:
+The workflow is `PREPARING → REPRODUCING → INVESTIGATING → PATCHING → VERIFYING → REVIEW_READY`. It also records controlled pauses, cancellation, failure and inconclusive outcomes. A resumed run restores its saved stage before LangGraph continues from its durable PostgreSQL checkpoint. Completed effects are checked against their stored receipts; an uncertain effect stops replay for reconciliation.
 
-```powershell
-uv run python -m scripts.seed_local_demo
-uv run python -m platform_app.development_worker --serve --runtime wsl --image aip-dev-sandbox:0.1.3
+### 3. Why a verdict is traceable
+
+```mermaid
+flowchart TD
+    COMMIT["Pinned Git commit"] --> BASE["Baseline workspace"]
+    COMMIT --> PATCH["Patch + exact-tree digest"]
+    BASE --> BT["Baseline test and browser receipts"]
+    PATCH --> CAND["Candidate workspace"]
+    CAND --> CT["Candidate test and browser receipts"]
+    BT --> PACKET["Review packet"]
+    CT --> PACKET
+    PATCH --> PACKET
+    PACKET --> DECISION["Human accept or reject decision"]
+    DECISION --> MEMORY["Scoped decision memory"]
 ```
 
-The Runs form labels this as a synthetic fixture and fills the pinned local
-commit. It can reproduce the bug and publish baseline evidence. With no live
-qualified provider, its honest result is `INCONCLUSIVE`; it does not make an
-autonomous repair or execute a customer repository. The seed and SQLite upgrade
-commands are idempotent.
+The reviewer decision is stored separately from the independent verification verdict. Accepting a packet does not change a failed test into a pass.
 
-After PostgreSQL migrations, a trusted operator can set tenant quotas. The
-command audits changes and does nothing on an identical retry:
+## Implemented backend concepts
 
-```powershell
-$env:AIP_DATABASE_URL = 'postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE'
-uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4 --daily-export-cap-bytes 104857600 --daily-sandbox-minutes 120 --daily-media-minutes 120 --artifact-cap-bytes 1073741824
-```
+| Concept | Implementation |
+|---|---|
+| **Transactional admission** | An idempotency key binds task/run creation to a frozen commit, policy and model snapshot. The run, initial event, spend reservation and dispatch outbox are committed together. |
+| **Tenant and project isolation** | Scoped database constraints, membership and project roles protect runs, evidence, usage and memory. OIDC bearer validation and browser PKCE sessions have controlled issuer tests. |
+| **Durable orchestration** | LangGraph owns fixture phases; PostgreSQL stores checkpoints. Workers claim fenced leases, heartbeat, persist effect intents and receipts, and recover safe dispatches. |
+| **Model gateway** | Native OpenAI, Anthropic and Google adapters handle complete JSON and bounded streaming responses. The registry pins capabilities, revisions and prices; model calls reserve liability before HTTP and settle reported usage afterward. |
+| **Routing controls** | Tenant policy allowlists model/data-class combinations. An exact cross-provider alternate can be approved for a definite rate-limit rejection, with a separate lineage and reservation. |
+| **Context and token management** | Pinned source excerpts, code symbols, current verified memory and tool evidence become a hashed ContextBundle. Conservative budgets, head/tail log excerpts and content-addressed compaction preserve provenance. |
+| **Tool authorization** | Versioned action contracts and plugin manifests define schemas, permissions, targets and limits. The broker records denials and typed results; completed log artifacts carry byte counts and SHA-256 digests. |
+| **Repository and execution boundary** | Git archives an exact commit. The development runner executes named checks, browser actions and a hidden oracle in separate bounded WSL containers with non-root, read-only and network restrictions. |
+| **Candidate verification** | Patch materialization records changed files and a tree digest. Candidate checks rerun independently, with before/after screenshots, WebM, HLS and a review packet built from persisted receipts. |
+| **Project memory** | PostgreSQL owns fact states and transition history. An outbox projects verified facts and revision-pinned file/symbol dependencies to Memgraph; reads recheck canonical scope and fall back to PostgreSQL. |
+| **Media and deletion** | FFmpeg creates digest-checked HLS variants. Tenant-scoped local routes serve recordings; deletion revokes access, removes raw/HLS files and preserves the run's non-video evidence. Private S3 publication, signed grants and remote deletion have controlled client tests. |
+| **Hosted integration modules** | The SQS dispatcher, run coordinator, per-run EC2 intent, scoped S3 guest transport and separate baseline/candidate guest phases have controlled-client integration tests. Terraform and Packer define the corresponding trusted and guest resources. |
+| **Repository publication** | Project-scoped GitHub connection records, a read-only qualification command, explicit draft-PR approval, durable publication dispatch and deterministic branch reconciliation have controlled API tests. |
+| **Operations and cost** | Tenant inference, concurrency, export-byte, sandbox-minute, media-minute and private-HLS-byte limits have ledgers and owner controls. Operations exposes tenant-scoped run, queue, graph, media, tool and budget signals. |
+| **Audit and telemetry** | Durable run events, audit rows and OpenTelemetry spans follow admission, dispatch, tools, model calls and media work. A local OTLP receiver accepted an emitted protobuf span. |
+| **Evaluation** | Forty pinned synthetic cases have hidden oracles and a strict manifest validator. A scorer distinguishes attempts, failures and false-success claims. |
 
-The shown amounts are default examples, not a provider budget qualification.
-Inference caps count reserved upper-bound liability until usage is settled;
-daily and monthly periods use UTC. Provider usage above its reservation posts a
-breach event and blocks subsequent reservations once the cap is spent. Sandbox,
-media, export and private artifact quotas are enforced by their respective
-admission and publication paths; hosted quota behavior needs live qualification.
+### Backend module map
 
-Automatic model selection is available through `selected_model_entry: "auto"`
-only after a trusted operator records an explicit tenant allowlist.
-Put this JSON in a policy file, replacing IDs with registered models:
+| Responsibility | Main source |
+|---|---|
+| API, authorization and sessions | [`platform_app/api.py`](platform_app/api.py), [`auth.py`](platform_app/auth.py), [`browser_auth.py`](platform_app/browser_auth.py) |
+| Admission, lifecycle and durable events | [`service.py`](platform_app/service.py), [`run_ledger.py`](platform_app/run_ledger.py), [`models.py`](platform_app/models.py) |
+| Agent workflow and local execution | [`fixture_workflow.py`](platform_app/fixture_workflow.py), [`development_worker.py`](platform_app/development_worker.py), [`dev_sandbox.py`](platform_app/dev_sandbox.py) |
+| Provider, context and spending | [`providers.py`](platform_app/providers.py), [`context_bundle.py`](platform_app/context_bundle.py), [`model_budget.py`](platform_app/model_budget.py) |
+| Memory and code navigation | [`memory.py`](platform_app/memory.py), [`graph_memory.py`](platform_app/graph_memory.py), [`code_index.py`](platform_app/code_index.py) |
+| Evidence, media and review | [`evidence_bundle.py`](platform_app/evidence_bundle.py), [`media.py`](platform_app/media.py), [`review_patch.py`](platform_app/review_patch.py) |
+| Integration and infrastructure definitions | [`platform_app/`](platform_app), [`infra/`](infra), [`.github/workflows/quality.yml`](.github/workflows/quality.yml) |
 
-```json
-{
-  "enabled": true,
-  "allowed_model_entry_ids": ["QUALIFIED_MODEL_ID"],
-  "allowed_data_classes": ["source_code"],
-  "weights": {"utility": 1, "latency": 0.02, "cost": 0.2}
-}
-```
+## Workspace and API
 
-```powershell
-uv run python -m scripts.set_tenant_model_routing --tenant-id TENANT_ID --operator OPERATOR_ID --policy-file PATH_TO_POLICY_JSON
-```
+The React workspace contains Projects, Reports, Runs, Review, Evaluations, Memory, Usage, Settings and Operations views. It reads real API records and uses the durable event stream to update a run. Review exposes the diff, tests, screenshots, evidence download and HLS player. Project, report and run dialogs manage keyboard focus and restore it on close.
 
-Selection also requires a current live qualification and recorded platform
-benchmark evidence for at least 30 cases. No such evidence or provider account
-is configured in this checkout, so `auto` currently returns
-`MODEL_ROUTE_UNAVAILABLE` instead of choosing an unqualified model. A file
-containing `{"enabled": false}` disables routing. Manual model selection is
-still available under its existing qualification checks.
+| API area | Representative routes |
+|---|---|
+| Projects and reports | `GET/POST /v1/projects`, `GET/POST /v1/tasks` |
+| Runs | `POST /v1/tasks/{task_id}/runs`, `GET /v1/runs/{run_id}`, `POST /v1/runs/{run_id}/cancel` |
+| Recovery and review | `POST /v1/runs/{run_id}/resume`, `/resume-budget`, `/review-decision` |
+| Progress | `GET /v1/runs/{run_id}/events`, `/events/history` |
+| Evidence | `GET /v1/runs/{run_id}/review-packet`, `/patch`, `/evidence-bundle` |
+| Memory and operations | `GET /v1/projects/{project_id}/memory`, `/code-index`, `GET /v1/operations/summary` |
+| Service checks | `GET /v1/health`, `GET /v1/ready` |
 
-A tenant may separately authorize one cross-provider alternate per source model
-and data class in the same policy file, even with automatic selection disabled:
+FastAPI exposes the complete route schema at `/docs` in local development.
 
-```json
-{
-  "enabled": false,
-  "failover_routes": [
-    {
-      "from_model_entry_id": "SOURCE_MODEL_ID",
-      "to_model_entry_id": "ALTERNATE_MODEL_ID",
-      "data_classes": ["source_code"]
-    }
-  ]
-}
-```
+## Run the local workspace
 
-The route is pinned at run admission and checked again against current tenant
-policy. Only a definite HTTP 429 rejection can trigger this one-time switch;
-the original request receives a durable rejected receipt and its reservation is
-released. The alternate must be enabled, currently qualified, from another
-provider, and have at least the original context/output capacity. No pending
-tool effect may exist. A timeout or transport failure stays unresolved and
-cannot switch providers automatically. The fixture path rebuilds a portable
-context bundle for the alternate and records a separate model step and lineage
-event. No live provider failover has been qualified.
+This is the exercised Windows/WSL development path. Use Python 3.12, `uv`, Node 22.12 or newer, npm, FFmpeg, Ubuntu-24.04 WSL and Docker Engine in that distribution. Run commands from the repository root unless a step changes directory.
 
-Pinned plugin manifests can be registered, checked against an exact local
-artifact digest, enabled or disabled, and allowlisted for a tenant from the
-trusted operator shell. The manifest schema requires tool JSON schemas,
-permission scopes, destinations and limits; registration alone grants no tool
-authority. The operator command is:
-
-```powershell
-uv run python -m scripts.manage_plugin --operator OPERATOR_ID register --manifest MANIFEST_JSON
-uv run python -m scripts.manage_plugin --operator OPERATOR_ID validate --plugin-id PLUGIN_ID --version VERSION --artifact REVIEWED_ARTIFACT
-uv run python -m scripts.manage_plugin --operator OPERATOR_ID enable --plugin-id PLUGIN_ID --version VERSION
-uv run python -m scripts.manage_plugin --operator OPERATOR_ID allowlist --tenant-id TENANT_ID --entry PLUGIN_ID@VERSION
-```
-
-The resolver rejects unapproved versions, changed manifests, missing scopes
-and invalid arguments. Remote MCP versions remain disabled until an isolated
-transport, credential audience and egress enforcement are implemented; no
-external plugin is currently executed by the worker.
-
-From the repository root, install dependencies, start the local databases,
-apply migrations and build the isolated code-only fixture image:
+### 1. Prepare dependencies and data
 
 ```powershell
 uv sync --extra dev
@@ -280,11 +162,16 @@ Copy-Item .env.example .env
 .\scripts\start_wsl_docker.ps1
 .\scripts\compose-wsl.ps1 up -d postgres memgraph
 .venv\Scripts\python.exe -m alembic upgrade head
+wsl.exe -d Ubuntu-24.04 -u root -- docker build -f infra/dev-sandbox/Dockerfile -t aip-dev-sandbox:0.1.0 .
 wsl.exe -d Ubuntu-24.04 -u root -- docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.3 .
 .venv\Scripts\python.exe -m scripts.seed_local_demo
 ```
 
-Start the API and worker in separate terminals from the repository root:
+`Dockerfile.code-only` refreshes the platform code over the full local browser image. Once the base exists, later code refreshes can run that second build alone.
+
+### 2. Start the three processes
+
+Open separate PowerShell terminals at the repository root:
 
 ```powershell
 .venv\Scripts\uvicorn.exe platform_app.api:app --host 127.0.0.1 --port 8098
@@ -294,265 +181,19 @@ Start the API and worker in separate terminals from the repository root:
 .venv\Scripts\python.exe -m platform_app.development_worker --serve --runtime wsl --image aip-dev-sandbox:0.1.3
 ```
 
-In another terminal:
-
 ```powershell
 Set-Location apps\web
 npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. The frontend proxy targets port 8098 by default.
-For a SQLite development smoke test, omit `.env` and the API uses a local
-SQLite file. This mode is for synthetic data only.
+Open **http://127.0.0.1:5173/**. The Vite proxy connects the browser to the API on port 8098. The seeded project offers the pinned synthetic form case; it cannot be mistaken for a customer repository.
 
-For the current verified local synthetic session, use `http://127.0.0.1:5173/`.
-Its API is on port 8098, backed by a fresh development SQLite database at
-`artifacts/local-api-20261003.db`, and the polling development worker uses the
-WSL Docker Engine with code-only image `aip-dev-sandbox:0.1.3`. A fresh local UI run `78286c44-53c1-41f3-9b4b-6dfc4f5a2c00`
-reproduced the form bug, captured baseline tests/browser/oracle evidence and
-played its seven-second HLS recording; without a qualified provider, it closed
-`INCONCLUSIVE` and made no repair claim. The WSL distribution requires a live
-session to keep its Docker containers running on this machine. The Review screen can
-delete one closed run's baseline or candidate recording independently of the
-run transcript. `DELETE /v1/runs/{run_id}/recordings/{label}` is idempotent;
-`GET /v1/runs/{run_id}/review-packet` reports `deleted_recording_labels`.
-On development API startup, deletion records are reapplied to local files so
-restored recordings remain inaccessible and are cleaned again. Hosted
-object/CDN propagation, independent backup-ledger replay and retention
-automation still need implementation and qualification.
+## Reproduce the backend checks
 
-The current controlled fixture packet is at
-`artifacts/evaluation-v2/review-packet.json` and is intentionally ignored by
-Git. The Evaluations page loads it only on loopback when development
-authentication is disabled. The `platform_app.fixture_evaluation` command
-recreates it from an explicit manifest, baseline, manually prepared candidate,
-hidden oracle and artifact directory. In WSL mode, named tests, browser actions
-and the hidden oracle run in separate development containers. The oracle is
-mounted only for its verifier invocation. These containers are for synthetic
-fixtures; they are not the hosted customer VM boundary.
+### Controlled PostgreSQL workflow
 
-The repository includes `.github/workflows/quality.yml` for push/PR Python,
-web, PostgreSQL and controlled sandbox gates. It has not run on GitHub because
-this checkout has no remote. The sandbox verifier accepts `--runtime native`
-for an unprivileged Linux runner and `--image` for a local code-only refresh.
-On this Windows host, check C: space before rebuilding the full browser image.
-When the base image already exists, a small development refresh can be built
-without redownloading browser dependencies:
-
-```powershell
-wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.3 .'
-uv run python -m scripts.verify_development_worker --controlled-provider --image aip-dev-sandbox:0.1.3
-```
-
-The code-only image inherits the locally installed base image; CI uses the
-reproducible full Dockerfile.
-
-For this workspace on Windows, install and start the WSL Engine, then build the
-development image:
-
-```powershell
-wsl -d Ubuntu-24.04 -u root -- bash /mnt/d/projects/aiplatform/scripts/install_wsl_docker.sh
-wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker build -f infra/dev-sandbox/Dockerfile -t aip-dev-sandbox:0.1.0 .'
-```
-
-Run the complete controlled fixture evaluation in containers:
-
-```powershell
-python -m platform_app.fixture_evaluation --manifest benchmarks/fixtures/form-submit/manifest.json --baseline benchmarks/fixtures/form-submit/base --candidate artifacts/form-submit-candidate-v2/workspace --oracle benchmarks/oracles/form-submit-001/test_hidden.py --artifacts artifacts/evaluation-v2 --candidate-origin manual --browser-runtime wsl
-```
-
-The candidate workspace is a manually prepared, ignored local artifact. The
-verdict proves only this fixture's exercised behavior; no model generated the
-patch. The Windows `docker` CLI still targets the broken Docker Desktop pipe;
-use `.\scripts\compose-wsl.ps1 ps` or `.\scripts\compose-wsl.ps1 up -d postgres memgraph`
-for Compose, and `wsl -d Ubuntu-24.04 -u root -- docker ...` for other Docker commands.
-
-WSL systemd services do not keep the distribution alive after the last user
-process exits. A hidden `wsl.exe ... sleep infinity` process is currently
-keeping this development Engine available; it is a local process, not a
-scheduled task. After a reboot, run `./scripts/start_wsl_docker.ps1` before
-starting the Compose services. Closing that process lets WSL idle-stop and
-gracefully stop containers.
-
-PostgreSQL migrations require an explicit `AIP_DATABASE_URL`. For the local
-Compose database:
-
-```powershell
-$env:AIP_DATABASE_URL='postgresql+psycopg://aip:local_only@127.0.0.1:54329/aip'
-uv run alembic upgrade head
-uv run alembic check
-python -m scripts.verify_postgres_admission
-python -m scripts.verify_dev_container_security --image aip-dev-sandbox:0.1.3
-```
-
-The latest migration reserves `aip_workflow` for LangGraph checkpoints. The
-development worker initializes the checkpointer tables there and resumes a
-failed phase by run ID after reclaiming the run lease. Its SQLite-only test
-mode uses an in-memory checkpointer; use PostgreSQL for durable local runs.
-The optional checkpoint integration gate is:
-
-```powershell
-$env:AIP_TEST_POSTGRES_URL='postgresql://aip:local_only@127.0.0.1:54329/aip'
-uv run pytest -q tests/test_fixture_workflow.py
-```
-
-For local graph memory, start the Compose Memgraph service, set
-`AIP_MEMGRAPH_URI=bolt://127.0.0.1:7687` for the API and projection worker,
-and run the worker separately:
-
-```powershell
-wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker compose up -d memgraph'
-$env:AIP_MEMGRAPH_URI='bolt://127.0.0.1:7687'
-uv run python -m scripts.project_memory_graph --serve
-```
-
-PostgreSQL is authoritative. The memory API reports `canonical_degraded`
-while the graph is unavailable, behind its outbox, or mismatched with current
-canonical facts. After restoring a graph, stop its projection worker and run
-`scripts.project_memory_graph --rebuild-tenant TENANT_ID --rebuild-project PROJECT_ID`
-for each project before restarting it. The opt-in live graph gate uses
-`AIP_TEST_MEMGRAPH_URI=bolt://127.0.0.1:7687` with
-`uv run pytest -q tests/test_graph_memory.py`. This is a local projection
-path; graph high availability and hosted restore have not been qualified.
-The projection worker also expires verified `environment_observation` facts
-after 24 hours and writes a canonical transition/outbox event before removing
-them from graph retrieval. Project members can inspect paginated fact history
-at `GET /v1/projects/{project_id}/memory/records`; reviewer and maintainer
-transitions remain role gated. The Memory page shows these records and their
-sources. This does not yet validate independent corroboration or later repair
-regressions automatically.
-
-The PostgreSQL verifier creates and drops a unique test database. It checks
-duplicate admission, resume, tenant constraints, migration roundtrip and
-simultaneous recording deletion with one final event. Its
-enabled model row is only a database fixture and never invokes a provider.
-General admission requires a model with a live qualification marker and
-validation time. The disposable fixture model is accepted only for the reviewed
-development case and project; this marker does not make the provider qualified.
-
-For a hosted control plane, set `AIP_ENVIRONMENT=production`, a migrated
-PostgreSQL URL, `AIP_OIDC_ISSUER`, `AIP_OIDC_AUDIENCE`, and `AIP_OIDC_JWKS_URL`.
-The API accepts an RS256 bearer token with verified issuer, audience and
-expiration, plus `X-Tenant-ID`. That header selects only a tenant where the
-verified token subject has an active membership. A trusted operator creates
-the first owner after migration:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.bootstrap_tenant --tenant-id <tenant-id> --tenant-name <name> --owner-subject <verified-oidc-subject>
-```
-
-For browser sign-in, also set `AIP_PUBLIC_BASE_URL` to the public HTTPS origin,
-`AIP_OIDC_CLIENT_ID`, `AIP_OIDC_CLIENT_SECRET`,
-`AIP_OIDC_AUTHORIZATION_ENDPOINT`, `AIP_OIDC_TOKEN_ENDPOINT`, and a random
-`AIP_BROWSER_SESSION_SECRET` of at least 32 bytes. Register the exact
-`https://<public-origin>/v1/auth/callback` redirect URI with the issuer. The
-browser app asks for a workspace ID, redirects to the issuer, and verifies an
-ID token before creating an eight-hour maximum server-side session. The OIDC
-subject must already have an active membership in that workspace. The browser
-uses `/v1/auth/session` to obtain a per-session CSRF value and `/v1/auth/logout`
-to revoke the current session. The OIDC configuration is intentionally separate
-from the API bearer audience; the browser client ID is the ID token audience.
-
-The owner can manage tenant and project memberships through `/v1/memberships`
-and `/v1/projects/{id}/members`. Project reads and mutations check roles;
-the last active owner cannot be disabled. The hosted API rejects run admission
-with `EXECUTION_UNAVAILABLE` until a customer sandbox is implemented. The
-bootstrap command is an operator action; `--owner-subject` must come from a
-verified identity. This local implementation has not been tested against a
-real issuer or deployed identity provider.
-
-Private hosted media requires the API and private recording behavior on the
-same HTTPS hostname, a private S3 bucket with CloudFront origin access control,
-and a trusted key group on the `private-media/*` behavior. Configure
-`AIP_PRIVATE_MEDIA_BUCKET`, `AIP_CLOUDFRONT_DISTRIBUTION_ID`,
-`AIP_CLOUDFRONT_KEY_PAIR_ID`, and a base64-encoded RSA private key in
-`AIP_CLOUDFRONT_PRIVATE_KEY_B64`. The current edge Terraform IAM policy
-supports SSE-S3; using `AIP_PRIVATE_MEDIA_KMS_KEY_ID` requires a reviewed KMS
-key policy and workload permissions.
-The signing key stays in the API secret manager, while the publisher/deletion
-worker uses an IAM role for S3 and CloudFront. The API does not serve hosted
-recording bytes from its local filesystem. Once a completed recording exists,
-the operator paths are:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.publish_private_media --run-id RUN_ID --label baseline
-.venv\Scripts\python.exe -m scripts.dispatch_private_media_deletions --serve
-```
-
-The [edge Terraform module](infra/terraform/edge/README.md) defines the
-distribution, bucket policies, cache behaviors and scoped workload policies.
-It has only passed local provider-schema validation. DNS, TLS, IAM role
-attachments, a selected AWS account/region and live upload/playback/deletion
-checks remain. This code path does not enable customer run admission by itself.
-The static web deployment command validates the compiled assets and publishes
-`index.html` last:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.publish_web_assets --bucket WEB_BUCKET --dist apps/web/dist
-```
-
-## Provider model qualification
-
-An operator can register an exact provider/model/revision with
-`python -m scripts.register_model --definition <model.json> --operator <identity>`.
-The definition uses the `ModelRegister` fields in `platform_app/schemas.py`:
-provider, model ID, registry revision, context and output limits, price revision
-and input/output prices per million tokens. Declared capabilities remain
-untrusted and the new entry stays `registered`.
-
-Create a separate JSON attestation with matching `registry_revision`,
-`context_limit`, `output_limit`, `price_revision`, `price_per_m_input` and
-`price_per_m_output`, plus `limits_source_url`, `pricing_source_url` and an
-ISO `effective_date`. A trusted operator must check those sources and values;
-the command records their URLs but does not independently verify their content.
-Set the matching `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GOOGLE_API_KEY` in the
-operator environment or secret manager, then run:
-
-```powershell
-python -m scripts.qualify_model --model-entry-id <entry-id> --attestation <metadata.json> --operator <identity> --enable
-```
-
-The command makes three small native API requests to verify text, a schema
-checked tool call, continuation and usage. It records a resolved model,
-revision, adapter digest and model registry lifecycle events. A failed probe
-leaves the entry unavailable; changed model metadata or adapter code invalidates
-qualification. These commands have only been tested with controlled responses.
-No provider account or model has been qualified live on this machine.
-
-To export traces, set `AIP_OTLP_TRACES_ENDPOINT` to the OTLP HTTP traces URL
-of a collector. Hosted endpoints must use HTTPS; local development may use
-HTTP on loopback. The API and worker propagate W3C trace context through the
-durable dispatch outbox. Trace attributes contain identifiers and outcomes,
-not prompts, repository content or credentials. Export of a real protobuf span
-to a local loopback OTLP receiver passed; no hosted collector or trace backend
-has been qualified here.
-
-To exercise the admitted-run worker against the trusted synthetic baseline:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.verify_development_worker
-```
-
-This creates a disposable SQLite run database under `artifacts/worker-verification`,
-consumes its `run.dispatch` outbox row, claims a fenced lease, extracts the
-fixture and hidden oracle from the pinned Git commit, and executes named,
-browser and oracle checks in separate WSL Docker containers. The script prints
-the run ID and artifact directory. Its review packet comes from persisted tool
-receipts and reports `REPRODUCED` for the baseline and `INCONCLUSIVE` for the
-run. The database-only model entry is a fixture; no provider call or autonomous
-patch occurs. This development worker accepts only `form-submit-001` and
-publishes a local HLS recording of the browser baseline.
-
-To exercise the budgeted patch and candidate verification protocol, run
-`.venv\Scripts\python.exe -m scripts.verify_development_worker --controlled-provider`.
-This supplies a predetermined HTTP response to the native OpenAI adapter in a
-disposable database. It verifies a model-call reservation/usage receipt, a
-bounded patch, separate candidate named/browser/hidden-oracle containers, and
-before/after HLS publication. It does not qualify an OpenAI account or prove
-autonomous repair. The script prints a review packet and run ID.
-For the same controlled end-to-end path against a newly migrated, disposable
-local PostgreSQL database, run:
+Each command creates, migrates and drops a uniquely named local PostgreSQL database. It runs the real isolated fixture checks with a predetermined provider response and writes a review packet under `artifacts/worker-verification/`.
 
 ```powershell
 .\scripts\verify_local_postgres_worker.ps1
@@ -560,57 +201,35 @@ local PostgreSQL database, run:
 .\scripts\verify_local_postgres_worker.ps1 -BudgetPauseProbe
 ```
 
-Each command creates and drops its own `aip_verify_*` database, consumes the
-canonical outbox, and writes a review packet under `artifacts/worker-verification`.
-The last two commands check a paused-input or budget-approval resume. They
-still use the reviewed synthetic fixture and a controlled provider response.
-For a run in the API's configured artifact directory, the Changes tab loads a
-tenant-scoped unified diff and offers a patch download. The server reconstructs
-the pinned fixture base and rejects a candidate whose tree or patch hash no
-longer matches its receipt.
-The Evidence tab also shows before/after PNG screenshots from admitted browser
-runs. Their SHA-256 digests are checked against persisted browser receipts
-each time the local tenant-scoped route serves them.
-For a local `PAUSED_INPUT` run, the Runs screen accepts a bounded answer and
-posts it to `/v1/runs/{id}/resume` with an `Idempotency-Key`. The API checks
-current project membership, unchanged policy revision and unresolved effects
-before it records the answer and requeues one dispatch. The fixture worker
-replays completed effects against their receipts. Owner-gated model and budget
-approvals can also requeue a paused development run after fresh policy,
-qualification, lease, receipt and 24-hour window checks. These paths passed
-controlled tests; hosted resume remains disabled with the hosted sandbox gate.
-For a `REVIEW_READY` fixture run, the reviewer can accept or reject the packet
-in the Runs or Review screen. Rejection requires a reason. Both decisions are
-audited, close the run, and leave the test verdict intact. Accepting a packet
-does not authorize or create a draft PR.
-On a later invocation, its local outbox recovery requeues expired dispatches
-whose completed effects have intact receipts. An uncertain `INTENDED` effect
-stops as inconclusive and requires reconciliation; it is never rerun blindly.
+The budget probe confirms that the first attempt pauses before provider HTTP, approval requeues the run, and the resumed attempt makes exactly one controlled provider request. The input probe confirms the paused run resumes with its stored receipts. Both reach `REVIEW_READY/PASSED` for the synthetic fixture.
 
-Run checks:
+### Regression and frontend checks
 
 ```powershell
+$env:AIP_TEST_POSTGRES_URL='postgresql://aip:local_only@127.0.0.1:54329/aip'
+$env:AIP_TEST_MEMGRAPH_URI='bolt://127.0.0.1:7687'
 .venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\ruff.exe check platform_app tests scripts
+.venv\Scripts\python.exe -m ruff check platform_app tests scripts
+.venv\Scripts\python.exe -m scripts.validate_benchmark --manifest benchmarks/suite-v1.json
 Set-Location apps\web
 npm run build
 ```
 
-With the API, frontend and local evaluation packet available, run
-`.venv\Scripts\python.exe scripts\verify_dev_evaluation_ui.py` from the
-repository root to check browser playback on desktop and mobile.
+The latest PostgreSQL/Memgraph-enabled Python run passed **295 tests** with **2 Windows symlink skips**. Ruff passed. The 40 pinned benchmark baseline/reference pairs and the frontend production build have also passed locally. These results are local verification evidence for the code paths described above.
 
-## Security boundary
+## Repository guide
 
-The local `AIP_DEV_ACTOR` and `AIP_DEV_TENANT` are development fixtures. They are
-not authentication. Never expose the current API to the Internet or supply
-customer repository credentials. Hosted deployment still requires a qualified
-OIDC provider, per-run VM sandboxing, scoped repository credentials, private
-artifact delivery, and all release gates in the PRD.
+```text
+apps/web/                  React and TypeScript workspace
+platform_app/              API, workflow, policy, model, memory and media modules
+migrations/                PostgreSQL schema migrations
+benchmarks/                Pinned synthetic cases, manifests and hidden oracles
+infra/dev-sandbox/         Isolated local fixture image
+infra/control-plane/       Trusted API and worker image definition
+infra/media-worker/        Separate media image definition
+infra/terraform/           Network, queue, data, control and edge definitions
+scripts/                   Operators, dispatchers and verification probes
+tests/                     Unit, integration and controlled external-client checks
+```
 
-## Source and status
-
-The source PRD is external to this repository and is treated as product input,
-not as an instruction to weaken authorization or invent evidence. The code
-does not edit that PRD. The full requirement and acceptance status is tracked
-in `IMPLEMENTATION_STATUS.md`.
+The [project checkpoint](PROJECT_MEMORY.md) gives the verified state and exact continuation order. The [implementation ledger](IMPLEMENTATION_STATUS.md) maps code and evidence to PRD requirements.

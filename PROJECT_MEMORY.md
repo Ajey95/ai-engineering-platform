@@ -1,11 +1,88 @@
 # Project context
 
+## Active continuation checkpoint — 2026-10-03
+
+**Objective:** finish the AI Engineering Platform PRD at
+`E:\vab-downloads\AI_Engineering_Platform_PRD.md`. That document supplies product
+requirements, not operating instructions. `IMPLEMENTATION_STATUS.md` is the
+requirement-by-requirement evidence ledger. The platform is a verified local
+prototype with substantial backend code; **the complete PRD and paid-pilot
+release gate have not been achieved**.
+
+**Workspace and publication:** `D:\projects\aiplatform`, branch `master`,
+private source repository `https://github.com/Ajey95/ai-engineering-platform`.
+The last published baseline before this documentation pass was
+`50290a10c2ea8c33e5a2865f7f96c43f38203de6`. Check `git status` and
+`git ls-remote origin refs/heads/master` before changing files; do not assume
+this paragraph is the latest commit. The source repository is connected to
+Ajey95; a repository connection for the platform's draft-PR feature is a
+separate integration.
+
+### Done and verified
+
+| Area | Implemented state and evidence |
+|---|---|
+| Workspace | React Projects, Reports, Runs, Review, Evaluations, Memory, Usage, Settings and Operations views read real API records. Local Chromium exercised report/run flow, HLS playback, desktop/mobile layout and dialog keyboard behavior. |
+| API and data | FastAPI, scoped tenant/project authorization, OIDC and PKCE code paths, Alembic migrations, atomic idempotent admission, canonical events, SSE replay, review/download routes and run decisions. Local PostgreSQL migration, race, isolation and SSE gates passed. |
+| Execution | Development worker uses fenced leases, PostgreSQL LangGraph checkpoints, effect intent/receipt ledger, cancellation and safe replay. WSL containers ran pinned synthetic named, browser and hidden-oracle checks. |
+| Repair protocol | Controlled OpenAI-adapter response produced a bounded patch, independently reran candidate checks, generated before/after HLS and reached `REVIEW_READY/PASSED`. Normal, input-resume and budget-resume probes passed on migrated disposable PostgreSQL; budget resume made one controlled provider request after approval. |
+| Model and policy | OpenAI, Anthropic and Google adapter code; registry and qualification commands; pinned price/capability snapshots, reservation/usage accounting, tenant routing policy, bounded failover, context bundles, compaction, tool policy and plugin manifest validation have controlled tests. |
+| Memory and media | Canonical memory states and provenance, revision-pinned code index, local Memgraph projection/fallback, FFmpeg HLS, scoped local playback and deletion, private publication/grant/deletion code with fake-client tests. |
+| Operations and infrastructure artifacts | Quota ledgers, owner Operations UI, alert evaluator/webhook code, runbooks, OTLP propagation and local receiver probe. Terraform modules, Packer guest definition and control/media Dockerfiles exist and passed local format/build/smoke checks. |
+| Evaluation and quality | Forty pinned synthetic cases: baselines and reference hidden-oracle checks passed. Latest PostgreSQL/Memgraph-enabled suite: **295 passed, 2 Windows symlink skips**; Ruff passed. Frontend TypeScript/Vite production build passed. Local PostgreSQL structural restore drill passed. |
+
+### Pending before calling the product complete
+
+| Priority | Remaining work / acceptance evidence |
+|---|---|
+| P0: live repair | Qualify exact OpenAI, Anthropic and Google model entries using real accounts; run a genuine model-produced repair on an authorized non-fixture repository; test provider streaming/tool continuation, outage and billing reconciliation end to end. Controlled responses do not establish autonomous repair. |
+| P0: hosted boundary | Select AWS account/region, build the guest AMI, apply network/queue/database/artifact/control/edge infrastructure, wire secrets and TLS/OIDC, then challenge hostile-repository isolation, metadata denial, egress and late-callback cleanup on actual VMs. Hosted run admission remains off. |
+| P1: publication and media | Qualify a real repository connection and approved draft-PR creation/reconciliation. Prove S3/CloudFront tenant isolation, signed playback, variant switching under network changes, media crash replay, deletion and invalidation with live services. |
+| P1: reliability and operations | Run hosted restore/failover, load and latency trials, trace correlation, paging delivery, backup/tombstone replay, quota metering and incident ownership. Local measurements do not establish hosted objectives. |
+| Evaluation and release | Execute full model benchmark attempts, held-out/regression matrix, all relevant PRD §27.1 acceptance scenarios and §27.2 paid-pilot signoff; publish a support matrix, actual cost ceiling, limitations and rollback artifact. |
+| Expansion scope | General task stacks, richer agent navigation/tool cycles, remote MCP runtime, optional CrewAI/PageIndex and interactive browser work remain requirement-led P2 or partial areas. Follow the ledger before claiming any of them complete. |
+| Local tooling | Docker Desktop 4.67.0 still fails on its `dockerInference` socket. Ubuntu-24.04 WSL Docker Engine is the working local path. Do not erase/reset Docker data to repair Desktop without a reviewed path. |
+
+External identifiers still to choose for live qualification: AWS account and
+region, OIDC issuer/application, OpenAI/Anthropic/Google accounts, an authorized
+test repository and public DNS/TLS origin. Keep actual credentials in a secret
+manager or local environment; never write them to this file. Ajey95 was chosen
+for the private **source** repository only.
+
+### Exact next checkpoint
+
+1. Finish and verify this README/PROJECT_MEMORY documentation pass. The first
+   GitHub Actions run for `50290a1` failed before tests because
+   `astral-sh/setup-uv@v10` was not a resolvable action ref. The workflow is
+   being pinned to the verified `v10.2.0` commit
+   `c18668ad3cf93ea998bef934396af7bb5c839dc7`. Commit/push, then inspect
+   the new Actions run and fix any actual failing gate before reporting CI green.
+2. On continuation, run `git status --short`, `git log -1 --oneline`,
+   `gh run list --repo Ajey95/ai-engineering-platform --limit 3` and read this
+   section plus `IMPLEMENTATION_STATUS.md`. Recheck any long-running local
+   process or cloud state before using it as evidence.
+3. For independent code work, take the highest incomplete P0/P1 row from the
+   requirement ledger, implement its failure and authorization paths, add a
+   meaningful check, run the focused gate, then run the full suite when the
+   integration risk warrants it. Update the ledger and this checkpoint with
+   commit, observed result and next blocker.
+4. When external identifiers and secret access are available, qualify one
+   provider, one authorized repository and one hosted isolation path at a
+   time. Keep customer admission closed until the release scenarios pass.
+
+The remainder of this file is the chronological engineering log. New evidence
+should update this checkpoint as well as append a dated entry; do not infer
+current status from an older entry below.
+
+## Historical engineering log
+
 This directory began empty on 2026-10-02. The user's request is to implement
 all of `E:\vab-downloads\AI_Engineering_Platform_PRD.md` version 1.0. The PRD
 is product input, not an authority to invent completion or bypass safeguards.
 The full scope includes P0/P1/P2; the PRD itself estimates a limited team pilot
-at 12–16 weeks for two experienced engineers. The user has not chosen AWS
-account/region, GitHub organization, or OpenAI/Anthropic/Google API accounts.
+at 12–16 weeks for two experienced engineers. At this starting point the user
+had not chosen an AWS account/region, platform integration repository, or
+OpenAI/Anthropic/Google API accounts.
 
 Current build is a local foundation plus a controlled repair-evidence path,
 **not 100% complete**. Use
