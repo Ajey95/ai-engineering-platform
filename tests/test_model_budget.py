@@ -471,6 +471,9 @@ def test_attested_cache_rates_reserve_worst_case_and_settle_reported_categories(
             hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
         )
     assert invalid.value.code == "USAGE_UNKNOWN"
+    model.price_per_m_input = Decimal("3")
+    model.price_per_m_cache_read = Decimal("0.5")
+    db.commit()
     actual = settle_model_call(
         db, run, "worker-one", fence, action, reservation, model,
         {"input_tokens": 100, "output_tokens": 10,

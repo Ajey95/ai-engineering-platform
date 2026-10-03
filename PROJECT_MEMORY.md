@@ -1715,3 +1715,11 @@ upgraded, and the disposable PostgreSQL probe passed at the new head. The
 full Python suite passed 287 with 2 Windows symlink skips when local PostgreSQL
 and Memgraph gates were enabled. Scoped Ruff passed. API port 8098 restarted
 and health returned OK. No live provider billing has been verified.
+
+2026-10-03 pinned settlement follow-up: the actual usage charge now reads
+the run's frozen price snapshot, so a registry row edit between reservation
+and settlement cannot change the bill. The cache pricing test mutates current
+input/cache rates after reservation yet settles $0.000110 at the pinned rates.
+Model budget tests passed 16/16, fixture/general/hosted model path tests 4/4,
+scoped Ruff passed, and the full suite again passed 287 with 2 Windows symlink
+skips with the PostgreSQL and Memgraph gates enabled.

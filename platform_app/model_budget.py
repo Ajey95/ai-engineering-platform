@@ -53,6 +53,28 @@ def _price(model: ModelEntry) -> PriceRule:
     )
 
 
+def _pinned_price(run: Run) -> PriceRule:
+    snapshot = run.config_snapshot or {}
+    try:
+        return PriceRule(
+            revision=snapshot["model_price_revision"],
+            input_usd_per_million=Decimal(snapshot["model_price_per_m_input"]),
+            output_usd_per_million=Decimal(snapshot["model_price_per_m_output"]),
+            cache_read_usd_per_million=(
+                Decimal(snapshot["model_price_per_m_cache_read"])
+                if snapshot.get("model_price_per_m_cache_read") is not None else None
+            ),
+            cache_write_usd_per_million=(
+                Decimal(snapshot["model_price_per_m_cache_write"])
+                if snapshot.get("model_price_per_m_cache_write") is not None else None
+            ),
+        )
+    except (KeyError, TypeError, ValueError, ArithmeticError) as error:
+        raise ServiceError(
+            "MODEL_REVISION_CHANGED", "Pinned model pricing is invalid", 409
+        ) from error
+
+
 def _cost(
     input_tokens: int, output_tokens: int, price: PriceRule,
     cache_read_tokens: int = 0, cache_write_tokens: int = 0,
@@ -314,7 +336,7 @@ def settle_model_call(
     if len(output_sha256) != 64 or any(c not in "0123456789abcdef" for c in output_sha256):
         raise ServiceError("RECEIPT_INVALID", "Model output digest is invalid", 400)
     actual = _cost(
-        inputs, outputs, _price(model),
+        inputs, outputs, _pinned_price(run),
         usage_receipt.get("cache_read_tokens", 0),
         usage_receipt.get("cache_creation_tokens", 0),
     )
