@@ -27,6 +27,39 @@ The included `form-submit-001` case exercises a pinned baseline, a candidate pat
 
 The LLM is a bounded reasoning component inside a durable engineering system. The harness decides *when* to ask a model, *which evidence* to give it, *which tools* it may request, *how much* the call may cost, and *what must be independently checked* afterward. The model can propose a patch or a tool call; it cannot advance the run state, certify its own repair, enlarge its permissions, or publish code by writing persuasive text.
 
+### AI harness component inventory
+
+The inventory connects the PRD's model, tool, orchestration, context, memory, execution and evaluation concepts to the backend modules that implement their contracts.
+
+| Component | Responsibility in a run |
+|---|---|
+| [Workflow graph](platform_app/fixture_workflow.py) | Moves through reproduction, investigation, patching and verification with saved phase state. |
+| [Run ledger](platform_app/run_ledger.py) | Stores ordered events, leases, fencing tokens and effect identity across retries. |
+| [Pause integrity](platform_app/pause_integrity.py) | Keeps the resume target and completed receipts bound to the original run plan. |
+| [Provider adapters](platform_app/providers.py) | Normalize native OpenAI, Anthropic and Google responses without discarding provider identity. |
+| [Stream assembly](platform_app/provider_streams.py) | Waits for a complete response and validated tool arguments before authorization. |
+| [Model qualification](platform_app/model_qualification.py) | Checks the exact model, adapter revision, capabilities and usage contract. |
+| [Model routing](platform_app/model_routing.py) | Filters candidates by tenant policy, capability, limits and qualification evidence. |
+| [Model failover](platform_app/model_failover.py) | Creates a separate lineage for an explicitly approved alternate after a definite rejection. |
+| [Context bundles](platform_app/context_bundle.py) | Packages task, pinned source, test evidence and verified memory with provenance labels. |
+| [Code navigation](platform_app/code_navigation.py) | Bounds file search, symbol lookup and excerpt reads against the admitted commit. |
+| [Code index](platform_app/code_index.py) | Records revision-pinned files, symbols and dependency edges for retrieval. |
+| [Token envelope](platform_app/token_budget.py) | Allocates input, output, overhead and safety margin before provider HTTP. |
+| [Context compaction](platform_app/context_compaction.py) | Reduces oversized evidence while preserving constraints and original-artifact lineage. |
+| [Model budget](platform_app/model_budget.py) | Reserves maximum call liability and settles reported usage at pinned prices. |
+| [Action policy](platform_app/action_policy.py) | Checks run, tenant, target, action class and budget outside the prompt. |
+| [Tool broker](platform_app/tool_broker.py) | Validates typed actions and records denials, effect intents and receipts. |
+| [Plugin registry](platform_app/plugin_registry.py) | Pins reviewed manifests, digests, schemas, scopes and tenant grants. |
+| [Project memory](platform_app/memory.py) | Owns fact states, source evidence, validity and transition history. |
+| [Graph projection](platform_app/graph_memory.py) | Retrieves scoped relationships and rechecks them against canonical facts. |
+| [Isolated execution](platform_app/dev_sandbox.py) | Runs pinned tests and candidate checks outside the control API process. |
+| [Browser runner](platform_app/browser_runner.py) | Executes bounded scenarios and captures browser receipts, screenshots and recordings. |
+| [Patch workspace](platform_app/patch_workspace.py) | Materializes a candidate tree and records its changed-file scope and digest. |
+| [Independent verifier](platform_app/verifier.py) | Produces check results that the model's explanation cannot override. |
+| [Review evidence](platform_app/evidence_bundle.py) | Joins source, patch, checks and artifact hashes into an inspectable packet. |
+| [Benchmark contract](platform_app/benchmark_contract.py) | Scores complete attempts, including failures and unsupported success claims. |
+| [Telemetry](platform_app/telemetry.py) | Carries run and step trace context through model, tool and media work. |
+
 ### One model step, end to end
 
 | Stage | Harness responsibility | Persisted boundary |
