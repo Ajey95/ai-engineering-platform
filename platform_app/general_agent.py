@@ -19,6 +19,7 @@ from platform_app.general_patch import GeneralPatch, parse_general_patch
 from platform_app.memory import select_context_facts
 from platform_app.model_budget import (
     record_uncertain_model_call,
+    record_unreviewed_provider_tool,
     reject_model_call,
     reserve_model_call,
     settle_model_call,
@@ -330,11 +331,14 @@ def request_general_patch(
                 db.commit()
         else:
             with session_factory() as db:
+                run = db.get(Run, run_id)
                 record_uncertain_model_call(
-                    db, db.get(Run, run_id), worker_id, fence,
+                    db, run, worker_id, fence,
                     db.get(ToolAction, action_id), db.get(BudgetEntry, reservation_id),
                     error.code, error.status_code,
                 )
+                if error.code == "PROVIDER_TOOL_DENIED":
+                    record_unreviewed_provider_tool(db, run, worker_id, fence, step_id)
                 db.commit()
         raise
     if turn.provider != expected_provider:

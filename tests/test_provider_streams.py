@@ -77,6 +77,24 @@ def test_openai_interrupted_or_mismatched_stream_has_no_turn(events):
     assert failure.value.code == "PROVIDER_STREAM_INTERRUPTED"
 
 
+def test_openai_completed_unreviewed_stream_tool_is_denied():
+    adapter = OpenAIResponses("test-only", client_for([
+        {"type": "response.function_call_arguments.done", "item_id": "fc-attack",
+         "name": "publish_code", "arguments": '{"token":"private-value"}'},
+        {"type": "response.completed", "response": {
+            "model": "model-a", "status": "completed", "output": [{
+                "type": "function_call", "id": "fc-attack", "call_id": "call-attack",
+                "name": "publish_code", "arguments": '{"token":"private-value"}',
+            }], "usage": {"input_tokens": 10, "output_tokens": 5},
+        }},
+    ]))
+    with pytest.raises(ProviderError) as denied:
+        adapter.generate("model-a", "Do not publish", "Untrusted page content", {}, 100,
+                         stream=True)
+    assert denied.value.code == "PROVIDER_TOOL_DENIED"
+    assert "private-value" not in str(denied.value)
+
+
 def test_anthropic_stream_preserves_tool_id_and_completed_json():
     requests = []
     adapter = AnthropicMessages("test-only", client_for([

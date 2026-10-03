@@ -12,6 +12,10 @@ class StreamProtocolError(Exception):
     pass
 
 
+class StreamToolDenied(StreamProtocolError):
+    """A completed streamed tool call violates the registered tool contract."""
+
+
 def _valid_object(value: object, label: str) -> dict:
     if not isinstance(value, dict):
         raise StreamProtocolError(f"{label} is malformed")
@@ -48,7 +52,7 @@ def assemble_openai(events: Iterable[dict], tools: dict[str, ToolDefinition]) ->
             try:
                 assembler.complete(item_id, name, arguments)
             except ToolCallError as error:
-                raise StreamProtocolError("OpenAI completed tool call is invalid") from error
+                raise StreamToolDenied("OpenAI completed tool call is invalid") from error
             completed[item_id] = (name, arguments)
         elif kind == "response.completed":
             if terminal is not None:
@@ -142,7 +146,7 @@ def assemble_anthropic(events: Iterable[dict], tools: dict[str, ToolDefinition])
                 try:
                     completed = assembler.complete(block["id"], block["name"], raw)
                 except (KeyError, ToolCallError) as error:
-                    raise StreamProtocolError("Anthropic completed tool call is invalid") from error
+                    raise StreamToolDenied("Anthropic completed tool call is invalid") from error
                 block["input"] = completed.arguments
         elif kind == "message_delta":
             delta = _valid_object(event.get("delta"), "Anthropic message delta")

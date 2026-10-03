@@ -16,12 +16,18 @@ import httpx
 
 from platform_app.provider_streams import (
     StreamProtocolError,
+    StreamToolDenied,
     assemble_anthropic,
     assemble_google,
     assemble_openai,
 )
 from platform_app.telemetry import tracer
-from platform_app.tool_broker import CompletedToolCall, ToolCallAssembler, ToolDefinition
+from platform_app.tool_broker import (
+    CompletedToolCall,
+    ToolCallAssembler,
+    ToolCallError,
+    ToolDefinition,
+)
 
 
 class ProviderError(Exception):
@@ -56,10 +62,16 @@ class ProviderTurn:
 
 def _validated_calls(raw_calls: list[tuple[str, str, str]], tools: dict) -> tuple:
     assembler = ToolCallAssembler(tools)
-    return tuple(
-        assembler.complete(call_id, name, arguments)
-        for call_id, name, arguments in raw_calls
-    )
+    try:
+        return tuple(
+            assembler.complete(call_id, name, arguments)
+            for call_id, name, arguments in raw_calls
+        )
+    except ToolCallError as error:
+        raise ProviderError(
+            "Provider requested an unauthorized or malformed tool",
+            code="PROVIDER_TOOL_DENIED",
+        ) from error
 
 
 def _require_continuation(previous: ProviderTurn, provider: str, model: str) -> None:
@@ -218,6 +230,11 @@ class OpenAIResponses:
                 raw = assemble_openai(_http_sse(
                     self.client, url, headers, {**payload, "stream": True}
                 ), tools)
+            except StreamToolDenied as error:
+                raise ProviderError(
+                    "Provider requested an unauthorized or malformed tool",
+                    code="PROVIDER_TOOL_DENIED",
+                ) from error
             except StreamProtocolError as error:
                 raise ProviderError(str(error), code="PROVIDER_STREAM_INTERRUPTED") from error
         else:
@@ -303,6 +320,11 @@ class AnthropicMessages:
                 raw = assemble_anthropic(_http_sse(
                     self.client, url, headers, {**payload, "stream": True}
                 ), tools)
+            except StreamToolDenied as error:
+                raise ProviderError(
+                    "Provider requested an unauthorized or malformed tool",
+                    code="PROVIDER_TOOL_DENIED",
+                ) from error
             except StreamProtocolError as error:
                 raise ProviderError(str(error), code="PROVIDER_STREAM_INTERRUPTED") from error
         else:

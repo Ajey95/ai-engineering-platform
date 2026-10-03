@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from platform_app.action_policy import ActionIntent, authorize_run_effect
 from platform_app.config import settings
 from platform_app.model_qualification import qualification_for_pinned_run
-from platform_app.models import BudgetEntry, ModelEntry, Run, RunEvent, ToolAction
+from platform_app.models import AuditEvent, BudgetEntry, ModelEntry, Run, RunEvent, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import set_safe_attributes, tracer
@@ -404,3 +404,31 @@ def record_uncertain_model_call(
             "http_status": status_code if isinstance(status_code, int) else None,
             "liability_status": "reserved",
         })
+
+
+def record_unreviewed_provider_tool(
+    db: Session, run: Run, worker_id: str, fence: int, step_id: str,
+) -> None:
+    """Record a denied provider tool without retaining its untrusted arguments."""
+    assert_fence(run, worker_id, fence)
+    prior = db.scalar(select(RunEvent.id).where(
+        RunEvent.tenant_id == run.tenant_id,
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "tool.denied",
+        RunEvent.payload["step_id"].as_string() == step_id,
+    ).limit(1))
+    if prior is not None:
+        return
+    append_event(db, run, "tool.denied", {
+        "step_id": step_id, "reason": "unreviewed_provider_tool",
+    })
+    db.add(AuditEvent(
+        tenant_id=run.tenant_id, actor=worker_id, action="tool.authorize",
+        target_ref=f"{run.id}:{step_id}",
+        arguments_hash=canonical_hash({
+            "run_id": run.id, "step_id": step_id,
+            "reason": "unreviewed_provider_tool",
+        }),
+        policy_revision=(run.config_snapshot or {}).get("policy_version", "unknown"),
+        outcome="denied:unreviewed_provider_tool",
+    ))
