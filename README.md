@@ -1,18 +1,10 @@
 # AI Engineering Platform
 
-<div align="center">
+**An evidence-centered engineering harness for investigating and repairing application failures.**
 
-### From a bug report to a reviewable, evidence-backed repair
+`FastAPI` · `PostgreSQL` · `LangGraph` · `Playwright` · `Memgraph` · `FFmpeg` · `React`
 
-**FastAPI · PostgreSQL · LangGraph · Playwright · React · FFmpeg · Memgraph**
-
-`Pinned source` · `Durable runs` · `Bounded model calls` · `Independent verification` · `Private evidence`
-
-</div>
-
-The platform turns a reported application failure into a reproducible investigation. It records the exact source revision, executes checks in an isolated workspace, collects browser evidence, evaluates a bounded candidate patch, and gives a reviewer the diff and test receipts. A result can also be **inconclusive** when the evidence does not justify a repair claim.
-
-This README describes implemented code paths and the way they have been exercised locally. The [project checkpoint](PROJECT_MEMORY.md) tracks completion and the next work session; the [requirement ledger](IMPLEMENTATION_STATUS.md) contains detailed PRD traceability.
+The platform connects a bug report to a pinned source revision, reproducible execution, bounded model assistance, independent verification, and a review packet. Application code owns authorization, budgets, side effects, state transitions, and the evidence trail. A result remains **inconclusive** when the evidence does not justify a repair claim.
 
 ## The use case
 
@@ -27,34 +19,33 @@ Consider a report that a form does not submit correctly. A developer needs more 
 | Verify | Separate named, browser and oracle checks against the candidate | Before/after results and recordings |
 | Review | Run events, verdict, patch, media, evidence ZIP and decision history | One review packet that preserves the test outcome |
 
-The included `form-submit-001` fixture exercises this flow. A normal local run reproduces the defect and reports `INCONCLUSIVE` when no model is qualified. A controlled provider response can drive the candidate path to `REVIEW_READY/PASSED`; that mode verifies the protocol with a predetermined response.
+The included `form-submit-001` case exercises a pinned baseline, a candidate patch, separate checks and a review packet. Its provider path uses a predetermined response for controlled protocol verification.
 
 ## Backend architecture
 
 ### 1. Request, execution and evidence planes
 
 ```mermaid
-flowchart LR
-    UI["React workspace"] -->|REST + SSE| API["FastAPI control plane"]
-    API -->|atomic admission| DB[(PostgreSQL)]
-    DB -->|dispatch row| WORKER["Development worker<br/>fenced lease"]
-    WORKER --> GRAPH["LangGraph<br/>checkpointed phases"]
-    GRAPH --> CONTEXT["Context bundle<br/>pinned code + verified memory"]
-    GRAPH --> MODEL["Model adapter<br/>reservation + usage ledger"]
-    GRAPH --> POLICY["Tool policy<br/>effect intent + receipt"]
-    POLICY --> BOX["Isolated WSL containers<br/>tests · browser · oracle"]
-    BOX --> EVIDENCE["Hashed artifacts<br/>logs · PNG · WebM"]
-    EVIDENCE --> MEDIA["FFmpeg HLS encoder"]
-    MEDIA --> PLAYER["Scoped playback"]
-    DB -->|scoped projection| MEM[(Memgraph)]
+flowchart TB
+    UI[React workspace] --> API[FastAPI control plane]
+    API --> DB[(PostgreSQL)]
+    DB --> DISPATCH[Outbox and dispatch]
+    DISPATCH --> WORKER[Leased workflow worker]
+    WORKER --> GRAPH[LangGraph checkpoints]
+    GRAPH --> CONTEXT[Context and model gateway]
+    GRAPH --> POLICY[Policy and tool broker]
+    POLICY --> BOX[Isolated repository and browser execution]
+    BOX --> EVIDENCE[Hashed evidence and review packet]
+    EVIDENCE --> MEDIA[HLS encoding and scoped playback]
+    DB --> MEM[(Memgraph projection)]
     MEM --> CONTEXT
-    DB -->|committed events| API
-    API -->|SSE replay| UI
+    DB --> EVENTS[Durable events]
+    EVENTS --> UI
     EVIDENCE --> API
-    PLAYER --> UI
+    MEDIA --> UI
 ```
 
-PostgreSQL owns run state and provenance. The graph is a scoped retrieval projection. The queue or outbox delivers work; a database lease and fencing token decide which worker may change a run. Media completion is tracked separately from code verification.
+PostgreSQL owns run state and provenance. The graph is a scoped retrieval projection. Dispatch wakes work; a database lease and fencing token decide which worker may change a run. Media completion is tracked separately from code verification.
 
 ### 2. Durable run lifecycle
 
@@ -101,38 +92,99 @@ flowchart TD
 
 The reviewer decision is stored separately from the independent verification verdict. Accepting a packet does not change a failed test into a pass.
 
-## Implemented backend concepts
+## Backend design, from admission to review
 
-| Concept | Implementation |
-|---|---|
-| **Transactional admission** | An idempotency key binds task/run creation to a frozen commit, policy and model snapshot. The run, initial event, spend reservation and dispatch outbox are committed together. |
-| **Tenant and project isolation** | Scoped database constraints, membership and project roles protect runs, evidence, usage and memory. OIDC bearer validation and browser PKCE sessions have controlled issuer tests. |
-| **Durable orchestration** | LangGraph owns fixture phases; PostgreSQL stores checkpoints. Workers claim fenced leases, heartbeat, persist effect intents and receipts, and recover safe dispatches. |
-| **Model gateway** | Native OpenAI, Anthropic and Google adapters handle complete JSON and bounded streaming responses. The registry pins capabilities, revisions and prices; model calls reserve liability before HTTP and settle reported usage afterward. |
-| **Routing controls** | Tenant policy allowlists model/data-class combinations. An exact cross-provider alternate can be approved for a definite rate-limit rejection, with a separate lineage and reservation. |
-| **Context and token management** | Pinned source excerpts, code symbols, current verified memory and tool evidence become a hashed ContextBundle. Conservative budgets, head/tail log excerpts and content-addressed compaction preserve provenance. |
-| **Tool authorization** | Versioned action contracts and plugin manifests define schemas, permissions, targets and limits. The broker records denials and typed results; completed log artifacts carry byte counts and SHA-256 digests. |
-| **Repository and execution boundary** | Git archives an exact commit. The development runner executes named checks, browser actions and a hidden oracle in separate bounded WSL containers with non-root, read-only and network restrictions. |
-| **Candidate verification** | Patch materialization records changed files and a tree digest. Candidate checks rerun independently, with before/after screenshots, WebM, HLS and a review packet built from persisted receipts. |
-| **Project memory** | PostgreSQL owns fact states and transition history. An outbox projects verified facts and revision-pinned file/symbol dependencies to Memgraph; reads recheck canonical scope and fall back to PostgreSQL. |
-| **Media and deletion** | FFmpeg creates digest-checked HLS variants. Tenant-scoped local routes serve recordings; deletion revokes access, removes raw/HLS files and preserves the run's non-video evidence. Private S3 publication, signed grants and remote deletion have controlled client tests. |
-| **Hosted integration modules** | The SQS dispatcher, run coordinator, per-run EC2 intent, scoped S3 guest transport and separate baseline/candidate guest phases have controlled-client integration tests. Terraform and Packer define the corresponding trusted and guest resources. |
-| **Repository publication** | Project-scoped GitHub connection records, a read-only qualification command, explicit draft-PR approval, durable publication dispatch and deterministic branch reconciliation have controlled API tests. |
-| **Operations and cost** | Tenant inference, concurrency, export-byte, sandbox-minute, media-minute and private-HLS-byte limits have ledgers and owner controls. Operations exposes tenant-scoped run, queue, graph, media, tool and budget signals. |
-| **Audit and telemetry** | Durable run events, audit rows and OpenTelemetry spans follow admission, dispatch, tools, model calls and media work. A local OTLP receiver accepted an emitted protobuf span. |
-| **Evaluation** | Forty pinned synthetic cases have hidden oracles and a strict manifest validator. A scorer distinguishes attempts, failures and false-success claims. |
+### Transactional admission and canonical data
 
-### Backend module map
+Run creation is one database transaction. The request's idempotency key binds a task and run to a frozen Git commit, policy, model revision, spending boundary, initial event and dispatch outbox row. Repeated admission can return the same run rather than launch duplicate work. PostgreSQL stores the canonical relationships among tenants, projects, tasks, runs, events, tool actions, artifacts, reservations and reviewer decisions. Alembic migrations version that schema.
 
-| Responsibility | Main source |
-|---|---|
-| API, authorization and sessions | [`platform_app/api.py`](platform_app/api.py), [`auth.py`](platform_app/auth.py), [`browser_auth.py`](platform_app/browser_auth.py) |
-| Admission, lifecycle and durable events | [`service.py`](platform_app/service.py), [`run_ledger.py`](platform_app/run_ledger.py), [`models.py`](platform_app/models.py) |
-| Agent workflow and local execution | [`fixture_workflow.py`](platform_app/fixture_workflow.py), [`development_worker.py`](platform_app/development_worker.py), [`dev_sandbox.py`](platform_app/dev_sandbox.py) |
-| Provider, context and spending | [`providers.py`](platform_app/providers.py), [`context_bundle.py`](platform_app/context_bundle.py), [`model_budget.py`](platform_app/model_budget.py) |
-| Memory and code navigation | [`memory.py`](platform_app/memory.py), [`graph_memory.py`](platform_app/graph_memory.py), [`code_index.py`](platform_app/code_index.py) |
-| Evidence, media and review | [`evidence_bundle.py`](platform_app/evidence_bundle.py), [`media.py`](platform_app/media.py), [`review_patch.py`](platform_app/review_patch.py) |
-| Integration and infrastructure definitions | [`platform_app/`](platform_app), [`infra/`](infra), [`.github/workflows/quality.yml`](.github/workflows/quality.yml) |
+The queue is a wake-up mechanism. Delivery can repeat; a database lease and fencing token decide which worker can advance a run. Per-run event sequences and effect keys preserve ordering across retries. A committed outbox row records the decision to dispatch before transport delivery. See [`service.py`](platform_app/service.py), [`run_ledger.py`](platform_app/run_ledger.py), [`models.py`](platform_app/models.py) and [`queue_dispatch.py`](platform_app/queue_dispatch.py).
+
+### Identity, tenancy and capability boundaries
+
+The API scopes reads and writes by tenant, project membership and role. Bearer identity and the browser OIDC authorization-code path are separate entry points; browser sessions use PKCE, server-side state, origin and CSRF checks. Event streams recheck membership during delivery, so an open connection does not retain access indefinitely. Artifact downloads, memory, model policy, plugin grants and owner operations inherit the same scope.
+
+Repository comments, browser pages, tool results and model output are treated as untrusted data. They cannot grant a new capability. Policy decisions are made in application code against tenant, project, run, policy revision, action class, target and budget; sensitive changes are audited without storing secret values. See [`auth.py`](platform_app/auth.py), [`browser_auth.py`](platform_app/browser_auth.py), [`tenant_admin.py`](platform_app/tenant_admin.py) and [`action_policy.py`](platform_app/action_policy.py).
+
+### Durable orchestration and effect reconciliation
+
+LangGraph carries workflow phases and PostgreSQL stores checkpoints. A worker claims a fenced lease, heartbeats it and persists the current stage. The development workflow and hosted coordinator join pinned source preparation, baseline checks, investigation, bounded model proposal, candidate checks and review-packet creation. Active time, tool calls, model calls, patch attempts and infrastructure retries are bounded. Repeated candidate trees are stopped rather than cycled indefinitely.
+
+Every external effect has a persisted **intent before execution** and a **receipt after execution**. Recovery validates stored receipts and artifact hashes before reusing work. An uncertain provider request or publication outcome is held for reconciliation instead of blindly repeated. A pause stores its resume stage and completed effects; cancellation fences the worker and retains partial evidence. See [`fixture_workflow.py`](platform_app/fixture_workflow.py), [`development_worker.py`](platform_app/development_worker.py), [`hosted_worker.py`](platform_app/hosted_worker.py), [`pause_integrity.py`](platform_app/pause_integrity.py) and [`tool_broker.py`](platform_app/tool_broker.py).
+
+### Native provider adapters and model lifecycle
+
+The model gateway contains native OpenAI, Anthropic and Google adapters. Their complete and streamed response paths normalize text, tool calls, stop reasons, continuation references and reported usage while preserving provider-specific boundaries. Streamed tool arguments are assembled, parsed and schema-checked before a tool can run; a partial stream grants no authority. The gateway classifies authentication, access, rate, timeout, overload, refusal, context and schema outcomes without exposing raw provider bodies.
+
+The versioned registry pins provider/API family, exact model revision, verified limits, capabilities, adapter digest and price rules. Models move through registered, validating, qualified, enabled, deprecated and disabled states. Admission checks the exact pinned entry. Automatic routing first filters by tenant data policy, capability, context and output limits, availability and recorded qualification, then compares utility, latency and cost. A cross-provider alternate needs a tenant-approved exact route; a definite rejected source call gets a new lineage and reservation. See [`providers.py`](platform_app/providers.py), [`provider_streams.py`](platform_app/provider_streams.py), [`model_qualification.py`](platform_app/model_qualification.py), [`model_routing.py`](platform_app/model_routing.py) and [`model_failover.py`](platform_app/model_failover.py).
+
+### Context engineering and token control
+
+Each model request receives a versioned **ContextBundle** with task constraints, run state, selected source excerpts, current failure evidence and relevant verified memory. Items carry source locators, trust labels, versions and hashes. Repository context is tied to the admitted commit and file digest. The code index bounds file listing, text search, Python and JS/TS symbols, excerpt reads and dependency traversal before content enters the prompt.
+
+Before provider HTTP, the token envelope accounts for the verified model limit, application cap, requested generation, provider overhead and safety margin. Large logs remain complete, digest-checked artifacts; the prompt receives bounded excerpts and references. Compaction near the input allocation preserves constraints, source identity, test outcomes, unresolved effects, failed attempts and original-artifact pointers. The summary and source are content-addressed for replay. Essential source that cannot fit causes a closed failure rather than silent omission. See [`context_bundle.py`](platform_app/context_bundle.py), [`context_compaction.py`](platform_app/context_compaction.py), [`token_budget.py`](platform_app/token_budget.py), [`code_navigation.py`](platform_app/code_navigation.py) and [`code_index.py`](platform_app/code_index.py).
+
+### Model spending and resource quotas
+
+The gateway reserves the upper-bound call cost **before** provider HTTP. Settlement uses reported usage and the run's frozen price revision, including separate uncached input, cache read, cache write and output categories when applicable. Reservations use tenant locking. A definite rejection can release liability with a receipt; an uncertain request keeps liability until reconciliation. An exhausted run enters a durable budget pause that requires bounded owner approval to resume.
+
+Independent ledgers cover daily and monthly inference, concurrent runs, sandbox minutes, media input minutes, evidence export bytes and private HLS bytes. New reservations are blocked at the authorized cap. Sandbox time settles after confirmed guest termination; private media storage charges release after verified deletion. See [`model_budget.py`](platform_app/model_budget.py), [`tenant_quota.py`](platform_app/tenant_quota.py), [`sandbox_quota.py`](platform_app/sandbox_quota.py), [`media_quota.py`](platform_app/media_quota.py), [`artifact_quota.py`](platform_app/artifact_quota.py) and [`export_quota.py`](platform_app/export_quota.py).
+
+### Tool contracts and plugin governance
+
+Versioned action contracts define schemas, permission scopes, target restrictions, side-effect class, runtime and output limits. The broker checks every action against run and tenant policy. A denial is a typed result and durable event. Successful results retain structured fields, sanitized summary, duration, byte count, truncation status and artifact/effect receipt. Full logs are served through run-scoped, hash-verified downloads instead of being copied wholesale into model context.
+
+The plugin registry validates identity, publisher, exact version, artifact digest, transport, reviewed JSON schemas, allowed destinations, credential types and compatibility. A tenant owner can grant an intact enabled version. Remote MCP origins are restricted to reviewed public HTTPS endpoints; a remote version cannot be enabled without transport qualification. Tool discovery or tool text cannot expand the broker's authority. See [`tool_broker.py`](platform_app/tool_broker.py), [`action_policy.py`](platform_app/action_policy.py) and [`plugin_registry.py`](platform_app/plugin_registry.py).
+
+### Pinned repositories and isolated execution
+
+An exact Git commit is archived and validated before it becomes a workspace. Baseline and candidate workspaces are distinct: the candidate starts from the same source plus the recorded patch. Named tests, browser scenarios and hidden verification therefore compare concrete trees rather than a model's description of its edit.
+
+The exercised development path uses bounded WSL containers with non-root execution, read-only and capability limits, and network restrictions. Hosted integration modules define private guest networking, per-run EC2 launch intent, scoped S3 input/output transport, guest bootstrap, fenced result receipts and termination reconciliation. Separate baseline and candidate guest generations prevent one phase from inheriting the other's mutable workspace. See [`repository_archive.py`](platform_app/repository_archive.py), [`dev_sandbox.py`](platform_app/dev_sandbox.py), [`sandbox_broker.py`](platform_app/sandbox_broker.py), [`sandbox_transport.py`](platform_app/sandbox_transport.py), [`guest_runner.py`](platform_app/guest_runner.py) and [`infra/`](infra).
+
+### Browser reproduction and evidence integrity
+
+Playwright executes declared interactions against an allowed origin, captures screenshots and recordings, and returns bounded DOM and event evidence. The browser path blocks cross-origin requests, service workers, popups and downloads. Browser and test effects produce receipts with status, byte counts and SHA-256 digests; replay rejects altered logs or recordings. Hidden-oracle checks remain separate from the proposed patch's view.
+
+The evidence bundle joins source commit, environment manifest, baseline and candidate receipts, artifact hashes, patch identity and review metadata. A failed or unexecuted check cannot become a successful verification through model prose or reviewer acceptance. See [`browser_runner.py`](platform_app/browser_runner.py), [`environment_manifest.py`](platform_app/environment_manifest.py), [`verifier.py`](platform_app/verifier.py), [`evidence_bundle.py`](platform_app/evidence_bundle.py) and [`sandbox_evidence.py`](platform_app/sandbox_evidence.py).
+
+### Patch review and publication boundary
+
+Patch materialization records changed-file scope and an exact-tree digest. The review packet connects the unified diff to baseline and candidate checks, screenshots, recordings and independent verdict. A reviewer decision is a separate record about that packet. Repository publication is separately privileged: the GitHub integration stores a project-scoped connection, qualifies read-only access, requires explicit draft-PR approval and dispatches publication durably. On retry it reconciles the expected branch and PR marker before another external request. See [`patch_workspace.py`](platform_app/patch_workspace.py), [`review_patch.py`](platform_app/review_patch.py), [`repository_connections.py`](platform_app/repository_connections.py), [`github_publication.py`](platform_app/github_publication.py) and [`publication_dispatch.py`](platform_app/publication_dispatch.py).
+
+### Canonical memory and graph retrieval
+
+Workflow checkpoints, project knowledge and graph indexes serve different purposes. PostgreSQL owns memory facts with tenant/project scope, source evidence, revision validity, actor, reason and transition history. Facts can be proposed, verified, superseded, rejected or deleted. Reviewer outcomes are labelled decisions, not automatically proof of repair correctness.
+
+An outbox projects verified facts and revision-pinned file/symbol dependencies to Memgraph. Retrieval restricts project, commit, status, freshness and traversal depth, then rechecks graph hints against canonical rows. A stale or unavailable graph falls back to scoped PostgreSQL lookup. Model context receives a bounded set of current, source-backed facts; unverified or superseded claims are excluded. See [`memory.py`](platform_app/memory.py), [`graph_memory.py`](platform_app/graph_memory.py) and [`code_index.py`](platform_app/code_index.py).
+
+### Durable API events and review surfaces
+
+Each run event has a unique event ID, per-run sequence, timestamp, trace ID, type and versioned payload. Server-sent events replay after a cursor and then deliver new committed events. PostgreSQL notifications wake active streams; polling covers notification loss. Identity and membership are rechecked during delivery. The React workspace reads persisted Projects, Reports, Runs, Review, Evaluations, Memory, Usage, Settings and Operations records rather than inferring state from chat text. See [`api.py`](platform_app/api.py), [`schemas.py`](platform_app/schemas.py), [`event_signal.py`](platform_app/event_signal.py) and [`apps/web/`](apps/web).
+
+### Adaptive media and private artifacts
+
+FFmpeg converts browser recordings into digest-checked HLS playlists and segments. Baseline and candidate media are tracked separately. Encoding has its own status, queue and reservation path: a delayed recording does not change code verification, and tests and screenshots remain reviewable. Local playback requires project/run authorization.
+
+Private-media modules define scoped S3 publication, signed playback grants, deletion tombstones, object removal and CloudFront invalidation. Access revokes when deletion begins; a remote deletion remains pending until its object and cache receipts verify. See [`media.py`](platform_app/media.py), [`hosted_media.py`](platform_app/hosted_media.py), [`hosted_media_worker.py`](platform_app/hosted_media_worker.py), [`private_media.py`](platform_app/private_media.py) and [`private_media_deletion.py`](platform_app/private_media_deletion.py).
+
+### Observability, operations and evaluation
+
+Trace context follows admission, outbox dispatch, workflow execution, model calls, tool effects, context construction and media work. Structured telemetry links run and step to policy, model, attempt, outcome and duration without making raw prompts or secrets default span attributes. Operations reads canonical run state, queue and graph age, model outcomes, reservations, tool failures, media jobs, expired leases and durable alerts. Alert rules have owners, runbooks, repeated-sample thresholds and signed webhook delivery records.
+
+The evaluation package holds forty pinned synthetic cases covering browser-reproducible bugs and non-bug or underspecified reports. Cases record source/environment identity, baseline expectations and hidden oracles. Scoring counts every attempt and flags unsupported success claims. The unit of evaluation is the whole repair protocol—reproduction, verification, abstention, authorization and cost—not merely the appearance of a generated patch. See [`telemetry.py`](platform_app/telemetry.py), [`operations.py`](platform_app/operations.py), [`operational_alerts.py`](platform_app/operational_alerts.py), [`benchmark_contract.py`](platform_app/benchmark_contract.py), [`fixture_evaluation.py`](platform_app/fixture_evaluation.py) and [`benchmarks/`](benchmarks).
+
+### Infrastructure separation and recovery
+
+The repository defines separate control-plane, sandbox-guest and media-worker images. Terraform modules describe the trusted API/worker network, private guest network without general outbound NAT, queue, database, object storage, and edge resources. A Packer definition pins the guest image inputs. Dispatch, guest output transport and media encoding use different identities and artifact scopes, keeping untrusted repository execution outside the API process.
+
+Readiness checks distinguish API liveness from database availability. A database fault prevents new authoritative mutations; graph retrieval can fall back to scoped canonical rows; media failure leaves non-video review evidence available. Recovery paths reconcile expired leases, durable outbox rows, guest termination, publication markers and deletion tombstones before replay. See [`config.py`](platform_app/config.py), [`queue_consumer.py`](platform_app/queue_consumer.py), [`sandbox_broker.py`](platform_app/sandbox_broker.py), [`media_queue.py`](platform_app/media_queue.py), [`infra/control-plane/`](infra/control-plane), [`infra/media-worker/`](infra/media-worker) and [`infra/terraform/`](infra/terraform).
+
+### Security and data governance
+
+The trust boundary covers report text, source files, dependency scripts, browser pages, plugin metadata, tool output and model-generated arguments. The broker evaluates permissions independently of that content. Source archives use bounded extraction; isolated execution limits host and network access; browser navigation enforces the allowed origin. Provider keys remain in the worker environment, and publication uses a separately authorized repository connection.
+
+Artifact reads use tenant/project/run scope and digest checks. Memory deletion produces a canonical tombstone before graph projection; recording deletion revokes access and removes local raw/HLS artifacts. Private publication and deletion track remote object and cache receipts. Audit records identify actor, action, target, policy and outcome without making raw secrets part of the review trail. See [`safe_archive.py`](platform_app/safe_archive.py), [`action_policy.py`](platform_app/action_policy.py), [`recording_deletion.py`](platform_app/recording_deletion.py), [`private_media_deletion.py`](platform_app/private_media_deletion.py) and [`memory.py`](platform_app/memory.py).
 
 ## Workspace and API
 
@@ -149,87 +201,3 @@ The React workspace contains Projects, Reports, Runs, Review, Evaluations, Memor
 | Service checks | `GET /v1/health`, `GET /v1/ready` |
 
 FastAPI exposes the complete route schema at `/docs` in local development.
-
-## Run the local workspace
-
-This is the exercised Windows/WSL development path. Use Python 3.12, `uv`, Node 22.12 or newer, npm, FFmpeg, Ubuntu-24.04 WSL and Docker Engine in that distribution. Run commands from the repository root unless a step changes directory.
-
-### 1. Prepare dependencies and data
-
-```powershell
-uv sync --extra dev
-Copy-Item .env.example .env
-.\scripts\start_wsl_docker.ps1
-.\scripts\compose-wsl.ps1 up -d postgres memgraph
-.venv\Scripts\python.exe -m alembic upgrade head
-wsl.exe -d Ubuntu-24.04 -u root -- docker build -f infra/dev-sandbox/Dockerfile -t aip-dev-sandbox:0.1.0 .
-wsl.exe -d Ubuntu-24.04 -u root -- docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.3 .
-.venv\Scripts\python.exe -m scripts.seed_local_demo
-```
-
-`Dockerfile.code-only` refreshes the platform code over the full local browser image. Once the base exists, later code refreshes can run that second build alone.
-
-### 2. Start the three processes
-
-Open separate PowerShell terminals at the repository root:
-
-```powershell
-.venv\Scripts\uvicorn.exe platform_app.api:app --host 127.0.0.1 --port 8098
-```
-
-```powershell
-.venv\Scripts\python.exe -m platform_app.development_worker --serve --runtime wsl --image aip-dev-sandbox:0.1.3
-```
-
-```powershell
-Set-Location apps\web
-npm ci
-npm run dev
-```
-
-Open **http://127.0.0.1:5173/**. The Vite proxy connects the browser to the API on port 8098. The seeded project offers the pinned synthetic form case; it cannot be mistaken for a customer repository.
-
-## Reproduce the backend checks
-
-### Controlled PostgreSQL workflow
-
-Each command creates, migrates and drops a uniquely named local PostgreSQL database. It runs the real isolated fixture checks with a predetermined provider response and writes a review packet under `artifacts/worker-verification/`.
-
-```powershell
-.\scripts\verify_local_postgres_worker.ps1
-.\scripts\verify_local_postgres_worker.ps1 -ResumeProbe
-.\scripts\verify_local_postgres_worker.ps1 -BudgetPauseProbe
-```
-
-The budget probe confirms that the first attempt pauses before provider HTTP, approval requeues the run, and the resumed attempt makes exactly one controlled provider request. The input probe confirms the paused run resumes with its stored receipts. Both reach `REVIEW_READY/PASSED` for the synthetic fixture.
-
-### Regression and frontend checks
-
-```powershell
-$env:AIP_TEST_POSTGRES_URL='postgresql://aip:local_only@127.0.0.1:54329/aip'
-$env:AIP_TEST_MEMGRAPH_URI='bolt://127.0.0.1:7687'
-.venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\python.exe -m ruff check platform_app tests scripts
-.venv\Scripts\python.exe -m scripts.validate_benchmark --manifest benchmarks/suite-v1.json
-Set-Location apps\web
-npm run build
-```
-
-The latest PostgreSQL/Memgraph-enabled local Python run passed **295 tests** with **2 Windows symlink skips**. Ruff passed. The 40 pinned benchmark baseline/reference pairs and the frontend production build passed locally. [GitHub quality run 37113492325](https://github.com/Ajey95/ai-engineering-platform/actions/runs/37113492325) passed Python (293 tests, 4 Linux skips), PostgreSQL, web and the controlled sandbox repair/media jobs.
-
-## Repository guide
-
-```text
-apps/web/                  React and TypeScript workspace
-platform_app/              API, workflow, policy, model, memory and media modules
-migrations/                PostgreSQL schema migrations
-benchmarks/                Pinned synthetic cases, manifests and hidden oracles
-infra/dev-sandbox/         Isolated local fixture image
-infra/control-plane/       Trusted API and worker image definition
-infra/media-worker/        Separate media image definition
-infra/terraform/           Network, queue, data, control and edge definitions
-scripts/                   Operators, dispatchers and verification probes
-tests/                     Unit, integration and controlled external-client checks
-```
-
-The [project checkpoint](PROJECT_MEMORY.md) gives the verified state and exact continuation order. The [implementation ledger](IMPLEMENTATION_STATUS.md) maps code and evidence to PRD requirements.
