@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 import pytest
 
 from platform_app.agent_patch import _prompt
-from platform_app.context_compaction import compact_fixture_context, load_compacted_context
+from platform_app.context_compaction import (
+    compact_fixture_context,
+    compact_general_context,
+    load_compacted_context,
+    load_general_compacted_context,
+)
 from platform_app.models import Run, Task, ToolAction
 from platform_app.service import ServiceError
 
@@ -118,3 +123,59 @@ def test_context_retrieval_rejects_scope_and_tampering(tmp_path):
     with pytest.raises(ServiceError) as error:
         load_compacted_context(tmp_path, "run", summary_ref)
     assert error.value.code == "CONTEXT_INTEGRITY"
+
+
+def test_general_compaction_preserves_repair_inputs_and_source_lineage(tmp_path):
+    prompt = {
+        "schema_version": "1.0", "task": {"report": "Fix form"},
+        "base_commit": "a" * 40, "source_archive_sha256": "b" * 64,
+        "allowed_paths": ["app.py"],
+        "source_items": [{"path": "app.py", "base_sha256": "c" * 64,
+                          "content": "def submit():\n    return False\n",
+                          "trust_label": "untrusted_repository_content"}],
+        "indexed_code": [{"path": "app.py", "symbols": list(range(20)),
+                          "imports": list(range(20))}],
+        "selected_memory": list(range(8)),
+        "prior_attempts": [{"status": "FAILED", "reason": "browser check failed"}],
+        "baseline": {"manifest_sha256": "d" * 64,
+                     "named_tests": {"unit": "FAILED"}, "browser_status": "FAILED",
+                     "browser_steps": list(range(10)), "page_errors": list(range(5)),
+                     "log_excerpts": [{"path": "test-unit.log", "tail": "x" * 3500
+                                       + "FAIL: form submit", "truncated": False}]},
+    }
+    compacted, summary_ref = compact_general_context(prompt, 4000, tmp_path, "run")
+    assert summary_ref is not None
+    assert compacted["source_items"] == prompt["source_items"]
+    assert compacted["task"] == prompt["task"]
+    assert compacted["prior_attempts"] == prompt["prior_attempts"]
+    assert compacted["baseline"]["named_tests"] == {"unit": "FAILED"}
+    assert compacted["baseline"]["log_excerpts"][0]["tail"].endswith(
+        "FAIL: form submit"
+    )
+    summary, source = load_general_compacted_context(tmp_path, "run", summary_ref)
+    assert source == prompt
+    assert summary["source_file_hashes"][0]["base_sha256"] == "c" * 64
+    with pytest.raises(ServiceError):
+        load_general_compacted_context(tmp_path, "other", summary_ref)
+    (tmp_path / summary["source_bundle_ref"]).write_text("{}")
+    with pytest.raises(ServiceError) as error:
+        load_general_compacted_context(tmp_path, "run", summary_ref)
+    assert error.value.code == "CONTEXT_INTEGRITY"
+
+
+def test_general_compaction_fails_closed_when_source_cannot_fit(tmp_path):
+    prompt = {
+        "schema_version": "1.0", "task": {"report": "Fix form"},
+        "base_commit": "a" * 40, "source_archive_sha256": "b" * 64,
+        "allowed_paths": ["app.py"], "indexed_code": [], "selected_memory": [],
+        "prior_attempts": [],
+        "source_items": [{"path": "app.py", "base_sha256": "c" * 64,
+                          "content": "x" * 5000}],
+        "baseline": {"manifest_sha256": "d" * 64, "named_tests": {},
+                     "browser_status": "FAILED", "browser_steps": [],
+                     "page_errors": [], "log_excerpts": []},
+    }
+    with pytest.raises(ServiceError) as error:
+        compact_general_context(prompt, 3000, tmp_path, "run")
+    assert error.value.code == "CONTEXT_UNSATISFIABLE"
+    assert not (tmp_path / "run" / "context").exists()

@@ -225,6 +225,7 @@ def reserve_model_call(
             "step_id": step_id,
             "model_entry_id": model.id,
             "context_sha256": arguments["prompt_sha256"],
+            "estimated_input_tokens": estimated_input,
             "reserved_usd": str(plan.max_liability_usd),
         },
     )

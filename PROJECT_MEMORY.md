@@ -1653,3 +1653,28 @@ The full Python suite passed 278 with 5 skips; the final targeted plugin/API
 suite passed 6/6 after an explicit forged remote-MCP-enabled state rejection.
 The final TypeScript/Vite build and scoped Ruff passed; diff whitespace check
 passed. The local API on port 8098 was restarted with the plugin endpoints.
+
+2026-10-03 hosted general-context compaction increment: before a general
+provider request, the worker computes the pinned model's conservative input
+byte capacity and compacts at 80 percent or before overflow. It retains
+complete allowed source, task, baseline status, prior attempts, commit and
+hashes; trims secondary logs/browser evidence, index detail and memory. The
+original prompt and deterministic summary are content-addressed under the run.
+Replay verifies artifact lineage and the recorded context hash. A pending tool
+cycle or still-oversized required source fails closed. The integration test
+sends two distinct compacted prompts through a controlled provider and replays
+the first without an extra HTTP request. Full Python suite passed 280 tests
+with 5 skips before final summary-field assertions; targeted tests must be
+rerun after those assertions. Model-side original retrieval and live provider
+proof remain absent.
+
+2026-10-03 operations context-metrics increment: `model.started` now records
+the conservative preflight input estimate without prompt content. The owner
+operations snapshot aggregates tenant-scoped 24-hour compaction count, median
+input estimate and median absolute estimate error against provider-reported
+input for completed calls, with an explicit sample count. Older events without
+estimates remain excluded from the error metric. Operations UI renders these
+fields; a local Chromium visit showed the new card with zero page errors.
+Targeted operations/model/general tests passed 17/17, scoped Ruff, TypeScript
+and Vite production build passed. The API on port 8098 was restarted. The
+full Python suite then passed 280 tests with 5 skips after this change.

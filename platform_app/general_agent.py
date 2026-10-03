@@ -8,6 +8,7 @@ import json
 import os
 import tarfile
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
@@ -15,6 +16,10 @@ from sqlalchemy import select
 
 from platform_app.agent_patch import _provider
 from platform_app.context_bundle import verified_memory_items
+from platform_app.context_compaction import (
+    compact_general_context,
+    load_general_compacted_context,
+)
 from platform_app.general_patch import GeneralPatch, parse_general_patch
 from platform_app.memory import select_context_facts
 from platform_app.model_budget import (
@@ -40,7 +45,8 @@ from platform_app.providers import ProviderError, ProviderTurn
 from platform_app.repository_archive import SourceArchive
 from platform_app.run_ledger import assert_fence
 from platform_app.sandbox_transport import GuestOutput
-from platform_app.service import ServiceError, canonical_hash
+from platform_app.service import ServiceError, append_event, canonical_hash
+from platform_app.token_budget import BudgetError, PriceRule, TokenPolicy, plan_call
 
 INSTRUCTION = (
     "Investigate the reported web-app failure using the supplied source and recorded "
@@ -290,6 +296,34 @@ def request_general_patch(
             run, task, source, baseline, allowed_paths, feedback, memory_facts,
             indexed,
         )
+        snapshot = run.config_snapshot
+        try:
+            price = PriceRule(
+                revision=snapshot["model_price_revision"],
+                input_usd_per_million=Decimal(snapshot["model_price_per_m_input"]),
+                output_usd_per_million=Decimal(snapshot["model_price_per_m_output"]),
+            )
+            capacity = plan_call(
+                snapshot["model_context_limit"], snapshot["model_output_limit"],
+                0, 4096,
+                TokenPolicy(spend_limit_usd=Decimal(str(snapshot["spend_limit_usd"]))),
+                price,
+            ).input_capacity
+        except (BudgetError, KeyError, ValueError) as error:
+            raise ServiceError(
+                "CONTEXT_UNSATISFIABLE", "Model context policy is invalid", 409
+            ) from error
+        pending_cycle = db.scalar(select(ToolAction.id).where(
+            ToolAction.run_id == run.id, ToolAction.status == "INTENDED"
+        ).limit(1)) is not None
+        compacted, summary_ref = compact_general_context(
+            json.loads(prompt), capacity, artifact_root, run.id,
+            next_required_bytes=len(INSTRUCTION.encode()) + 1,
+            pending_tool_cycle=pending_cycle,
+        )
+        prompt = json.dumps(compacted, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if summary_ref:
+            load_general_compacted_context(artifact_root, run.id, summary_ref)
         prior = db.scalar(select(ToolAction).where(
             ToolAction.run_id == run.id,
             ToolAction.step_id == step_id,
@@ -307,12 +341,30 @@ def request_general_patch(
                 canonical_hash(INSTRUCTION + "\n" + prompt)
             ):
                 raise ServiceError("EFFECT_CONFLICT", "Model context changed on replay", 409)
+            if summary_ref and not any(
+                event.payload.get("summary_ref") == summary_ref
+                for event in db.scalars(select(RunEvent).where(
+                    RunEvent.run_id == run.id,
+                    RunEvent.event_type == "context.compacted",
+                ))
+            ):
+                raise ServiceError("CONTEXT_INTEGRITY", "Compaction event is missing", 409)
             return _replay(prior, artifact_root, run_id, allowed_paths, step_id)
         selected_provider = provider or _provider(model)
         action, reservation, plan = reserve_model_call(
             db, run, worker_id, fence, model, step_id,
             INSTRUCTION + "\n" + prompt,
         )
+        if summary_ref:
+            prior_summaries = db.scalars(select(RunEvent).where(
+                RunEvent.run_id == run.id,
+                RunEvent.event_type == "context.compacted",
+            )).all()
+            if not any(
+                event.payload.get("summary_ref") == summary_ref
+                for event in prior_summaries
+            ):
+                append_event(db, run, "context.compacted", {"summary_ref": summary_ref})
         db.commit()
         action_id, reservation_id = action.id, reservation.id
         model_id, expected_provider = model.model_id, model.provider

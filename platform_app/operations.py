@@ -42,6 +42,7 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
         RunEvent.created_at >= cutoff,
         RunEvent.event_type.in_([
             "model.started", "model.completed", "model.rejected", "model.uncertain",
+            "context.compacted",
         ]),
     ).order_by(RunEvent.run_id, RunEvent.sequence).limit(10_001)).all()
     if len(rows) > 10_000:
@@ -49,12 +50,20 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
                 "definite_rejection_count": None, "uncertain_count": None,
                 "unsettled_count": None,
                 "completed_latency_ms_p50": None, "completed_latency_ms_p95": None,
-                "definite_rejection_rate": None}
-    starts: dict[tuple[str, str], datetime] = {}
+                "definite_rejection_rate": None, "context_compaction_count": None,
+                "estimated_input_tokens_p50": None,
+                "input_estimation_error_pct_p50": None,
+                "input_estimation_samples": None}
+    starts: dict[tuple[str, str], tuple[datetime, int | None]] = {}
     uncertain_steps: set[tuple[str, str]] = set()
-    completed = rejected = 0
+    completed = rejected = compactions = 0
     latencies: list[int] = []
+    estimates: list[int] = []
+    errors: list[float] = []
     for event in rows:
+        if event.event_type == "context.compacted":
+            compactions += 1
+            continue
         step = event.payload.get("step_id") if isinstance(event.payload, dict) else None
         if not isinstance(step, str) or not step:
             continue
@@ -63,10 +72,20 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
         if instant.tzinfo is None:
             instant = instant.replace(tzinfo=UTC)
         if event.event_type == "model.started":
-            starts[key] = instant
+            estimate = event.payload.get("estimated_input_tokens")
+            if not isinstance(estimate, int) or isinstance(estimate, bool) or estimate < 0:
+                estimate = None
+            starts[key] = instant, estimate
+            if estimate is not None:
+                estimates.append(estimate)
         elif event.event_type == "model.completed" and key in starts:
             completed += 1
-            latencies.append(max(0, int((instant - starts.pop(key)).total_seconds() * 1000)))
+            began, estimate = starts.pop(key)
+            latencies.append(max(0, int((instant - began).total_seconds() * 1000)))
+            actual = event.payload.get("input_tokens")
+            if (estimate is not None and isinstance(actual, int)
+                    and not isinstance(actual, bool) and actual > 0):
+                errors.append(abs(estimate - actual) * 100 / actual)
             uncertain_steps.discard(key)
         elif event.event_type == "model.rejected" and key in starts:
             rejected += 1
@@ -75,17 +94,25 @@ def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
         elif event.event_type == "model.uncertain" and key in starts:
             uncertain_steps.add(key)
     latencies.sort()
+    estimates.sort()
+    errors.sort()
 
-    def percentile(fraction: float) -> int | None:
-        return latencies[max(0, ceil(len(latencies) * fraction) - 1)] if latencies else None
+    def percentile(values: list, fraction: float):
+        return values[max(0, ceil(len(values) * fraction) - 1)] if values else None
 
     decided = completed + rejected
     return {
         "status": "MEASURED", "completed_count": completed,
         "definite_rejection_count": rejected, "unsettled_count": len(starts),
         "uncertain_count": len(uncertain_steps),
-        "completed_latency_ms_p50": percentile(0.5),
-        "completed_latency_ms_p95": percentile(0.95),
+        "completed_latency_ms_p50": percentile(latencies, 0.5),
+        "completed_latency_ms_p95": percentile(latencies, 0.95),
+        "context_compaction_count": compactions,
+        "estimated_input_tokens_p50": percentile(estimates, 0.5),
+        "input_estimation_error_pct_p50": (
+            round(percentile(errors, 0.5), 2) if errors else None
+        ),
+        "input_estimation_samples": len(errors),
         "definite_rejection_rate": round(rejected / decided, 4) if decided else None,
     }
 
@@ -243,7 +270,6 @@ def operations_snapshot(
         },
         "unavailable": [
             "provider_time_to_first_event",
-            "context_size_and_compaction_rate",
-            "token_estimation_error", "sandbox_utilization", "abr_playback_quality",
+            "sandbox_utilization", "abr_playback_quality",
         ],
     }

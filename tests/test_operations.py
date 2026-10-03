@@ -90,9 +90,19 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         ):
             db.add(RunEvent(
                 tenant_id="tenant-a", run_id="passed", sequence=sequence,
-                event_type=kind, payload={"step_id": step},
+                event_type=kind, payload={
+                    "step_id": step,
+                    **({"estimated_input_tokens": 100} if kind == "model.started"
+                       and step == "call-1" else {}),
+                    **({"input_tokens": 80} if kind == "model.completed" else {}),
+                },
                 created_at=now - timedelta(seconds=age),
             ))
+        db.add(RunEvent(
+            tenant_id="tenant-a", run_id="passed", sequence=8,
+            event_type="context.compacted", payload={"summary_ref": "ref"},
+            created_at=now,
+        ))
         db.add(RunEvent(
             tenant_id="tenant-b", run_id="foreign", sequence=1,
             event_type="model.started", payload={"step_id": "foreign"},
@@ -133,6 +143,10 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             "completed_latency_ms_p50": 1000,
             "completed_latency_ms_p95": 1000,
             "definite_rejection_rate": 0.5,
+            "context_compaction_count": 1,
+            "estimated_input_tokens_p50": 100,
+            "input_estimation_error_pct_p50": 25.0,
+            "input_estimation_samples": 1,
         }
         assert snapshot["inference_budget"] == {
             "reserved_usd": "1.000000", "actual_usd": "1.250000",

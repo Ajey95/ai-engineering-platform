@@ -45,7 +45,10 @@ type OperationsSummary = {
     definite_rejection_count: number | null; uncertain_count: number | null
     unsettled_count: number | null
     completed_latency_ms_p50: number | null; completed_latency_ms_p95: number | null
-    definite_rejection_rate: number | null }
+    definite_rejection_rate: number | null; context_compaction_count: number | null
+    estimated_input_tokens_p50: number | null
+    input_estimation_error_pct_p50: number | null
+    input_estimation_samples: number | null }
   inference_budget: { reserved_usd: string; actual_usd: string }
   exports: { used_bytes_today: number; daily_cap_bytes: number }
   warnings_now: string[]
@@ -594,7 +597,7 @@ export default function App({ identity, onSignOut }: {
               <div className="content-panel ops-metric"><small>Runnable queue</small><strong>{operations.queue.queued_count}</strong><span>Oldest {operations.queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.queue.oldest_age_seconds / 60)} min`}</span></div>
               <div className="content-panel ops-metric"><small>Graph projection backlog</small><strong>{operations.graph.pending_count}</strong><span>Oldest {operations.graph.oldest_age_seconds === null ? 'none' : `${Math.round(operations.graph.oldest_age_seconds)} sec`}</span></div>
               <div className="content-panel ops-metric"><small>Inference budget</small><strong>${Number(operations.inference_budget.actual_usd).toFixed(2)}</strong><span>${Number(operations.inference_budget.reserved_usd).toFixed(2)} outstanding reservations</span></div>
-              <div className="content-panel ops-metric"><small>Model calls</small><strong>{operations.model_calls.completed_count ?? '—'}</strong><span>{operations.model_calls.status === 'TRUNCATED' ? 'Summary limit reached' : `${operations.model_calls.definite_rejection_count} rejected · ${operations.model_calls.uncertain_count} uncertain · ${operations.model_calls.unsettled_count} open`}</span><span>Completed call p95 {operations.model_calls.completed_latency_ms_p95 === null ? 'unavailable' : `${(operations.model_calls.completed_latency_ms_p95 / 1000).toFixed(1)} s`}</span></div>
+              <div className="content-panel ops-metric"><small>Model calls</small><strong>{operations.model_calls.completed_count ?? '—'}</strong><span>{operations.model_calls.status === 'TRUNCATED' ? 'Summary limit reached' : `${operations.model_calls.definite_rejection_count} rejected · ${operations.model_calls.uncertain_count} uncertain · ${operations.model_calls.unsettled_count} open`}</span><span>Completed call p95 {operations.model_calls.completed_latency_ms_p95 === null ? 'unavailable' : `${(operations.model_calls.completed_latency_ms_p95 / 1000).toFixed(1)} s`}</span><span>Context compacted {operations.model_calls.context_compaction_count ?? '—'} times · median estimated input {operations.model_calls.estimated_input_tokens_p50 ?? '—'} tokens</span><span>Median input estimate error {operations.model_calls.input_estimation_error_pct_p50 === null ? 'unavailable' : `${operations.model_calls.input_estimation_error_pct_p50.toFixed(1)}%`} ({operations.model_calls.input_estimation_samples ?? 0} completed samples)</span></div>
               <div className="content-panel ops-metric"><small>Media jobs waiting</small><strong>{operations.media_queue.pending_count}</strong><span>Oldest {operations.media_queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.media_queue.oldest_age_seconds / 60)} min`}</span></div>
               <div className="content-panel ops-metric"><small>Expired sandbox leases</small><strong>{operations.sandbox.expired_lease_count}</strong><span>After {Math.round(operations.sandbox.cleanup_grace_seconds / 60)} min cleanup grace</span></div>
             </div>
