@@ -27,16 +27,24 @@ def timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def append_bounded(target: list, value: object, limit: int = 200) -> None:
+    if len(target) < limit:
+        target.append(value)
+
+
 def same_origin(url: str, origin: str) -> bool:
-    candidate = urlsplit(url)
-    allowed = urlsplit(origin)
-    return (
-        candidate.scheme == allowed.scheme
-        and candidate.hostname == allowed.hostname
-        and candidate.port == allowed.port
-        and candidate.username is None
-        and candidate.password is None
-    )
+    try:
+        candidate = urlsplit(url)
+        allowed = urlsplit(origin)
+        return (
+            candidate.scheme == allowed.scheme
+            and candidate.hostname == allowed.hostname
+            and candidate.port == allowed.port
+            and candidate.username is None
+            and candidate.password is None
+        )
+    except ValueError:
+        return False
 
 
 def safe_url(origin: str, path: str) -> str:
@@ -52,7 +60,9 @@ async def wait_healthy(
     url: str, process: subprocess.Popen, deadline: float, instance_id: str,
     require_instance_header: bool = True,
 ) -> None:
-    async with httpx.AsyncClient(follow_redirects=False, timeout=1.0) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=False, timeout=1.0, trust_env=False
+    ) as client:
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(
@@ -94,6 +104,9 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
         "console_errors": [],
         "page_errors": [],
         "request_failures": [],
+        "blocked_requests": 0,
+        "downloads": 0,
+        "popups": 0,
         "recording": None,
         "recording_disabled_reason": None,
         "final_screenshot": None,
@@ -134,12 +147,25 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
             else:
                 context_options["record_video_dir"] = str(artifacts)
                 context_options["record_video_size"] = {"width": 1280, "height": 720}
-            context = await browser.new_context(**context_options)
+            context = await browser.new_context(
+                **context_options, service_workers="block", accept_downloads=False
+            )
             page = await context.new_page()
             video = page.video
 
+            def count_popup(opened):
+                if opened is not page:
+                    result["popups"] += 1
+
+            def count_download(_):
+                result["downloads"] += 1
+
+            context.on("page", count_popup)
+            page.on("download", count_download)
+
             async def route_request(route):
                 if not same_origin(route.request.url, origin):
+                    result["blocked_requests"] += 1
                     await route.abort("blockedbyclient")
                 else:
                     await route.continue_()
@@ -147,22 +173,28 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
             await context.route("**/*", route_request)
             page.on(
                 "response",
-                lambda response: result["responses"].append(
+                lambda response: append_bounded(
+                    result["responses"],
                     {
-                        "path": urlsplit(response.url).path,
+                        "path": urlsplit(response.url).path[:300],
                         "status": response.status,
                         "method": response.request.method,
                         "at": timestamp(),
                     }
                 ),
             )
-            page.on("console", lambda message: result["console_errors"].append(message.text[:500])
-                    if message.type == "error" else None)
-            page.on("pageerror", lambda error: result["page_errors"].append(str(error)[:500]))
+            page.on("console", lambda message: append_bounded(
+                result["console_errors"], message.text[:500]
+            ) if message.type == "error" else None)
+            page.on("pageerror", lambda error: append_bounded(
+                result["page_errors"], str(error)[:500]
+            ))
             page.on(
                 "requestfailed",
-                lambda request: result["request_failures"].append(
-                    {"path": urlsplit(request.url).path, "failure": request.failure}
+                lambda request: append_bounded(
+                    result["request_failures"],
+                    {"path": urlsplit(request.url).path[:300],
+                     "failure": str(request.failure)[:200]}
                 ),
             )
             try:
@@ -185,14 +217,22 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
                             await page.get_by_text(step["text"], exact=False).wait_for(timeout=5000)
                         else:
                             raise ValueError(f"Unsupported scenario action: {action}")
+                        if not same_origin(page.url, origin):
+                            raise ValueError("Browser left the authorized fixture origin")
                         entry["status"] = "PASSED"
-                        entry["page_path"] = urlsplit(page.url).path
-                        headings = await page.get_by_role("heading").all_inner_texts()
-                        statuses = await page.get_by_role("status").all_inner_texts()
+                        entry["page_path"] = urlsplit(page.url).path[:300]
+                        headings = page.get_by_role("heading")
+                        statuses = page.get_by_role("status")
                         entry["dom_summary"] = {
                             "title": (await page.title())[:100],
-                            "headings": [text[:100] for text in headings[:5]],
-                            "status": [text[:100] for text in statuses[:3]],
+                            "headings": [
+                                (await headings.nth(i).inner_text())[:100]
+                                for i in range(min(await headings.count(), 5))
+                            ],
+                            "status": [
+                                (await statuses.nth(i).inner_text())[:100]
+                                for i in range(min(await statuses.count(), 3))
+                            ],
                         }
                     except Exception as error:
                         entry["status"] = "FAILED"
@@ -206,7 +246,7 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
                         "elements => elements.forEach(el => el.style.visibility = 'hidden')"
                     )
                 screenshot = artifacts / "final.png"
-                await page.screenshot(path=str(screenshot), full_page=True)
+                await page.screenshot(path=str(screenshot), full_page=False)
                 result["final_screenshot"] = screenshot.name
                 result["screenshot_sha256"] = hashlib.sha256(screenshot.read_bytes()).hexdigest()
             finally:
@@ -214,6 +254,11 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
                 if video is not None:
                     result["recording"] = Path(await video.path()).name
                 await browser.close()
+            if any(result[key] for key in ("blocked_requests", "downloads", "popups")):
+                result["status"] = "FAILED"
+                result["security_error"] = (
+                    "Browser attempted a disallowed network or download action"
+                )
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {str(error)[:500]}"
     finally:

@@ -14,10 +14,13 @@ from typing import Protocol
 from sqlalchemy import select
 
 from platform_app.agent_patch import _provider
+from platform_app.context_bundle import verified_memory_items
 from platform_app.general_patch import GeneralPatch, parse_general_patch
+from platform_app.memory import select_context_facts
 from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
 from platform_app.models import (
     BudgetEntry,
+    MemoryFact,
     ModelEntry,
     Run,
     RunEvent,
@@ -128,6 +131,7 @@ def build_general_prompt(
     run: Run, task: Task, source: SourceArchive,
     baseline: GuestOutput, allowed_paths: frozenset[str],
     feedback: tuple[dict, ...] = (),
+    memory_facts: list[MemoryFact] | None = None,
 ) -> str:
     if source.commit != run.base_commit or baseline.result.get("phase") != "baseline":
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Pinned inputs differ", 409)
@@ -151,6 +155,7 @@ def build_general_prompt(
         "source_archive_sha256": source.sha256,
         "allowed_paths": sorted(allowed_paths),
         "source_items": _source_items(source, allowed_paths),
+        "selected_memory": verified_memory_items(run, memory_facts),
         "prior_attempts": feedback,
         "baseline": {
             "manifest_sha256": observation.get("manifest_sha256"),
@@ -227,7 +232,12 @@ def request_general_patch(
             or recorded.result_sha256 is None or recorded.result_received_at is None
         ):
             raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Baseline receipt is not recorded", 409)
-        prompt = build_general_prompt(run, task, source, baseline, allowed_paths, feedback)
+        memory_facts = select_context_facts(
+            db, run.tenant_id, run.project_id, run.base_commit, task.report
+        )
+        prompt = build_general_prompt(
+            run, task, source, baseline, allowed_paths, feedback, memory_facts
+        )
         prior = db.scalar(select(ToolAction).where(
             ToolAction.run_id == run.id,
             ToolAction.step_id == step_id,

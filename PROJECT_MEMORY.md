@@ -1319,3 +1319,51 @@ rejection, cleanup enqueue and stale-model reservation denial. In-flight
 provider charges still need reconciliation before any resume path.
 Full Python suite: 259 passed, 5 skipped; Ruff and Alembic head inspection
 passed. New head remains unapplied to PostgreSQL while WSL is unavailable.
+
+2026-10-03 browser boundary increment: the controlled/hosted guest browser
+now disables service workers, rejects and counts cross-origin subrequests,
+popups and downloads, and fails a scenario if any occurred. The loopback
+health client ignores proxy environment variables and refuses redirects;
+malformed origin ports are denied. Response/console/DOM evidence is bounded
+and the final screenshot uses the fixed viewport to avoid unbounded page
+dimensions. A real Chromium test with an external image request failed as
+expected; focused browser/manifest tests passed (21 passed, 1 skipped).
+Hosted security-group policy remains a template only, without AWS proof.
+
+2026-10-03 local recovery: moved the stopped legacy `Ubuntu` WSL distribution
+from its 1,387,266,048-byte C: VHD to `D:\WSL\Ubuntu` using `wsl --manage ...
+--move`; its source VHD is absent and target VHD present. C: gained about
+1.3 GiB. The primary Ubuntu-24.04 and Docker Engine 29.8.2 restarted. WSL
+automatically stopped the distro and its containers when no Linux session
+remained, so a `wsl -d Ubuntu-24.04 -u root -- sleep infinity` session is being
+kept open for local qualification. PostgreSQL and Memgraph were restarted.
+Alembic applied head `c78b82d1fa40`, `alembic check` found no drift, and
+`scripts.verify_postgres_admission` passed all reported scope, race, resume,
+deletion and quota checks. The media image built locally at
+`sha256:c5dc71907d45858299ff729cb780ca6d5828fdcfb08cebe78e0c7a47151ae993`;
+its non-root CLI starts under no-network, read-only container flags. The image
+export again exhausted C:, so Docker's regenerable build cache was pruned,
+the WSL filesystem was trimmed, and `wsl --manage Ubuntu-24.04 --compact`
+restored about 2.17 GiB free on C:. No AWS media queue/bucket was exercised.
+
+The refreshed code-only sandbox image is `aip-dev-sandbox:0.1.2`. A controlled
+provider replay with this image reached `REVIEW_READY`/`PASSED`, ten completed
+effects, baseline fail and candidate pass for browser/hidden oracle, and both
+HLS recordings READY; `autonomous_repair=false`. A separate fresh SQLite API
+on port 8098 and Vite on 5173 were connected with a polling WSL sandbox
+worker. A real UI run `e73fe87d-d215-4680-a222-d5d4266d7db8` reproduced
+the baseline bug (POST 500, hidden oracle FAILED), closed `INCONCLUSIVE` as no
+qualified provider exists, and produced a READY baseline recording. Chromium
+loaded the review page without page errors and fetched HLS manifests/segments;
+video `readyState=4`, duration 7.12 seconds. The user-visible local UI is
+`http://127.0.0.1:5173/`, synthetic only. Hosted account/AMI/provider/GitHub
+qualification remains absent.
+
+2026-10-03 hosted context increment: extracted the canonical memory prompt
+serializer shared by fixture and hosted general proposal paths. The hosted
+proposal now selects up to five current verified facts matching report terms
+at the run's tenant, project and pinned commit; it rechecks scope, validity,
+source references and status immediately before serialization. A controlled
+provider test confirmed one verified fact entered the proposal and an
+unverified model claim did not. Focused context/general/memory tests: 9 passed;
+Ruff passed. No live provider was called.

@@ -1,11 +1,14 @@
+import asyncio
 import os
+import socket
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from platform_app import dev_sandbox
-from platform_app.browser_runner import safe_url, same_origin
+from platform_app.browser_runner import run_scenario, safe_url, same_origin
 from platform_app.dev_sandbox import (
     SandboxError,
     docker_browser_command,
@@ -23,6 +26,32 @@ def test_browser_navigation_stays_on_fixture_origin():
     with pytest.raises(ValueError):
         safe_url(origin, "/\\attacker.invalid/")
     assert not same_origin("http://127.0.0.1:8002/", origin)
+    assert not same_origin("http://127.0.0.1:invalid/", origin)
+
+
+def test_browser_rejects_external_subresource(tmp_path: Path):
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    (tmp_path / "index.html").write_text(
+        '<h1>Ready</h1><img src="https://example.invalid/track.png">',
+        encoding="utf-8",
+    )
+    origin = f"http://127.0.0.1:{port}"
+    manifest = {
+        "allowed_origin": origin,
+        "health_url": origin + "/",
+        "case_id": "blocked-subresource",
+        "start_command": [
+            sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1",
+        ],
+        "require_instance_header": False,
+        "scenario": {"steps": [{"action": "goto", "path": "/"}]},
+    }
+    result = asyncio.run(run_scenario(manifest, tmp_path, tmp_path / "artifacts"))
+    assert result["status"] == "FAILED"
+    assert result["blocked_requests"] >= 1
+    assert result["security_error"]
 
 
 def test_workspace_copy_rejects_symlink(tmp_path: Path):
