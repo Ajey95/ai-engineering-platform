@@ -1271,3 +1271,11 @@ read-only filesystem/I/O errors, then WSL reported
 four exact C: temporary downloads; do not retry through another route. The
 user has been asked to free at least 2 GiB manually. Continue code and local
 validation on D: meanwhile; do not claim Docker media or hosted qualification.
+
+2026-10-03 database readiness increment: `/v1/health` remains a liveness
+response while `/v1/ready` now executes a lightweight authoritative DB query,
+returns 503 with no internal detail on failure, and is the trusted API load
+balancer health target. Two HTTP-level tests passed for database up/down;
+Terraform control-plane and pilot validation passed. This improves one
+PostgreSQL outage gate but does not establish full hosted degraded-mode
+behavior or availability objectives.

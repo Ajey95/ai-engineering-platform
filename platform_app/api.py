@@ -19,8 +19,8 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from platform_app.auth import (
@@ -316,6 +316,17 @@ def authorized_run(
 @app.get("/v1/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/v1/ready")
+def ready() -> JSONResponse:
+    """Keep liveness separate from the authoritative PostgreSQL write gate."""
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except (OSError, SQLAlchemyError):
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return JSONResponse(status_code=200, content={"status": "ready"})
 
 
 @app.get("/v1/dev/fixture-info")
