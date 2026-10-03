@@ -37,9 +37,18 @@ class PriceRule:
     revision: str
     input_usd_per_million: Decimal
     output_usd_per_million: Decimal
+    cache_read_usd_per_million: Decimal | None = None
+    cache_write_usd_per_million: Decimal | None = None
 
     def __post_init__(self):
-        if not self.revision or min(self.input_usd_per_million, self.output_usd_per_million) < 0:
+        rates = [
+            self.input_usd_per_million, self.output_usd_per_million,
+            *(rate for rate in (
+                self.cache_read_usd_per_million,
+                self.cache_write_usd_per_million,
+            ) if rate is not None),
+        ]
+        if not self.revision or any(not rate.is_finite() or rate < 0 for rate in rates):
             raise ValueError("Verified nonnegative pricing is required")
 
 
@@ -79,8 +88,17 @@ def plan_call(
     capacity = envelope - output - margin - provider_overhead_tokens
     if capacity <= 0 or input_tokens > capacity:
         raise BudgetError("CONTEXT_UNSATISFIABLE: required input cannot fit")
+    # Reservation covers the most expensive supported input category because
+    # cache hit/write proportions are not known before the provider responds.
+    maximum_input_rate = max([
+        price.input_usd_per_million,
+        *(rate for rate in (
+            price.cache_read_usd_per_million,
+            price.cache_write_usd_per_million,
+        ) if rate is not None),
+    ])
     liability = (
-        Decimal(input_tokens + provider_overhead_tokens) * price.input_usd_per_million
+        Decimal(input_tokens + provider_overhead_tokens) * maximum_input_rate
         + Decimal(output) * price.output_usd_per_million
     ) / Decimal(1_000_000)
     return TokenPlan(

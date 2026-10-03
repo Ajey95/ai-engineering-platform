@@ -388,6 +388,36 @@ def test_mismatched_metadata_is_rejected_before_spend(registry, attestation):
     assert adapter.calls == 0
 
 
+def test_optional_cache_prices_are_attested_and_invalidate_qualification_on_drift(
+    registry, attestation,
+):
+    with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        model.price_per_m_cache_read = Decimal("0.25")
+        model.price_per_m_cache_write = Decimal("1.5")
+        db.commit()
+    priced = MetadataAttestation.from_dict({
+        **attestation.__dict__,
+        "price_per_m_cache_read": "0.25",
+        "price_per_m_cache_write": "1.5",
+    })
+    result = qualify_model_entry(
+        registry, "entry-a", ScriptedAdapter(), priced, "operator-a", True
+    )
+    assert result["state"] == "enabled"
+    with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        assert qualification_current(model)
+        model.price_per_m_cache_read = Decimal("0.3")
+        db.commit()
+        assert not qualification_current(model)
+    with pytest.raises(QualificationError) as invalid:
+        MetadataAttestation.from_dict({
+            **attestation.__dict__, "price_per_m_cache_read": "-1",
+        })
+    assert invalid.value.code == "INVALID_ATTESTATION"
+
+
 def test_registration_keeps_declared_capabilities_untrusted(registry):
     with registry() as db:
         model = register_model_entry(

@@ -246,6 +246,14 @@ def admit_run(
         "model_output_limit": model.output_limit,
         "model_price_per_m_input": str(model.price_per_m_input),
         "model_price_per_m_output": str(model.price_per_m_output),
+        "model_price_per_m_cache_read": (
+            str(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        ),
+        "model_price_per_m_cache_write": (
+            str(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        ),
         "model_id": model.model_id,
         "model_provider": model.provider,
         "max_model_calls": settings().max_model_calls,

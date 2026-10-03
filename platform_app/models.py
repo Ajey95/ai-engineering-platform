@@ -489,6 +489,8 @@ class ModelEntry(Base):
     price_revision: Mapped[str | None] = mapped_column(String(100), nullable=True)
     price_per_m_input: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     price_per_m_output: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
+    price_per_m_cache_read: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
+    price_per_m_cache_write: Mapped[float | None] = mapped_column(Numeric(12, 6), nullable=True)
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

@@ -310,6 +310,14 @@ def resume_model_approval_run(
         or snapshot.get("model_output_limit") != model.output_limit
         or snapshot.get("model_price_per_m_input") != str(model.price_per_m_input)
         or snapshot.get("model_price_per_m_output") != str(model.price_per_m_output)
+        or snapshot.get("model_price_per_m_cache_read") != (
+            str(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        )
+        or snapshot.get("model_price_per_m_cache_write") != (
+            str(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        )
         or not qualification_for_pinned_run(model)
     ):
         raise ServiceError(

@@ -108,6 +108,14 @@ def authorize_rate_limit_failover(
         "model_output_limit": target.output_limit,
         "model_price_per_m_input": str(target.price_per_m_input),
         "model_price_per_m_output": str(target.price_per_m_output),
+        "model_price_per_m_cache_read": (
+            str(target.price_per_m_cache_read)
+            if target.price_per_m_cache_read is not None else None
+        ),
+        "model_price_per_m_cache_write": (
+            str(target.price_per_m_cache_write)
+            if target.price_per_m_cache_write is not None else None
+        ),
         "model_id": target.model_id,
         "model_provider": target.provider,
         "model_failover": {

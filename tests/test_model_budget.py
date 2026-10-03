@@ -448,6 +448,49 @@ def test_unqualified_model_and_uncertain_usage_fail_closed(scope):
     assert db.scalar(select(ToolAction.status)) == "INTENDED"
 
 
+def test_attested_cache_rates_reserve_worst_case_and_settle_reported_categories(scope):
+    db, run, model, fence = scope
+    model.price_per_m_cache_read = Decimal("0.25")
+    model.price_per_m_cache_write = Decimal("1.5")
+    run.config_snapshot = {
+        **run.config_snapshot,
+        "model_price_per_m_cache_read": "0.250000",
+        "model_price_per_m_cache_write": "1.500000",
+    }
+    db.commit()
+    action, reservation, plan = reserve_model_call(
+        db, run, "worker-one", fence, model, "model-1", "Fix"
+    )
+    db.commit()
+    assert plan.max_liability_usd == Decimal("0.014149")
+    with pytest.raises(ServiceError) as invalid:
+        settle_model_call(
+            db, run, "worker-one", fence, action, reservation, model,
+            {"input_tokens": 100, "output_tokens": 10,
+             "cache_read_tokens": 90, "cache_creation_tokens": 20},
+            hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+        )
+    assert invalid.value.code == "USAGE_UNKNOWN"
+    actual = settle_model_call(
+        db, run, "worker-one", fence, action, reservation, model,
+        {"input_tokens": 100, "output_tokens": 10,
+         "cache_read_tokens": 20, "cache_creation_tokens": 10},
+        hashlib.sha256(b"output").hexdigest(), "private/model-1.json",
+    )
+    db.commit()
+    assert actual == Decimal("0.000110")
+    assert action.receipt["usage"]["cache_read_tokens"] == 20
+    assert action.receipt["usage"]["cache_creation_tokens"] == 10
+
+
+def test_cache_price_change_without_new_run_snapshot_is_denied(scope):
+    db, run, model, fence = scope
+    model.price_per_m_cache_read = Decimal("0.5")
+    with pytest.raises(ServiceError) as error:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-1", "Fix")
+    assert error.value.code == "MODEL_REVISION_CHANGED"
+
+
 def test_model_price_revision_drift_blocks_new_call(scope):
     db, run, model, fence = scope
     model.price_revision = "price-b"

@@ -20,7 +20,14 @@ TENANT_COLUMNS = {
     "monthly_inference_cap_usd": "NUMERIC(12, 6) NOT NULL DEFAULT 500",
     "max_concurrent_runs": "INTEGER NOT NULL DEFAULT 4",
 }
-ADDITIVE_COLUMNS = {"runs": RESUME_COLUMNS, "tenants": TENANT_COLUMNS}
+MODEL_COLUMNS = {
+    "price_per_m_cache_read": "NUMERIC(12, 6)",
+    "price_per_m_cache_write": "NUMERIC(12, 6)",
+}
+ADDITIVE_COLUMNS = {
+    "runs": RESUME_COLUMNS, "tenants": TENANT_COLUMNS,
+    "model_entries": MODEL_COLUMNS,
+}
 
 
 def main() -> int:

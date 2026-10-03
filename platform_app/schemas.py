@@ -194,3 +194,5 @@ class ModelRegister(StrictModel):
     price_revision: str | None = None
     price_per_m_input: float | None = Field(default=None, ge=0)
     price_per_m_output: float | None = Field(default=None, ge=0)
+    price_per_m_cache_read: float | None = Field(default=None, ge=0)
+    price_per_m_cache_write: float | None = Field(default=None, ge=0)

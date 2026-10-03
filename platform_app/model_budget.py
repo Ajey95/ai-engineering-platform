@@ -42,12 +42,34 @@ def _price(model: ModelEntry) -> PriceRule:
         revision=model.price_revision,
         input_usd_per_million=Decimal(model.price_per_m_input),
         output_usd_per_million=Decimal(model.price_per_m_output),
+        cache_read_usd_per_million=(
+            Decimal(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        ),
+        cache_write_usd_per_million=(
+            Decimal(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        ),
     )
 
 
-def _cost(input_tokens: int, output_tokens: int, price: PriceRule) -> Decimal:
+def _cost(
+    input_tokens: int, output_tokens: int, price: PriceRule,
+    cache_read_tokens: int = 0, cache_write_tokens: int = 0,
+) -> Decimal:
+    if cache_read_tokens + cache_write_tokens > input_tokens:
+        raise ServiceError("USAGE_UNKNOWN", "Cached usage exceeds total input", 409)
+    if (cache_read_tokens and price.cache_read_usd_per_million is None) or (
+        cache_write_tokens and price.cache_write_usd_per_million is None
+    ):
+        raise ServiceError(
+            "USAGE_PRICING_UNQUALIFIED", "Cached token pricing is not qualified", 409
+        )
     value = (
-        Decimal(input_tokens) * price.input_usd_per_million
+        Decimal(input_tokens - cache_read_tokens - cache_write_tokens)
+        * price.input_usd_per_million
+        + Decimal(cache_read_tokens) * (price.cache_read_usd_per_million or Decimal(0))
+        + Decimal(cache_write_tokens) * (price.cache_write_usd_per_million or Decimal(0))
         + Decimal(output_tokens) * price.output_usd_per_million
     ) / Decimal(1_000_000)
     return value.quantize(Decimal("0.000001"), rounding=ROUND_UP)
@@ -97,6 +119,14 @@ def reserve_model_call(
         or snapshot.get("model_output_limit") != model.output_limit
         or snapshot.get("model_price_per_m_input") != str(model.price_per_m_input)
         or snapshot.get("model_price_per_m_output") != str(model.price_per_m_output)
+        or snapshot.get("model_price_per_m_cache_read") != (
+            str(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        )
+        or snapshot.get("model_price_per_m_cache_write") != (
+            str(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        )
     ):
         raise ServiceError("MODEL_REVISION_CHANGED", "Run model snapshot no longer matches", 409)
     if (
@@ -274,10 +304,6 @@ def settle_model_call(
         or outputs < 0
     ):
         raise ServiceError("USAGE_UNKNOWN", "Provider usage is missing or invalid", 409)
-    if usage.get("cache_read_tokens", 0) or usage.get("cache_creation_tokens", 0):
-        raise ServiceError(
-            "USAGE_PRICING_UNQUALIFIED", "Cached token pricing is not qualified", 409
-        )
     usage_receipt = {"input_tokens": inputs, "output_tokens": outputs}
     for name in ("reasoning_tokens", "cache_read_tokens", "cache_creation_tokens"):
         if name in usage:
@@ -287,7 +313,11 @@ def settle_model_call(
             usage_receipt[name] = value
     if len(output_sha256) != 64 or any(c not in "0123456789abcdef" for c in output_sha256):
         raise ServiceError("RECEIPT_INVALID", "Model output digest is invalid", 400)
-    actual = _cost(inputs, outputs, _price(model))
+    actual = _cost(
+        inputs, outputs, _price(model),
+        usage_receipt.get("cache_read_tokens", 0),
+        usage_receipt.get("cache_creation_tokens", 0),
+    )
     try:
         tenant = lock_tenant(db, run.tenant_id, require_active=False)
     except QuotaError as error:

@@ -45,6 +45,10 @@ def _registry_event(
         "price_revision": model.price_revision,
         "price_per_m_input": str(model.price_per_m_input),
         "price_per_m_output": str(model.price_per_m_output),
+        "price_per_m_cache_read": str(model.price_per_m_cache_read)
+        if model.price_per_m_cache_read is not None else None,
+        "price_per_m_cache_write": str(model.price_per_m_cache_write)
+        if model.price_per_m_cache_write is not None else None,
         "qualification": (model.capabilities or {}).get("qualification"),
     }
     digest = hashlib.sha256(
@@ -105,6 +109,8 @@ class MetadataAttestation:
     limits_source_url: str
     pricing_source_url: str
     effective_date: str
+    price_per_m_cache_read: Decimal | None = None
+    price_per_m_cache_write: Decimal | None = None
 
     @classmethod
     def from_dict(cls, value: dict) -> "MetadataAttestation":
@@ -119,6 +125,14 @@ class MetadataAttestation:
                 limits_source_url=str(value["limits_source_url"]),
                 pricing_source_url=str(value["pricing_source_url"]),
                 effective_date=str(value["effective_date"]),
+                price_per_m_cache_read=(
+                    Decimal(str(value["price_per_m_cache_read"]))
+                    if value.get("price_per_m_cache_read") is not None else None
+                ),
+                price_per_m_cache_write=(
+                    Decimal(str(value["price_per_m_cache_write"]))
+                    if value.get("price_per_m_cache_write") is not None else None
+                ),
             )
             date.fromisoformat(item.effective_date)
         except (KeyError, ValueError, TypeError, ArithmeticError) as error:
@@ -146,6 +160,10 @@ class MetadataAttestation:
             or not item.price_per_m_output.is_finite()
             or item.price_per_m_input < 0
             or item.price_per_m_output < 0
+            or any(rate is not None and (not rate.is_finite() or rate < 0)
+                   for rate in (
+                       item.price_per_m_cache_read, item.price_per_m_cache_write,
+                   ))
         ):
             raise QualificationError("INVALID_ATTESTATION", "Model limits or pricing are invalid")
         return item
@@ -175,6 +193,14 @@ def _qualification_evidence_current(model: ModelEntry) -> bool:
         and record.get("price_revision") == model.price_revision
         and record.get("price_per_m_input") == str(model.price_per_m_input)
         and record.get("price_per_m_output") == str(model.price_per_m_output)
+        and record.get("price_per_m_cache_read") == (
+            str(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        )
+        and record.get("price_per_m_cache_write") == (
+            str(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        )
         and record.get("adapter_digest") == adapter_digest()
         and record.get("status") == "passed"
     )
@@ -434,6 +460,14 @@ def _attestation_matches(model: ModelEntry, attestation: MetadataAttestation) ->
         and model.price_per_m_output is not None
         and Decimal(model.price_per_m_input) == attestation.price_per_m_input
         and Decimal(model.price_per_m_output) == attestation.price_per_m_output
+        and (
+            Decimal(model.price_per_m_cache_read)
+            if model.price_per_m_cache_read is not None else None
+        ) == attestation.price_per_m_cache_read
+        and (
+            Decimal(model.price_per_m_cache_write)
+            if model.price_per_m_cache_write is not None else None
+        ) == attestation.price_per_m_cache_write
     )
 
 
@@ -540,6 +574,14 @@ def qualify_model_entry(
                 "price_revision": model.price_revision,
                 "price_per_m_input": str(model.price_per_m_input),
                 "price_per_m_output": str(model.price_per_m_output),
+                "price_per_m_cache_read": (
+                    str(model.price_per_m_cache_read)
+                    if model.price_per_m_cache_read is not None else None
+                ),
+                "price_per_m_cache_write": (
+                    str(model.price_per_m_cache_write)
+                    if model.price_per_m_cache_write is not None else None
+                ),
                 "adapter_digest": adapter_digest(),
                 "limits_source_url": attestation.limits_source_url,
                 "pricing_source_url": attestation.pricing_source_url,

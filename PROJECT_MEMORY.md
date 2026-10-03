@@ -1700,3 +1700,18 @@ approval review blocked a PowerShell `Remove-Item` attempt. No further removal
 was attempted. The independent Ubuntu WSL Engine reports Docker 29.8.2 and
 continues to run the project containers. Docker Desktop repair remains open;
 the product's local container path works through WSL.
+
+2026-10-03 cached-token pricing increment: ModelEntry and ModelRegister now
+accept optional cache-read and cache-write rates, pinned by attestation,
+qualification record and run snapshot. The reservation uses the highest
+configured input rate; settlement checks cached category counts against total
+input and prices uncached, cache read, cache write and output separately. A
+provider response with nonzero cached usage and no matching attested rate
+still fails closed. Tests covered a $0.000110 settlement, worst-case liability,
+overcount rejection, metadata drift and qualification invalidation. Migration
+`d13c76a3f9b2` added two nullable numeric columns to model_entries; local
+PostgreSQL upgraded with no Alembic drift, local API SQLite was backed up and
+upgraded, and the disposable PostgreSQL probe passed at the new head. The
+full Python suite passed 287 with 2 Windows symlink skips when local PostgreSQL
+and Memgraph gates were enabled. Scoped Ruff passed. API port 8098 restarted
+and health returned OK. No live provider billing has been verified.
