@@ -44,6 +44,10 @@ from platform_app.browser_auth import (
 )
 from platform_app.code_index import code_files_for_revision
 from platform_app.config import settings
+from platform_app.context_compaction import (
+    load_compacted_context,
+    load_general_compacted_context,
+)
 from platform_app.db import Base, SessionLocal, engine, session_scope
 from platform_app.event_signal import EventSignal
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
@@ -1797,6 +1801,37 @@ def download_guest_evidence(
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Content-Disposition": f'attachment; filename="aip-{phase}-evidence.tar"',
         },
+    )
+
+
+@app.get("/v1/runs/{run_id}/context/{summary_sha256}")
+def run_compacted_context(
+    run_id: str,
+    summary_sha256: str,
+    include_source: bool = False,
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    run = authorized_run(db, identity, run_id)
+    if re.fullmatch(r"[0-9a-f]{64}", summary_sha256) is None:
+        raise HTTPException(status_code=404)
+    summary_ref = f"{run.id}/context/summary-{summary_sha256}.json"
+    recorded = db.scalars(select(RunEvent).where(
+        RunEvent.tenant_id == run.tenant_id,
+        RunEvent.run_id == run.id,
+        RunEvent.event_type == "context.compacted",
+    )).all()
+    if not any(event.payload.get("summary_ref") == summary_ref for event in recorded):
+        raise HTTPException(status_code=404)
+    loader = (
+        load_general_compacted_context
+        if (run.config_snapshot or {}).get("execution_profile") == "hosted_vm_v1"
+        else load_compacted_context
+    )
+    summary, source = loader(Path(settings().artifact_dir), run.id, summary_ref)
+    return JSONResponse(
+        {"summary": summary, "source": source if include_source else None},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 

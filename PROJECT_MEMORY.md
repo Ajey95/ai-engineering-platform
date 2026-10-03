@@ -1678,3 +1678,14 @@ fields; a local Chromium visit showed the new card with zero page errors.
 Targeted operations/model/general tests passed 17/17, scoped Ruff, TypeScript
 and Vite production build passed. The API on port 8098 was restarted. The
 full Python suite then passed 280 tests with 5 skips after this change.
+
+2026-10-03 context artifact retrieval increment: `GET
+/v1/runs/{run_id}/context/{summary_sha256}` requires run/project access and a
+recorded `context.compacted` event. It returns the deterministic summary and,
+only on `include_source=true`, the original prompt after scoped SHA-256 and
+lineage checks. Context readers reject oversized artifacts. The controlled
+hosted-role API test passed member access, non-member and cross-tenant denial,
+unrecorded digest denial and changed-source conflict; context tests passed 6/6.
+The original retrieval is for authenticated users; provider-side retrieval is
+still absent. Full suite passed 281 tests with 5 skips; scoped Ruff and diff
+whitespace checks passed.

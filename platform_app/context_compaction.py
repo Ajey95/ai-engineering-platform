@@ -73,6 +73,8 @@ def load_compacted_context(
     summary_path = context_root / f"summary-{match.group(1)}.json"
     if summary_path.is_symlink() or not summary_path.is_file():
         raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact is unavailable", 409)
+    if summary_path.stat().st_size > 32_768:
+        raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact exceeds policy", 409)
     summary_bytes = summary_path.read_bytes()
     if hashlib.sha256(summary_bytes).hexdigest() != match.group(1):
         raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact changed", 409)
@@ -86,6 +88,8 @@ def load_compacted_context(
         source_path = context_root / f"{digest}.json"
         if source_path.is_symlink() or not source_path.is_file():
             raise ValueError("Source artifact is unavailable")
+        if source_path.stat().st_size > 1_000_000:
+            raise ValueError("Source artifact exceeds policy")
         source_bytes = source_path.read_bytes()
         if hashlib.sha256(source_bytes).hexdigest() != digest:
             raise ValueError("Source artifact changed")
@@ -290,6 +294,8 @@ def load_general_compacted_context(
     summary_path = context_root / f"summary-{match.group(1)}.json"
     if summary_path.is_symlink() or not summary_path.is_file():
         raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact is unavailable", 409)
+    if summary_path.stat().st_size > 32_768:
+        raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact exceeds policy", 409)
     summary_bytes = summary_path.read_bytes()
     if hashlib.sha256(summary_bytes).hexdigest() != match.group(1):
         raise ServiceError("CONTEXT_INTEGRITY", "Summary artifact changed", 409)
@@ -303,6 +309,8 @@ def load_general_compacted_context(
         source_path = context_root / f"{digest}.json"
         if source_path.is_symlink() or not source_path.is_file():
             raise ValueError("Source artifact is unavailable")
+        if source_path.stat().st_size > 1_000_000:
+            raise ValueError("Source artifact exceeds policy")
         source_bytes = source_path.read_bytes()
         if hashlib.sha256(source_bytes).hexdigest() != digest:
             raise ValueError("Source artifact changed")
