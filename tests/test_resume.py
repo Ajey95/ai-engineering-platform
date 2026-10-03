@@ -8,7 +8,7 @@ from platform_app.run_ledger import claim_run, resume_input_run, transition
 from platform_app.service import ServiceError
 
 
-def _paused(db: Session) -> Run:
+def _paused(db: Session, *, with_completed_effect: bool = False) -> Run:
     db.add(Tenant(id="tenant", name="Fixture"))
     run = Run(
         id="run",
@@ -28,6 +28,13 @@ def _paused(db: Session) -> Run:
     db.commit()
     run, fence = claim_run(db, run.id, "worker")
     transition(db, run, "worker", fence, "PREPARING")
+    if with_completed_effect:
+        db.add(ToolAction(
+            tenant_id="tenant", run_id=run.id, step_id="named",
+            logical_action="fixture.named", effect_key="n" * 64,
+            arguments_hash="a" * 64, policy_result="allowed",
+            status="COMPLETED", receipt={"status": "PASSED", "output_sha256": "b" * 64},
+        ))
     transition(db, run, "worker", fence, "PAUSED_INPUT")
     db.commit()
     return run
@@ -93,4 +100,27 @@ def test_resume_refuses_uncertain_effect_and_changed_policy():
         with pytest.raises(ServiceError) as policy:
             resume_input_run(db, "tenant", run.id, "actor", "Use the valid form", "resume-key-001")
         assert policy.value.code == "POLICY_REVIEW_REQUIRED"
+    engine.dispose()
+
+
+def test_resume_checks_completed_receipt_and_pinned_plan():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        run = _paused(db, with_completed_effect=True)
+        action = db.scalar(select(ToolAction))
+        action.receipt = {"status": "PASSED", "output_sha256": "c" * 64}
+        db.commit()
+        with pytest.raises(ServiceError) as changed:
+            resume_input_run(db, "tenant", run.id, "actor", "Use the valid form", "key-a")
+        assert changed.value.code == "PAUSE_CHECKPOINT_CHANGED"
+        db.rollback()
+        action = db.scalar(select(ToolAction))
+        action.receipt = {"status": "PASSED", "output_sha256": "b" * 64}
+        run = db.get(Run, "run")
+        run.config_snapshot = {"policy_version": "1.0", "repository_url": "changed"}
+        db.commit()
+        with pytest.raises(ServiceError) as changed_plan:
+            resume_input_run(db, "tenant", run.id, "actor", "Use the valid form", "key-b")
+        assert changed_plan.value.code == "PAUSE_CHECKPOINT_CHANGED"
     engine.dispose()

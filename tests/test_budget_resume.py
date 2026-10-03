@@ -18,6 +18,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
+from platform_app.pause_integrity import pause_event_payload
 from platform_app.service import ServiceError
 
 
@@ -46,7 +47,7 @@ def paused(monkeypatch):
                 base_commit="b" * 40, model_entry_id="model", state="PAUSED_BUDGET",
                 resume_target="PATCHING", config_snapshot={
                     "policy_version": "1.0", "spend_limit_usd": "1.000000",
-                }, last_sequence=1,
+                }, last_sequence=2,
             ),
             BudgetEntry(
                 tenant_id="tenant", run_id="run", category="run_cap",
@@ -54,10 +55,18 @@ def paused(monkeypatch):
             ),
             RunEvent(
                 tenant_id="tenant", run_id="run", sequence=1,
+                event_type="run.state_changed", payload={},
+            ),
+            RunEvent(
+                tenant_id="tenant", run_id="run", sequence=2,
                 event_type="budget.pause", payload={"spend_limit_usd": "1.000000"},
             ),
             OutboxEvent(tenant_id="tenant", topic="run.dispatch", payload={"run_id": "run"}),
         ])
+        db.flush()
+        db.scalar(select(RunEvent).where(
+            RunEvent.event_type == "run.state_changed",
+        )).payload = pause_event_payload(db, db.get(Run, "run"))
         db.commit()
         yield db
     engine.dispose()
@@ -89,11 +98,31 @@ def test_budget_resume_updates_cap_and_dispatches_once(paused):
 
 def test_budget_resume_restores_investigation_target(paused):
     paused.get(Run, "run").resume_target = "INVESTIGATING"
+    paused.query(RunEvent).filter_by(event_type="run.state_changed").one().payload = (
+        pause_event_payload(paused, paused.get(Run, "run"))
+    )
     paused.commit()
     run = approve(paused)
     paused.commit()
     assert run.state == "QUEUED"
     assert run.resume_target == "INVESTIGATING"
+
+
+def test_budget_resume_rejects_changed_run_cap_ledger(paused):
+    paused.scalar(select(BudgetEntry)).reserved_usd = Decimal("0.5")
+    paused.commit()
+    with pytest.raises(ServiceError) as incomplete:
+        approve(paused)
+    assert incomplete.value.code == "LEDGER_INCOMPLETE"
+
+
+def test_budget_resume_rejects_changed_pause_checkpoint(paused):
+    run = paused.get(Run, "run")
+    run.config_snapshot = {**run.config_snapshot, "repository_url": "changed"}
+    paused.commit()
+    with pytest.raises(ServiceError) as changed:
+        approve(paused)
+    assert changed.value.code == "PAUSE_CHECKPOINT_CHANGED"
 
 
 def test_budget_resume_refuses_cap_policy_uncertain_effect_and_expiry(paused):

@@ -234,6 +234,7 @@ def change_model_state(
             # Revoke worker fencing and guest capabilities in the same commit
             # as the security disable. An in-flight provider request may still
             # bill; its old fence cannot turn this pause into a success.
+            from platform_app.pause_integrity import pause_event_payload
             from platform_app.service import append_event
 
             open_states = {
@@ -250,9 +251,7 @@ def change_model_state(
                 run.lease_fence += 1
                 run.lease_owner = None
                 run.lease_until = None
-                append_event(db, run, "run.state_changed", {
-                    "state": run.state, "verdict": run.verdict,
-                })
+                append_event(db, run, "run.state_changed", pause_event_payload(db, run))
                 append_event(db, run, "approval.required", {
                     "kind": "model_emergency_disable", "model_entry_id": model.id,
                 })

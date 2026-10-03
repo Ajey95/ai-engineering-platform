@@ -20,6 +20,7 @@ from platform_app.models import (
     Tenant,
     ToolAction,
 )
+from platform_app.pause_integrity import pause_event_payload, verify_pause_checkpoint
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
 
@@ -131,7 +132,11 @@ def transition(
         if verdict not in {"PASSED", "FAILED", "INCONCLUSIVE", "NOT_RUN"}:
             raise ServiceError("INVALID_VERDICT", "Unknown verification verdict", 400)
         run.verdict = verdict
-    append_event(db, run, "run.state_changed", {"state": next_state, "verdict": run.verdict})
+    payload = (
+        pause_event_payload(db, run) if next_state.startswith("PAUSED")
+        else {"state": next_state, "verdict": run.verdict}
+    )
+    append_event(db, run, "run.state_changed", payload)
     if next_state in TERMINAL_STATES:
         append_event(db, run, "run.closed", {"state": next_state, "verdict": run.verdict})
     if (
@@ -191,6 +196,7 @@ def resume_input_run(
     )
     if uncertain is not None:
         raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    verify_pause_checkpoint(db, run)
     target = run.resume_target
     run.state = "QUEUED"
     run.resume_key = idempotency_key
@@ -320,6 +326,7 @@ def resume_model_approval_run(
     ).limit(1))
     if uncertain is not None:
         raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    verify_pause_checkpoint(db, run)
     target = run.resume_target
     run.state = "REVIEW_READY" if target == "REVIEW_READY" else "QUEUED"
     run.resume_key = idempotency_key
@@ -484,12 +491,16 @@ def resume_budget_run(
     ).limit(1))
     if uncertain is not None:
         raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    verify_pause_checkpoint(db, run)
     run_cap = db.scalar(select(BudgetEntry).where(
         BudgetEntry.tenant_id == tenant_id,
         BudgetEntry.run_id == run_id,
         BudgetEntry.category == "run_cap",
     ).with_for_update())
-    if run_cap is None or run_cap.status != "reserved":
+    if (
+        run_cap is None or run_cap.status != "reserved"
+        or Decimal(run_cap.reserved_usd) != current_limit
+    ):
         raise ServiceError("LEDGER_INCOMPLETE", "Run cap reservation is unavailable", 409)
     target = run.resume_target
     run.config_snapshot = {**snapshot, "spend_limit_usd": str(new_spend_limit_usd)}
