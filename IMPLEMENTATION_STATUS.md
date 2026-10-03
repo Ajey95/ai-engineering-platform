@@ -4,7 +4,7 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 291 tests with 2 Windows symlink skips when local PostgreSQL
+Python suite passed 292 tests with 2 Windows symlink skips when local PostgreSQL
 and Memgraph integration gates were enabled; Ruff and the web production build
 passed. The pinned 40-case synthetic benchmark asset validator and all 40
 baseline/reference hidden-oracle pairs passed. Local PostgreSQL is at migration
@@ -19,9 +19,9 @@ provider, worker, graph, sandbox and remote-media reachability as UNVERIFIED,
 DISABLED or LOCAL_ONLY rather than claiming live health. The updated page loaded
 in local Chromium with no page errors.
 
-Latest local recheck: the refreshed WSL sandbox image `aip-dev-sandbox:0.1.2`
+Latest local recheck: the refreshed WSL sandbox image `aip-dev-sandbox:0.1.3`
 completed a predetermined-provider synthetic budget-pause/replay after the
-cache-pricing change (run `ed57dff7-8968-4452-9887-eab0abd3e318`,
+cache-pricing change (run `2c68adf4-a172-4c38-aaed-4737f9198d44`,
 REVIEW_READY/PASSED, 10 effects,
 two READY recordings). Its first attempt paused before provider HTTP; one owner
 budget approval resumed it with exactly one controlled provider request. The
@@ -468,7 +468,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SBX-02 | Partial | A durable per-run EC2 intent, reviewed 2-vCPU instance types, bounded private launch request, two-phase metadata seal and response isolation checks exist. Terraform defines a private no-NAT guest VPC, S3-only endpoint policy, private artifact bucket, and a separate trusted ECS VPC. A Packer AMI template validates; the hosted coordinator records distinct guest generations and requires confirmed termination between them. No AMI build, applied network proof or live launch exists; hosted admission is disabled by default. |
 | FR-SBX-03 | Partial | Cancellation revokes the sandbox lease transactionally, a sweeper finds expired or closed-run leases, and a durable cleanup worker reconciles lost launch receipts by EC2 client token before termination. Snapshot destruction, live orphan reconciliation and guest callback qualification remain. |
 | FR-BRW-01 | Partial | Controlled Playwright scenario recorded fail/pass in development containers; a versioned general manifest also drove a local HTTP browser scenario with a screenshot in a controlled test. The browser now blocks service workers, cross-origin requests, popups and downloads, fails the result when those actions occur, and bounds event/DOM evidence and screenshots. A real browser test confirmed an external subresource is denied. Hosted authorized-origin and network policy qualification remains. |
-| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots are digest verified, recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. Hosted deletion lifecycle remains. |
+| FR-BRW-02 | Partial | Fixture screenshot/WebM produced; screenshots and recordings now carry SHA-256 receipts. Completed browser effect replay rejects altered video, and media encoding checks the recording digest before authorizing an effect. Recording is disabled when masks are requested, and a closed run can delete one local recording while retaining the transcript. A controlled WSL run with the refreshed image reached REVIEW_READY/PASSED with two READY recordings; hosted deletion lifecycle remains. |
 | FR-REP-01 | Partial | Run packet includes persisted baseline/candidate receipts, patch hash, changed files, model spend, media URLs, verified fixture diff and scoped diagnosis logs. An authorized bounded ZIP now includes the packet, verified local logs/screenshots, available patch and a SHA-256 manifest; live run export returned HTTP 200 and five entries. Media remains linked rather than embedded, and diagnosis alternatives/general repository coverage remain. |
 | FR-REP-02 | Partial | Named/browser/oracle baseline and candidate receipts run in separate development containers. The hosted coordinator records baseline and candidate guest phases in separate fake EC2 VMs, compares declared checks with exact tree/manifest pins, and exposes a hash-verified review diff and scoped S3 evidence tar. The declared checks are explicitly labelled without an independent hidden oracle. No live VM, live model or customer repository has been verified. |
 | FR-REP-03 | Partial | Forty synthetic cases have distinct hidden oracles outside repair trees. Baseline/reference checks passed and 39 generated cases were reproduced in a desktop browser. Hosted independent oracle execution and real repository evidence remain absent. |

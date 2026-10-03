@@ -108,6 +108,7 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
         "downloads": 0,
         "popups": 0,
         "recording": None,
+        "recording_sha256": None,
         "recording_disabled_reason": None,
         "final_screenshot": None,
         "screenshot_sha256": None,
@@ -252,7 +253,12 @@ async def run_scenario(manifest: dict, workspace: Path, artifacts: Path) -> dict
             finally:
                 await context.close()
                 if video is not None:
-                    result["recording"] = Path(await video.path()).name
+                    recording_path = Path(await video.path())
+                    result["recording"] = recording_path.name
+                    with recording_path.open("rb") as stream:
+                        result["recording_sha256"] = hashlib.file_digest(
+                            stream, "sha256"
+                        ).hexdigest()
                 await browser.close()
             if any(result[key] for key in ("blocked_requests", "downloads", "popups")):
                 result["status"] = "FAILED"

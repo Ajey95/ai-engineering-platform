@@ -42,6 +42,38 @@ def test_completed_effect_needs_its_matching_artifacts(tmp_path):
     assert error.value.code == "EFFECT_OUTCOME_UNKNOWN"
 
 
+def test_media_encoding_refuses_changed_browser_recording(tmp_path):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'media-integrity.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        db.add(Run(
+            id="run-a", tenant_id="tenant-a", task_id="task-a", project_id="project-a",
+            created_by="alice", idempotency_key="key-a", request_hash="hash",
+            base_commit="a" * 40, model_entry_id="model-a", state="REPRODUCING",
+            lease_owner="integrity-worker", lease_fence=1,
+            lease_until=utcnow() + timedelta(minutes=2), config_snapshot={},
+        ))
+        db.commit()
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    (evidence / "video.webm").write_bytes(b"changed video")
+    worker = DevelopmentWorker(
+        Path(__file__).resolve().parents[1], tmp_path,
+        session_factory=factory, worker_id="integrity-worker",
+    )
+    with pytest.raises(ServiceError) as changed:
+        worker._encode_media(
+            "run-a", 1, "baseline",
+            {"recording": "video.webm", "recording_sha256": "0" * 64}, evidence,
+        )
+    assert changed.value.code == "EFFECT_OUTCOME_UNKNOWN"
+    with factory() as db:
+        assert db.query(ToolAction).count() == 0
+    engine.dispose()
+
+
 def test_development_worker_does_not_consume_other_dispatches(tmp_path):
     engine = create_engine(f"sqlite:///{(tmp_path / 'worker.db').as_posix()}")
     Base.metadata.create_all(engine)

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import socket
 import subprocess
@@ -16,6 +17,8 @@ from platform_app.dev_sandbox import (
     prepare_workspace,
     run_browser_fixture,
 )
+from platform_app.development_worker import _verified_receipt
+from platform_app.service import ServiceError
 
 
 def test_browser_navigation_stays_on_fixture_origin():
@@ -52,6 +55,13 @@ def test_browser_rejects_external_subresource(tmp_path: Path):
     assert result["status"] == "FAILED"
     assert result["blocked_requests"] >= 1
     assert result["security_error"]
+    video = tmp_path / "artifacts" / result["recording"]
+    assert result["recording_sha256"] == hashlib.sha256(video.read_bytes()).hexdigest()
+    assert _verified_receipt("browser", tmp_path / "artifacts", result) == result
+    video.write_bytes(b"changed")
+    with pytest.raises(ServiceError) as changed:
+        _verified_receipt("browser", tmp_path / "artifacts", result)
+    assert changed.value.code == "EFFECT_OUTCOME_UNKNOWN"
 
 
 def test_workspace_copy_rejects_symlink(tmp_path: Path):

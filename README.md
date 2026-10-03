@@ -252,7 +252,7 @@ SQLite file. This mode is for synthetic data only.
 For the current verified local synthetic session, use `http://127.0.0.1:5173/`.
 Its API is on port 8098, backed by a fresh development SQLite database at
 `artifacts/local-api-20261003.db`, and the polling development worker uses the
-WSL Docker Engine with code-only image `aip-dev-sandbox:0.1.2`. A local UI run
+WSL Docker Engine with code-only image `aip-dev-sandbox:0.1.3`. A local UI run
 reproduced the form bug, captured baseline tests/browser/oracle evidence and
 played its seven-second HLS recording; without a qualified provider, it closed
 `INCONCLUSIVE` and made no repair claim. The WSL distribution requires a live
@@ -284,8 +284,8 @@ When the base image already exists, a small development refresh can be built
 without redownloading browser dependencies:
 
 ```powershell
-wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.2 .'
-uv run python -m scripts.verify_development_worker --controlled-provider --image aip-dev-sandbox:0.1.2
+wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.3 .'
+uv run python -m scripts.verify_development_worker --controlled-provider --image aip-dev-sandbox:0.1.3
 ```
 
 The code-only image inherits the locally installed base image; CI uses the

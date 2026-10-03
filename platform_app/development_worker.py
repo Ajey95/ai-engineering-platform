@@ -102,6 +102,12 @@ def _verified_receipt(step: str, target: Path, receipt: dict) -> dict:
                     != receipt.get("screenshot_sha256")
                 ):
                     raise ValueError("Screenshot digest differs")
+                if key == "recording":
+                    with artifact.open("rb") as stream:
+                        if hashlib.file_digest(stream, "sha256").hexdigest() != (
+                            receipt.get("recording_sha256")
+                        ):
+                            raise ValueError("Recording digest differs")
     except (OSError, ValueError, json.JSONDecodeError) as error:
         raise ServiceError(
             "EFFECT_OUTCOME_UNKNOWN", "Completed effect evidence is unavailable", 409
@@ -391,6 +397,13 @@ class DevelopmentWorker:
                 )
                 db.commit()
             return
+        if (
+            source.is_symlink() or source.is_junction()
+            or sha256_file(source) != browser_receipt.get("recording_sha256")
+        ):
+            raise ServiceError(
+                "EFFECT_OUTCOME_UNKNOWN", "Browser recording changed before encoding", 409
+            )
         with self.session_factory() as db:
             run = db.get(Run, run_id)
             action = authorize_run_effect(
@@ -404,7 +417,8 @@ class DevelopmentWorker:
                     "private_artifact_write",
                     run.id,
                     MEDIA_VERSION,
-                    {"recording_sha256": sha256_file(source), "profile_revision": MEDIA_VERSION},
+                    {"recording_sha256": browser_receipt["recording_sha256"],
+                     "profile_revision": MEDIA_VERSION},
                 ),
             )
             if action.status == "COMPLETED":

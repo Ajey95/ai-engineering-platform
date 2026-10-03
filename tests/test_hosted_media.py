@@ -18,6 +18,7 @@ from platform_app.hosted_media_worker import dispatch_one_hosted_media
 from platform_app.media import expected_hls_master
 from platform_app.media_queue import consume_one_media_dispatch, publish_media_dispatches
 from platform_app.models import (
+    ArtifactCharge,
     MediaMinuteCharge,
     OutboxEvent,
     PrivateMediaPublication,
@@ -184,6 +185,11 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
         assert run.media_status == "READY"
         assert db.get(OutboxEvent, media_event_id("run-a", "baseline")).status == "delivered"
         assert db.query(PrivateMediaPublication).one().status == "ready"
+        artifact_charge = db.query(ArtifactCharge).one()
+        assert artifact_charge.status == "active"
+        assert artifact_charge.byte_count == sum(
+            len(item["Body"]) for item in client.objects.values()
+        )
         charge = db.query(MediaMinuteCharge).one()
         assert (charge.attempt, charge.reserved_seconds, charge.status) == (
             1, 10, "completed",
@@ -203,6 +209,7 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
     ) == media_event_id("run-a", "baseline")
     with factory() as db:
         assert db.query(MediaMinuteCharge).count() == 1
+        assert db.query(ArtifactCharge).count() == 1
     assert client.puts == 5
     assert encode_calls == ["run-a_baseline"]
     engine.dispose()

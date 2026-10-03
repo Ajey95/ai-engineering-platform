@@ -1810,3 +1810,15 @@ fail closed. Focused hosted tests, a tampered-receipt rejection, Ruff and the fu
 Python suite (291 passed, 2 Windows symlink skips with PostgreSQL/Memgraph
 gates) passed. Live AWS restart and uncertain in-flight provider/guest outcomes
 remain unverified.
+
+2026-10-03 browser recording integrity: the fixture browser now records a
+SHA-256 digest for each WebM beside the existing screenshot digest. Completed
+browser action replay rejects a changed recording, and the media encoder
+checks that digest before authorizing a new encode. Focused tamper tests passed.
+The refreshed WSL code-only image `aip-dev-sandbox:0.1.3` completed controlled
+provider budget pause/replay as run `2c68adf4-a172-4c38-aaed-4737f9198d44`:
+zero provider calls before approval, one after, 10 completed effects,
+REVIEW_READY/PASSED, and two READY recordings. The local development worker
+was restarted with the refreshed image. This is synthetic controlled evidence,
+not a live model or hosted customer-repository result. Full regression
+suite passed 292 with 2 Windows symlink skips under PostgreSQL/Memgraph gates.
