@@ -53,10 +53,14 @@ for the private **source** repository only.
 
 1. Finish and verify this README/PROJECT_MEMORY documentation pass. The first
    GitHub Actions run for `50290a1` failed before tests because
-   `astral-sh/setup-uv@v10` was not a resolvable action ref. The workflow is
-   being pinned to the verified `v10.2.0` commit
-   `c18668ad3cf93ea998bef934396af7bb5c839dc7`. Commit/push, then inspect
-   the new Actions run and fix any actual failing gate before reporting CI green.
+   `astral-sh/setup-uv@v10` was not a resolvable action ref. Commit `56a8712`
+   pinned the verified `v10.2.0` commit and reached the jobs: web and PostgreSQL
+   passed, while Linux pytest returned browser `ERROR` without installed
+   Playwright Chromium, and the sandbox probe reached `REVIEW_READY/PASSED`
+   but media encoding failed without host FFmpeg. The workflow now installs
+   Chromium/dependencies in the Python job and FFmpeg in the sandbox job.
+   Commit/push, inspect the next Actions run, and fix any remaining failing
+   gate before reporting CI green.
 2. On continuation, run `git status --short`, `git log -1 --oneline`,
    `gh run list --repo Ajey95/ai-engineering-platform --limit 3` and read this
    section plus `IMPLEMENTATION_STATUS.md`. Recheck any long-running local

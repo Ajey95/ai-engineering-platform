@@ -22,6 +22,7 @@ jobs:
         with:
           version: '0.12.20'
       - run: uv sync --frozen --extra dev
+      - run: uv run --frozen python -m playwright install --with-deps chromium
       - run: uv run --frozen ruff check platform_app tests scripts migrations/versions/eb8f0a7d36c4_tenant_inference_quotas.py
       - run: uv run --frozen python -m pytest -q
       - run: uv run --frozen python -m scripts.validate_benchmark --manifest benchmarks/suite-v1.json
@@ -93,5 +94,6 @@ jobs:
         with:
           version: '0.12.20'
       - run: uv sync --frozen --extra dev
+      - run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
       - run: docker build -f infra/dev-sandbox/Dockerfile -t aip-dev-sandbox:0.1.0 .
       - run: uv run --frozen python -m scripts.verify_development_worker --runtime native --controlled-provider
