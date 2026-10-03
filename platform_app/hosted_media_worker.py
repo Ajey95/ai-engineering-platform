@@ -11,8 +11,15 @@ from sqlalchemy import or_, select
 
 from platform_app.config import Settings
 from platform_app.db import utcnow
-from platform_app.media import MediaError, encode_hls, sha256_file
-from platform_app.models import OutboxEvent, Run, SandboxLease, ToolAction
+from platform_app.media import (
+    MediaError,
+    encode_hls,
+    expected_hls_master,
+    probe,
+    sha256_file,
+)
+from platform_app.media_quota import finish_media_attempt, reserve_media_attempt
+from platform_app.models import MediaMinuteCharge, OutboxEvent, Run, SandboxLease, ToolAction
 from platform_app.private_media_store import publish_recording
 from platform_app.recording_deletion import deletion_for
 from platform_app.service import ServiceError, canonical_hash
@@ -89,6 +96,9 @@ def dispatch_one_hosted_media(
         event.processing_token = token
         event.processing_lease_until = utcnow() + timedelta(hours=1)
         db.commit()
+    charge_id = None
+    charge_committed = False
+    encoded = False
     try:
         deleted = False
         with session_factory() as db:
@@ -117,6 +127,33 @@ def dispatch_one_hosted_media(
                 ):
                     raise ServiceError("MEDIA_SOURCE_INVALID", "Guest receipt changed", 409)
                 source = _scoped_source(root, run, event)
+                duration = probe(source).duration_seconds
+                master_path = expected_hls_master(
+                    payload["source_sha256"], root / "private-media",
+                    run.tenant_id, f"{run.id}_{label}",
+                )
+                if any(
+                    path.is_symlink() or path.is_junction()
+                    for path in (master_path.parent, master_path)
+                ):
+                    raise ServiceError("MEDIA_SOURCE_INVALID", "Encoded target is linked", 409)
+                if master_path.is_file():
+                    charge = db.scalar(select(MediaMinuteCharge).where(
+                        MediaMinuteCharge.tenant_id == run.tenant_id,
+                        MediaMinuteCharge.run_id == run.id,
+                        MediaMinuteCharge.label == label,
+                        MediaMinuteCharge.source_sha256 == payload["source_sha256"],
+                    ).order_by(MediaMinuteCharge.attempt.desc()).limit(1))
+                    if charge is None:
+                        raise ServiceError(
+                            "MEDIA_QUOTA_MISSING", "Existing encode has no reservation", 409
+                        )
+                else:
+                    charge = reserve_media_attempt(
+                        db, run.id, label, event.attempts,
+                        payload["source_sha256"], duration,
+                    )
+                charge_id = charge.id
                 arguments = canonical_hash({
                     "label": label, "source_sha256": payload["source_sha256"],
                     "profile_revision": "hls-v1",
@@ -139,11 +176,13 @@ def dispatch_one_hosted_media(
                     raise ServiceError("MEDIA_SOURCE_CONFLICT", "Media action changed", 409)
                 tenant_id, run_id = run.tenant_id, run.id
                 db.commit()
+                charge_committed = True
         if deleted:
             return _finish(session_factory, event_id, token, "delivered", None)
         master = encode_hls(
             source, root / "private-media", tenant_id, f"{run_id}_{label}",
         )
+        encoded = True
         with session_factory() as db:
             event = db.scalar(select(OutboxEvent).where(
                 OutboxEvent.id == event_id,
@@ -166,6 +205,7 @@ def dispatch_one_hosted_media(
                 "master": str(master.relative_to(root)),
                 "source_sha256": event.payload["source_sha256"],
             }
+            finish_media_attempt(db, charge_id, succeeded=True)
             db.commit()
         with session_factory() as db:
             run = db.get(Run, run_id)
@@ -187,8 +227,15 @@ def dispatch_one_hosted_media(
             db.commit()
         return _finish(session_factory, event_id, token, "delivered", None)
     except (ServiceError, MediaError, OSError, subprocess.TimeoutExpired) as error:
+        if charge_committed and charge_id and not encoded:
+            with session_factory() as db:
+                finish_media_attempt(db, charge_id, succeeded=False)
+                db.commit()
         code = error.code if isinstance(error, ServiceError) else type(error).__name__
-        permanent = code in {"MEDIA_SOURCE_INVALID", "MEDIA_SOURCE_CONFLICT"}
+        permanent = code in {
+            "MEDIA_SOURCE_INVALID", "MEDIA_SOURCE_CONFLICT",
+            "MEDIA_QUOTA_EXHAUSTED", "MEDIA_QUOTA_MISSING", "MEDIA_QUOTA_CONFLICT",
+        }
         return _finish(
             session_factory, event_id, token,
             "failed" if permanent else "pending", code,

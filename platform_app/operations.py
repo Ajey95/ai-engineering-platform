@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from platform_app.alert_delivery import validate_pager_destination
 from platform_app.config import settings
 from platform_app.db import utcnow
+from platform_app.media_quota import media_usage_seconds
 from platform_app.model_qualification import qualification_current
 from platform_app.models import (
     BudgetEntry,
@@ -313,7 +314,13 @@ def operations_snapshot(
                     ),
                     "daily_cap_minutes": tenant.daily_sandbox_minutes},
         "tools": {"by_policy_result": tools, "failed_count": failed_tools},
-        "media": {"by_status": media},
+        "media": {
+            "by_status": media,
+            "used_minutes_today": round(
+                media_usage_seconds(db, tenant_id, now=now) / 60, 2
+            ),
+            "daily_cap_minutes": tenant.daily_media_minutes,
+        },
         "model_calls": _model_call_metrics(db, tenant_id, cutoff),
         "inference_budget": {
             "reserved_usd": str(Decimal(reserved)), "actual_usd": str(Decimal(actual)),

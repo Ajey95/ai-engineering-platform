@@ -27,6 +27,7 @@ class Tenant(Base):
     __table_args__ = (
         CheckConstraint("daily_export_cap_bytes > 0", name="ck_tenant_export_cap_positive"),
         CheckConstraint("daily_sandbox_minutes > 0", name="ck_tenant_sandbox_cap_positive"),
+        CheckConstraint("daily_media_minutes > 0", name="ck_tenant_media_cap_positive"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200))
@@ -37,6 +38,7 @@ class Tenant(Base):
     max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
     daily_export_cap_bytes: Mapped[int] = mapped_column(Integer, default=100_000_000)
     daily_sandbox_minutes: Mapped[int] = mapped_column(Integer, default=120)
+    daily_media_minutes: Mapped[int] = mapped_column(Integer, default=120)
     model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
     plugin_allowlist: Mapped[list] = mapped_column(JsonType, default=list)
 
@@ -362,6 +364,37 @@ class PrivateMediaPublication(Base):
     byte_count: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), default="ready")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MediaMinuteCharge(Base):
+    __tablename__ = "media_minute_charges"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "run_id", "label", "attempt",
+            name="uq_media_minute_attempt",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "run_id"], ["runs.tenant_id", "runs.id"],
+            name="fk_media_minute_run_scope",
+        ),
+        CheckConstraint("label IN ('baseline', 'candidate')", name="ck_media_minute_label"),
+        CheckConstraint("attempt > 0", name="ck_media_minute_attempt_positive"),
+        CheckConstraint("reserved_seconds > 0", name="ck_media_minute_seconds_positive"),
+        CheckConstraint(
+            "status IN ('reserved', 'completed', 'failed')",
+            name="ck_media_minute_status",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    run_id: Mapped[str] = mapped_column(String(36), index=True)
+    label: Mapped[str] = mapped_column(String(16))
+    attempt: Mapped[int] = mapped_column(Integer)
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    reserved_seconds: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="reserved")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SandboxLease(Base):

@@ -82,6 +82,16 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def expected_hls_master(
+    source_sha256: str, artifact_root: Path, tenant_id: str, run_id: str,
+    encoder_digest: str = "local-ffmpeg",
+) -> Path:
+    effect_key = hashlib.sha256(
+        f"{source_sha256}:{PROFILE_REVISION}:{encoder_digest}".encode()
+    ).hexdigest()
+    return artifact_root.resolve() / tenant_id / run_id / "media" / effect_key / "master.m3u8"
+
+
 @tracer.start_as_current_span("media.encode")
 def encode_hls(
     source: Path,
@@ -98,12 +108,12 @@ def encode_hls(
     source = source.resolve()
     info = probe(source)
     recording_hash = sha256_file(source)
-    effect_key = hashlib.sha256(
-        f"{recording_hash}:{PROFILE_REVISION}:{encoder_digest}".encode()
-    ).hexdigest()
+    master = expected_hls_master(
+        recording_hash, artifact_root, tenant_id, run_id, encoder_digest,
+    )
+    effect_key = master.parent.name
     base = artifact_root.resolve() / tenant_id / run_id / "media"
     target = base / effect_key
-    master = target / "master.m3u8"
     if master.is_file():
         _publish_pointer(base, effect_key)
         return master

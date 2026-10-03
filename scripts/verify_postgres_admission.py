@@ -27,10 +27,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from platform_app.export_quota import reserve_export
+from platform_app.media_quota import media_usage_seconds, reserve_media_attempt
 from platform_app.models import (
     AuditEvent,
     BudgetEntry,
     ExportCharge,
+    MediaMinuteCharge,
     ModelEntry,
     OutboxEvent,
     Project,
@@ -307,6 +309,7 @@ def main() -> int:
             "--max-concurrent-runs", "2",
             "--daily-export-cap-bytes", "100",
             "--daily-sandbox-minutes", "30",
+            "--daily-media-minutes", "2",
         ]
         operator_result = subprocess.run(
             operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
@@ -326,6 +329,7 @@ def main() -> int:
                 tenant.max_concurrent_runs == 2
                 and tenant.daily_export_cap_bytes == 100
                 and tenant.daily_sandbox_minutes == 30
+                and tenant.daily_media_minutes == 2
                 and Decimal(tenant.daily_inference_cap_usd) == Decimal("0.015")
                 and session.scalar(select(func.count()).select_from(AuditEvent).where(
                     AuditEvent.tenant_id == tenant.id,
@@ -454,6 +458,35 @@ def main() -> int:
         postgres_sandbox_quota_race = sorted(sandbox_results) == [
             "SANDBOX_QUOTA_EXHAUSTED", "reserved",
         ] and sandbox_rows == 1 and sandbox_seconds == 1800
+        media_barrier = Barrier(2)
+
+        def reserve_media(index: int) -> str:
+            media_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    reserve_media_attempt(
+                        session, f"sandbox-race-{index}", "baseline", 1,
+                        f"{index}" * 64, 70.0,
+                    )
+                    session.commit()
+                    return "reserved"
+                except ServiceError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(reserve_media, index) for index in range(2)]
+            media_results = [future.result(timeout=30) for future in futures]
+        with Session(engine) as session:
+            media_rows = session.scalar(select(func.count(MediaMinuteCharge.id)).where(
+                MediaMinuteCharge.tenant_id == "fixture-tenant",
+            ))
+            media_seconds = media_usage_seconds(
+                session, "fixture-tenant", now=datetime.now(UTC),
+            )
+        postgres_media_quota_race = sorted(media_results) == [
+            "MEDIA_QUOTA_EXHAUSTED", "reserved",
+        ] and media_rows == 1 and media_seconds == 70
         # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
         # Both requests must return successfully while only one final event exists.
         import platform_app.api as api_module
@@ -542,6 +575,7 @@ def main() -> int:
             "postgres_inference_quota_race": postgres_inference_quota_race,
             "postgres_export_quota_race": postgres_export_quota_race,
             "postgres_sandbox_quota_race": postgres_sandbox_quota_race,
+            "postgres_media_quota_race": postgres_media_quota_race,
             "quota_operator_audit": quota_operator_audit,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
@@ -566,6 +600,7 @@ def main() -> int:
             and postgres_inference_quota_race
             and postgres_export_quota_race
             and postgres_sandbox_quota_race
+            and postgres_media_quota_race
             and quota_operator_audit
             and all(v == 1 for v in counts.values())
             else 1

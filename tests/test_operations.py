@@ -11,6 +11,7 @@ from platform_app.db import Base
 from platform_app.models import (
     BudgetEntry,
     ExportCharge,
+    MediaMinuteCharge,
     OperationalAlert,
     OutboxEvent,
     Project,
@@ -121,6 +122,16 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             tenant_id="tenant-a", run_id="passed", actor="owner",
             bytes_count=1234, archive_sha256="a" * 64, created_at=now,
         ))
+        db.add(MediaMinuteCharge(
+            tenant_id="tenant-a", run_id="passed", label="baseline", attempt=1,
+            source_sha256="c" * 64, reserved_seconds=90, status="completed",
+            created_at=now,
+        ))
+        db.add(MediaMinuteCharge(
+            tenant_id="tenant-b", run_id="foreign", label="baseline", attempt=1,
+            source_sha256="d" * 64, reserved_seconds=300, status="completed",
+            created_at=now,
+        ))
         db.commit()
         snapshot = operations_snapshot(db, "tenant-a", now=now)
         assert snapshot["runs"]["by_state"] == {
@@ -157,6 +168,8 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["exports"] == {
             "used_bytes_today": 1234, "daily_cap_bytes": 100_000_000,
         }
+        assert snapshot["media"]["used_minutes_today"] == 1.5
+        assert snapshot["media"]["daily_cap_minutes"] == 120
         assert snapshot["warnings_now"] == [
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",
             "media_encode_age", "sandbox_orphan",

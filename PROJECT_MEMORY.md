@@ -1769,3 +1769,17 @@ restarted on 8098. The UI showed the new 120-minute field and operations
 metric without page errors. Full Python suite: 288 passed, 2 Windows symlink
 skips with PostgreSQL and Memgraph gates enabled; Ruff, TypeScript and Vite
 production build passed. Media-minute and artifact-byte quotas remain.
+
+2026-10-03 hosted media-minute quota: migration `a804e7b9c122` adds a default
+120-minute daily cap and a tenant/run/label/attempt charge ledger. The hosted
+media worker probes source duration, reserves seconds under a tenant row lock
+before FFmpeg, marks completed/failed attempts, and recognizes an already
+ready HLS encode with its charge so publication replay does not reserve again.
+Failed or uncertain attempts keep liability; a fresh retry consumes another
+reservation. The trusted CLI, owner Settings and Operations summary expose
+the cap and usage. Local PostgreSQL upgraded with no Alembic drift; disposable
+two-run media race admitted one 70-second charge at a 120-second cap. Local
+SQLite API database was backed up, extended and restarted on 8098. Full suite
+289 passed, 2 Windows symlink skips with PostgreSQL/Memgraph gates; Ruff,
+TypeScript and Vite passed; Chromium showed the new field/metric with no page
+errors. Artifact-byte quota remains.

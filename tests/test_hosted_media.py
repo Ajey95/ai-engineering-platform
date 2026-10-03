@@ -5,6 +5,7 @@ import hashlib
 import io
 import tarfile
 from datetime import timedelta
+from types import SimpleNamespace
 
 from botocore.exceptions import ClientError
 from sqlalchemy import create_engine
@@ -14,8 +15,10 @@ from platform_app.config import Settings
 from platform_app.db import Base, utcnow
 from platform_app.hosted_media import media_event_id, stage_hosted_recording
 from platform_app.hosted_media_worker import dispatch_one_hosted_media
+from platform_app.media import expected_hls_master
 from platform_app.media_queue import consume_one_media_dispatch, publish_media_dispatches
 from platform_app.models import (
+    MediaMinuteCharge,
     OutboxEvent,
     PrivateMediaPublication,
     Project,
@@ -129,9 +132,17 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
         assert run.media_status == "PROCESSING"
         assert db.get(OutboxEvent, media_event_id("run-a", "baseline")).status == "pending"
 
+    encode_calls = []
+
     def fake_encode(source, artifact_root, tenant_id, run_id):
         assert source.read_bytes() == b"a controlled browser WebM source"
-        target = artifact_root / tenant_id / run_id / "media" / ("c" * 64)
+        target = expected_hls_master(
+            hashlib.sha256(source.read_bytes()).hexdigest(), artifact_root,
+            tenant_id, run_id,
+        ).parent
+        if (target / "master.m3u8").is_file():
+            return target / "master.m3u8"
+        encode_calls.append(run_id)
         variant = target / "low"
         variant.mkdir(parents=True, exist_ok=True)
         (target / "master.m3u8").write_text("#EXTM3U\nlow/index.m3u8\n")
@@ -143,6 +154,7 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
     import platform_app.hosted_media_worker as module
 
     monkeypatch.setattr(module, "encode_hls", fake_encode)
+    monkeypatch.setattr(module, "probe", lambda _source: SimpleNamespace(duration_seconds=10.0))
     client = FakeS3()
     config = Settings(private_media_bucket="private-bucket")
     sqs = FakeSQS()
@@ -172,10 +184,25 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
         assert run.media_status == "READY"
         assert db.get(OutboxEvent, media_event_id("run-a", "baseline")).status == "delivered"
         assert db.query(PrivateMediaPublication).one().status == "ready"
+        charge = db.query(MediaMinuteCharge).one()
+        assert (charge.attempt, charge.reserved_seconds, charge.status) == (
+            1, 10, "completed",
+        )
         assert db.query(ToolAction).filter_by(step_id="media_baseline").one().status == "COMPLETED"
         assert stage_hosted_recording(
             db, run, "worker-a", 1, output, "baseline", tmp_path
         )
         assert run.media_status == "READY"
     assert dispatch_one_hosted_media(factory, config, tmp_path, client) is None
+    with factory() as db:
+        event = db.get(OutboxEvent, media_event_id("run-a", "baseline"))
+        event.status = "pending"
+        db.commit()
+    assert dispatch_one_hosted_media(
+        factory, config, tmp_path, client, event_id=media_event_id("run-a", "baseline"),
+    ) == media_event_id("run-a", "baseline")
+    with factory() as db:
+        assert db.query(MediaMinuteCharge).count() == 1
+    assert client.puts == 5
+    assert encode_calls == ["run-a_baseline"]
     engine.dispose()
