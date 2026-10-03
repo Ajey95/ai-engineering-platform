@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from math import ceil
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,10 +20,11 @@ from platform_app.models import (
     OutboxEvent,
     Run,
     RunEvent,
+    SandboxLease,
     Tenant,
     ToolAction,
 )
-from platform_app.operational_alerts import alert_read
+from platform_app.operational_alerts import SANDBOX_CLEANUP_GRACE, alert_read
 from platform_app.ops_alerts import current_warning_details
 
 
@@ -32,6 +34,51 @@ def _age(now: datetime, created_at: datetime | None) -> int | None:
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=UTC)
     return max(0, int((now - created_at).total_seconds()))
+
+
+def _model_call_metrics(db: Session, tenant_id: str, cutoff: datetime) -> dict:
+    rows = db.scalars(select(RunEvent).where(
+        RunEvent.tenant_id == tenant_id,
+        RunEvent.created_at >= cutoff,
+        RunEvent.event_type.in_(["model.started", "model.completed", "model.rejected"]),
+    ).order_by(RunEvent.run_id, RunEvent.sequence).limit(10_001)).all()
+    if len(rows) > 10_000:
+        return {"status": "TRUNCATED", "completed_count": None,
+                "definite_rejection_count": None, "unsettled_count": None,
+                "completed_latency_ms_p50": None, "completed_latency_ms_p95": None,
+                "definite_rejection_rate": None}
+    starts: dict[tuple[str, str], datetime] = {}
+    completed = rejected = 0
+    latencies: list[int] = []
+    for event in rows:
+        step = event.payload.get("step_id") if isinstance(event.payload, dict) else None
+        if not isinstance(step, str) or not step:
+            continue
+        key = event.run_id, step
+        instant = event.created_at
+        if instant.tzinfo is None:
+            instant = instant.replace(tzinfo=UTC)
+        if event.event_type == "model.started":
+            starts[key] = instant
+        elif event.event_type == "model.completed" and key in starts:
+            completed += 1
+            latencies.append(max(0, int((instant - starts.pop(key)).total_seconds() * 1000)))
+        elif event.event_type == "model.rejected" and key in starts:
+            rejected += 1
+            starts.pop(key)
+    latencies.sort()
+
+    def percentile(fraction: float) -> int | None:
+        return latencies[max(0, ceil(len(latencies) * fraction) - 1)] if latencies else None
+
+    decided = completed + rejected
+    return {
+        "status": "MEASURED", "completed_count": completed,
+        "definite_rejection_count": rejected, "unsettled_count": len(starts),
+        "completed_latency_ms_p50": percentile(0.5),
+        "completed_latency_ms_p95": percentile(0.95),
+        "definite_rejection_rate": round(rejected / decided, 4) if decided else None,
+    }
 
 
 def operations_snapshot(
@@ -78,6 +125,18 @@ def operations_snapshot(
         OutboxEvent.topic == "memory.project",
         OutboxEvent.status == "pending",
     )).one()
+    media_pending, oldest_media = db.execute(select(
+        func.count(OutboxEvent.id), func.min(OutboxEvent.created_at),
+    ).where(
+        OutboxEvent.tenant_id == tenant_id,
+        OutboxEvent.topic == "media.transcode",
+        OutboxEvent.status.in_(["pending", "processing"]),
+    )).one()
+    expired_leases = db.scalar(select(func.count(SandboxLease.id)).where(
+        SandboxLease.tenant_id == tenant_id,
+        SandboxLease.state != "terminated",
+        SandboxLease.expires_at <= now - SANDBOX_CLEANUP_GRACE,
+    )) or 0
     tools = dict(db.execute(select(ToolAction.policy_result, func.count(ToolAction.id)).where(
         ToolAction.tenant_id == tenant_id, ToolAction.created_at >= cutoff,
     ).group_by(ToolAction.policy_result)).all())
@@ -108,11 +167,16 @@ def operations_snapshot(
     tenant = db.get(Tenant, tenant_id)
     queue_age = _age(now, oldest_queued)
     graph_age = _age(now, oldest_graph)
+    media_age = _age(now, oldest_media)
     warnings = []
     if queue_age is not None and queue_age > 300:
         warnings.append("runnable_queue_over_5_minutes")
     if graph_age is not None and graph_age > 60:
         warnings.append("graph_projection_over_60_seconds")
+    if media_age is not None and media_age > 600:
+        warnings.append("media_encode_age")
+    if expired_leases:
+        warnings.append("sandbox_orphan")
     active_alerts = db.scalars(select(OperationalAlert).where(
         OperationalAlert.tenant_id == tenant_id,
         OperationalAlert.state.in_(["observing", "firing"]),
@@ -146,8 +210,12 @@ def operations_snapshot(
         },
         "queue": {"queued_count": queued, "oldest_age_seconds": queue_age},
         "graph": {"pending_count": graph_pending, "oldest_age_seconds": graph_age},
+        "media_queue": {"pending_count": media_pending, "oldest_age_seconds": media_age},
+        "sandbox": {"expired_lease_count": expired_leases,
+                    "cleanup_grace_seconds": int(SANDBOX_CLEANUP_GRACE.total_seconds())},
         "tools": {"by_policy_result": tools, "failed_count": failed_tools},
         "media": {"by_status": media},
+        "model_calls": _model_call_metrics(db, tenant_id, cutoff),
         "inference_budget": {
             "reserved_usd": str(Decimal(reserved)), "actual_usd": str(Decimal(actual)),
         },
@@ -165,7 +233,8 @@ def operations_snapshot(
             "delivered_count_24h": delivered_notifications,
         },
         "unavailable": [
-            "provider_latency_and_error_rate", "context_size_and_compaction_rate",
+            "provider_time_to_first_event", "provider_uncertain_outcomes",
+            "context_size_and_compaction_rate",
             "token_estimation_error", "sandbox_utilization", "abr_playback_quality",
         ],
     }

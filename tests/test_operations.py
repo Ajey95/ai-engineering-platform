@@ -16,6 +16,7 @@ from platform_app.models import (
     Project,
     Run,
     RunEvent,
+    SandboxLease,
     Task,
     Tenant,
     TenantMembership,
@@ -57,6 +58,18 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             tenant_id="tenant-a", topic="memory.project", payload={"fact_id": "x"},
             status="pending", created_at=now - timedelta(seconds=90),
         ))
+        db.add(OutboxEvent(
+            tenant_id="tenant-a", topic="media.transcode", payload={"run_id": "passed"},
+            status="pending", created_at=now - timedelta(minutes=11),
+        ))
+        db.add(SandboxLease(
+            tenant_id="tenant-a", project_id="tenant-a-project", run_id="passed",
+            generation=1, phase="baseline", lease_fence=1, client_token="client-a",
+            state="revoked", image_id="ami-123", instance_type="t3.medium",
+            subnet_id="subnet-123", security_group_id="sg-123",
+            root_device_name="/dev/sda1", disk_gib=20,
+            expires_at=now - timedelta(minutes=6),
+        ))
         db.add(ToolAction(
             tenant_id="tenant-a", run_id="passed", step_id="step",
             logical_action="test", effect_key="e" * 64, arguments_hash="f" * 64,
@@ -65,6 +78,23 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         db.add(RunEvent(
             tenant_id="tenant-a", run_id="passed", sequence=1,
             event_type="review.decision", payload={"decision": "accepted"},
+            created_at=now,
+        ))
+        for sequence, kind, step, age in (
+            (2, "model.started", "call-1", 5),
+            (3, "model.completed", "call-1", 4),
+            (4, "model.started", "call-2", 3),
+            (5, "model.rejected", "call-2", 2),
+            (6, "model.started", "call-3", 1),
+        ):
+            db.add(RunEvent(
+                tenant_id="tenant-a", run_id="passed", sequence=sequence,
+                event_type=kind, payload={"step_id": step},
+                created_at=now - timedelta(seconds=age),
+            ))
+        db.add(RunEvent(
+            tenant_id="tenant-b", run_id="foreign", sequence=1,
+            event_type="model.started", payload={"step_id": "foreign"},
             created_at=now,
         ))
         db.add(BudgetEntry(
@@ -91,7 +121,17 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["runs"]["review_acceptance_rate"] == 1.0
         assert snapshot["queue"] == {"queued_count": 1, "oldest_age_seconds": 420}
         assert snapshot["graph"] == {"pending_count": 1, "oldest_age_seconds": 90}
+        assert snapshot["media_queue"] == {"pending_count": 1, "oldest_age_seconds": 660}
+        assert snapshot["sandbox"] == {"expired_lease_count": 1,
+                                       "cleanup_grace_seconds": 300}
         assert snapshot["tools"] == {"by_policy_result": {"denied": 1}, "failed_count": 1}
+        assert snapshot["model_calls"] == {
+            "status": "MEASURED", "completed_count": 1,
+            "definite_rejection_count": 1, "unsettled_count": 1,
+            "completed_latency_ms_p50": 1000,
+            "completed_latency_ms_p95": 1000,
+            "definite_rejection_rate": 0.5,
+        }
         assert snapshot["inference_budget"] == {
             "reserved_usd": "1.000000", "actual_usd": "1.250000",
         }
@@ -100,11 +140,12 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         }
         assert snapshot["warnings_now"] == [
             "runnable_queue_over_5_minutes", "graph_projection_over_60_seconds",
+            "media_encode_age", "sandbox_orphan",
         ]
         assert snapshot["pager_delivery"]["pending_count"] == 0
         assert snapshot["pager_delivery"]["delivered_count_24h"] == 0
         assert [item["owner"] for item in snapshot["warning_details"]] == [
-            "platform-on-call", "platform-on-call",
+            "platform-on-call", "platform-on-call", "media-on-call", "sandbox-on-call",
         ]
         assert all(item["evaluation"] == "snapshot_only"
                    for item in snapshot["warning_details"])

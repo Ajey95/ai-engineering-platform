@@ -20,6 +20,8 @@ from platform_app.memory import select_context_facts
 from platform_app.model_budget import reject_model_call, reserve_model_call, settle_model_call
 from platform_app.models import (
     BudgetEntry,
+    CodeFileVersion,
+    CodeIndexSnapshot,
     MemoryFact,
     ModelEntry,
     Run,
@@ -127,11 +129,36 @@ def _log_excerpts(output: GuestOutput, observation: dict) -> list[dict]:
     return sorted(excerpts, key=lambda item: item["path"])[:8]
 
 
+def _indexed_context(db, run: Run, source: SourceArchive, paths: frozenset[str]) -> list[dict]:
+    snapshot = db.scalar(select(CodeIndexSnapshot).where(
+        CodeIndexSnapshot.tenant_id == run.tenant_id,
+        CodeIndexSnapshot.project_id == run.project_id,
+        CodeIndexSnapshot.commit == source.commit,
+        CodeIndexSnapshot.archive_sha256 == source.sha256,
+    ))
+    if snapshot is None:
+        return []
+    rows = db.scalars(select(CodeFileVersion).where(
+        CodeFileVersion.snapshot_id == snapshot.id,
+        CodeFileVersion.tenant_id == run.tenant_id,
+        CodeFileVersion.project_id == run.project_id,
+        CodeFileVersion.path.in_(sorted(paths)),
+    ).order_by(CodeFileVersion.path)).all()
+    return [{
+        "path": row.path, "sha256": row.sha256, "language": row.language,
+        "symbols": row.symbols[:20], "imports": row.imports[:20],
+        "index_snapshot_id": snapshot.id,
+        "commit": snapshot.commit, "archive_sha256": snapshot.archive_sha256,
+        "trust_label": "derived_from_untrusted_repository_content",
+    } for row in rows]
+
+
 def build_general_prompt(
     run: Run, task: Task, source: SourceArchive,
     baseline: GuestOutput, allowed_paths: frozenset[str],
     feedback: tuple[dict, ...] = (),
     memory_facts: list[MemoryFact] | None = None,
+    indexed_context: list[dict] | None = None,
 ) -> str:
     if source.commit != run.base_commit or baseline.result.get("phase") != "baseline":
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Pinned inputs differ", 409)
@@ -145,6 +172,22 @@ def build_general_prompt(
     ):
         raise ServiceError("CONTEXT_UNSATISFIABLE", "Prior attempt feedback is invalid", 409)
     browser = observation.get("browser") or {}
+    source_items = _source_items(source, allowed_paths)
+    hashes = {item["path"]: item["base_sha256"] for item in source_items}
+    indexed = indexed_context or []
+    if len(indexed) > 4 or any(
+        not isinstance(item, dict)
+        or item.get("path") not in hashes
+        or item.get("sha256") != hashes[item["path"]]
+        or item.get("commit") != source.commit
+        or item.get("archive_sha256") != source.sha256
+        or not isinstance(item.get("symbols"), list)
+        or not isinstance(item.get("imports"), list)
+        or len(item["symbols"]) > 20
+        or len(item["imports"]) > 20
+        for item in indexed
+    ):
+        raise ServiceError("CODE_INDEX_CONFLICT", "Indexed code differs from pinned source", 409)
     prompt = {
         "schema_version": "1.0",
         "task": {
@@ -154,7 +197,8 @@ def build_general_prompt(
         "base_commit": run.base_commit,
         "source_archive_sha256": source.sha256,
         "allowed_paths": sorted(allowed_paths),
-        "source_items": _source_items(source, allowed_paths),
+        "source_items": source_items,
+        "indexed_code": indexed,
         "selected_memory": verified_memory_items(run, memory_facts),
         "prior_attempts": feedback,
         "baseline": {
@@ -235,8 +279,10 @@ def request_general_patch(
         memory_facts = select_context_facts(
             db, run.tenant_id, run.project_id, run.base_commit, task.report
         )
+        indexed = _indexed_context(db, run, source, allowed_paths)
         prompt = build_general_prompt(
-            run, task, source, baseline, allowed_paths, feedback, memory_facts
+            run, task, source, baseline, allowed_paths, feedback, memory_facts,
+            indexed,
         )
         prior = db.scalar(select(ToolAction).where(
             ToolAction.run_id == run.id,

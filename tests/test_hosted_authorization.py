@@ -8,7 +8,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from platform_app import api, auth, run_ledger, service
@@ -69,12 +69,13 @@ def test_oidc_rejects_wrong_claims_and_algorithm(hosted):
     assert rejected.value.status == 401
 
 
-def test_hosted_project_roles_and_tenant_selection(hosted):
+def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
     config, key = hosted
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(engine)
+    monkeypatch.setattr(api, "SessionLocal", sessionmaker(bind=engine))
     with Session(engine) as db:
         db.add_all(
             [
@@ -135,6 +136,11 @@ def test_hosted_project_roles_and_tenant_selection(hosted):
                 == 404
             )
             assert client.get("/v1/projects").status_code == 401
+            assert client.get("/v1/runs/paused-run/events").status_code == 401
+            assert client.get(
+                "/v1/runs/paused-run/events",
+                headers={**alice, "X-Tenant-ID": "tenant-b"},
+            ).status_code == 404
             body = {
                 "project_id": "project-a",
                 "report": "Another valid report",

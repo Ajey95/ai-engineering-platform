@@ -14,6 +14,7 @@ from platform_app.models import (
     Project,
     Run,
     RunEvent,
+    SandboxLease,
     Task,
     Tenant,
 )
@@ -158,4 +159,45 @@ def test_alert_transition_cannot_claim_another_tenant():
         with pytest.raises(IntegrityError):
             db.flush()
         db.rollback()
+    engine.dispose()
+
+
+def test_media_and_expired_sandbox_warnings_are_tenant_scoped_and_resolve():
+    engine = _database()
+    now = datetime(2026, 10, 2, 12, tzinfo=UTC)
+    with Session(engine) as db:
+        run = _run(db, "a", now)
+        _run(db, "b", now)
+        run.state = "COMPLETED"
+        media = OutboxEvent(
+            tenant_id="a", topic="media.transcode", payload={"run_id": run.id},
+            status="processing", created_at=now - timedelta(minutes=11),
+        )
+        lease = SandboxLease(
+            tenant_id="a", project_id="a-project", run_id=run.id,
+            generation=1, phase="baseline", lease_fence=1, client_token="client-a",
+            state="terminating", image_id="ami-123", instance_type="t3.medium",
+            subnet_id="subnet-123", security_group_id="sg-123",
+            root_device_name="/dev/sda1", disk_gib=20,
+            expires_at=now - timedelta(minutes=6),
+        )
+        db.add_all([media, lease])
+        db.commit()
+        evaluate_tenant_alerts(db, "a", now=now)
+        db.commit()
+        alerts = {row.alert_id: row for row in db.scalars(select(OperationalAlert).where(
+            OperationalAlert.tenant_id == "a"
+        )).all()}
+        assert alerts["media_encode_age"].state == "firing"
+        assert alerts["sandbox_orphan"].state == "firing"
+        assert alerts["sandbox_orphan"].evidence["expired_lease_count"] == 1
+        assert not db.scalars(select(OperationalAlert).where(
+            OperationalAlert.tenant_id == "b"
+        )).all()
+        media.status = "delivered"
+        lease.state = "terminated"
+        evaluate_tenant_alerts(db, "a", now=now + timedelta(seconds=30))
+        db.commit()
+        assert alerts["media_encode_age"].state == "resolved"
+        assert alerts["sandbox_orphan"].state == "resolved"
     engine.dispose()

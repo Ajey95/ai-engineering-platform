@@ -14,6 +14,7 @@ from platform_app.models import (
     OutboxEvent,
     Run,
     RunEvent,
+    SandboxLease,
     Tenant,
 )
 from platform_app.ops_alerts import ALERTS
@@ -21,6 +22,7 @@ from platform_app.service import ServiceError
 
 MAX_SAMPLE_GAP = timedelta(seconds=90)
 QUEUE_SUSTAINED = timedelta(minutes=10)
+SANDBOX_CLEANUP_GRACE = timedelta(minutes=5)
 
 
 def _aware(value: datetime) -> datetime:
@@ -119,6 +121,32 @@ def evaluate_tenant_alerts(
         db, tenant_id=tenant_id, alert_id="graph_projection_over_60_seconds",
         exceeded=bool(pending and graph_age > 60),
         evidence={"pending_count": pending, "oldest_age_seconds": graph_age},
+        now=now, sustained_for=timedelta(), current=current,
+    )
+    media_pending, oldest_media = db.execute(select(
+        func.count(OutboxEvent.id), func.min(OutboxEvent.created_at),
+    ).where(
+        OutboxEvent.tenant_id == tenant_id,
+        OutboxEvent.topic == "media.transcode",
+        OutboxEvent.status.in_(["pending", "processing"]),
+    )).one()
+    media_age = max(0, int((now - _aware(oldest_media)).total_seconds())) if oldest_media else 0
+    _evaluate_threshold(
+        db, tenant_id=tenant_id, alert_id="media_encode_age",
+        exceeded=bool(media_pending and media_age > 600),
+        evidence={"pending_count": media_pending, "oldest_age_seconds": media_age},
+        now=now, sustained_for=timedelta(), current=current,
+    )
+    expired_leases = db.scalar(select(func.count(SandboxLease.id)).where(
+        SandboxLease.tenant_id == tenant_id,
+        SandboxLease.state != "terminated",
+        SandboxLease.expires_at <= now - SANDBOX_CLEANUP_GRACE,
+    )) or 0
+    _evaluate_threshold(
+        db, tenant_id=tenant_id, alert_id="sandbox_orphan",
+        exceeded=expired_leases > 0,
+        evidence={"expired_lease_count": expired_leases,
+                  "cleanup_grace_seconds": int(SANDBOX_CLEANUP_GRACE.total_seconds())},
         now=now, sustained_for=timedelta(), current=current,
     )
     newest_breach = db.scalar(select(RunEvent).join(

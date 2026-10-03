@@ -1320,10 +1320,13 @@ async def run_events(
     request: Request,
     last_event_id: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
-    identity: tuple[str, str] = Depends(principal),
-    db: Session = Depends(db_session),
+    x_tenant_id: str | None = Header(default=None),
 ):
-    authorized_run(db, identity, run_id)
+    # A streaming response can outlive the request handler for hours. Close the
+    # initial authorization session before returning it; every poll opens its own.
+    with SessionLocal() as auth_db:
+        identity = principal(request, authorization, x_tenant_id, auth_db)
+        authorized_run(auth_db, identity, run_id)
     try:
         cursor = max(0, int(last_event_id or "0"))
     except ValueError as error:

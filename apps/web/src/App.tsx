@@ -32,8 +32,14 @@ type OperationsSummary = {
     inconclusive_rate: number | null; review_acceptance_rate: number | null }
   queue: { queued_count: number; oldest_age_seconds: number | null }
   graph: { pending_count: number; oldest_age_seconds: number | null }
+  media_queue: { pending_count: number; oldest_age_seconds: number | null }
+  sandbox: { expired_lease_count: number; cleanup_grace_seconds: number }
   tools: { by_policy_result: Record<string, number>; failed_count: number }
   media: { by_status: Record<string, number> }
+  model_calls: { status: 'MEASURED' | 'TRUNCATED'; completed_count: number | null
+    definite_rejection_count: number | null; unsettled_count: number | null
+    completed_latency_ms_p50: number | null; completed_latency_ms_p95: number | null
+    definite_rejection_rate: number | null }
   inference_budget: { reserved_usd: string; actual_usd: string }
   exports: { used_bytes_today: number; daily_cap_bytes: number }
   warnings_now: string[]
@@ -461,13 +467,16 @@ export default function App({ identity, onSignOut }: {
               <div className="content-panel ops-metric"><small>Runnable queue</small><strong>{operations.queue.queued_count}</strong><span>Oldest {operations.queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.queue.oldest_age_seconds / 60)} min`}</span></div>
               <div className="content-panel ops-metric"><small>Graph projection backlog</small><strong>{operations.graph.pending_count}</strong><span>Oldest {operations.graph.oldest_age_seconds === null ? 'none' : `${Math.round(operations.graph.oldest_age_seconds)} sec`}</span></div>
               <div className="content-panel ops-metric"><small>Inference budget</small><strong>${Number(operations.inference_budget.actual_usd).toFixed(2)}</strong><span>${Number(operations.inference_budget.reserved_usd).toFixed(2)} outstanding reservations</span></div>
+              <div className="content-panel ops-metric"><small>Model calls</small><strong>{operations.model_calls.completed_count ?? '—'}</strong><span>{operations.model_calls.status === 'TRUNCATED' ? 'Summary limit reached' : `${operations.model_calls.definite_rejection_count} rejected · ${operations.model_calls.unsettled_count} open`}</span><span>Completed call p95 {operations.model_calls.completed_latency_ms_p95 === null ? 'unavailable' : `${(operations.model_calls.completed_latency_ms_p95 / 1000).toFixed(1)} s`}</span></div>
+              <div className="content-panel ops-metric"><small>Media jobs waiting</small><strong>{operations.media_queue.pending_count}</strong><span>Oldest {operations.media_queue.oldest_age_seconds === null ? 'none' : `${Math.round(operations.media_queue.oldest_age_seconds / 60)} min`}</span></div>
+              <div className="content-panel ops-metric"><small>Expired sandbox leases</small><strong>{operations.sandbox.expired_lease_count}</strong><span>After {Math.round(operations.sandbox.cleanup_grace_seconds / 60)} min cleanup grace</span></div>
             </div>
             <div className="ops-grid">
               <div className="content-panel"><h2>Run states</h2>{Object.entries(operations.runs.by_state).length ? Object.entries(operations.runs.by_state).map(([state, count]) => <div className="list-row" key={state}><span>{state.replaceAll('_', ' ')}</span><strong>{count}</strong></div>) : <p className="muted">No runs in this window.</p>}</div>
               <div className="content-panel"><h2>Tools, media and exports</h2><div className="list-row"><span>Failed tool effects</span><strong>{operations.tools.failed_count}</strong></div>{Object.entries(operations.tools.by_policy_result).map(([policy, count]) => <div className="list-row" key={policy}><span>Tool policy: {policy}</span><strong>{count}</strong></div>)}{Object.entries(operations.media.by_status).map(([status, count]) => <div className="list-row" key={status}><span>Media: {status}</span><strong>{count}</strong></div>)}<div className="list-row"><span>Evidence ZIP today</span><strong>{(operations.exports.used_bytes_today / 1_000_000).toFixed(2)} / {(operations.exports.daily_cap_bytes / 1_000_000).toFixed(0)} MB</strong></div></div>
             </div>
             <div className="content-panel"><h2>Durable alerts</h2>{operations.active_alerts.length ? operations.active_alerts.map(item => <div className="ops-warning" key={item.id}><strong>{item.alert_id.replaceAll('_', ' ')} · {item.state} · {item.severity}</strong><small>{item.impact} Owner: {item.owner}. First seen {date(item.first_seen_at)}.</small><small>Runbook: {item.runbook}</small>{item.state === 'firing' && <form onSubmit={event => void resolveOperationsAlert(event, item.id)}><label>Resolution reason<input name="reason" minLength={8} maxLength={2000} required placeholder="What was checked and fixed?" /></label><button className="secondary-button" disabled={busy}>Resolve</button></form>}</div>) : <p className="muted">No active alerts recorded.</p>}<p className="muted">Alert state updates while the operations evaluator is running. Pager destination: {operations.pager_delivery.configured ? 'configured' : 'not configured'} · {operations.pager_delivery.pending_count} pending · {operations.pager_delivery.delivered_count_24h} delivered in 24 hours.</p></div>
-            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warning_details.length ? operations.warning_details.map(item => <p className="ops-warning" key={item.alert_id}>{item.alert_id.replaceAll('_', ' ')} · {item.owner}<small>{item.impact}</small></p>) : <p className="muted">No current queue or graph backlog threshold is exceeded.</p>}<p className="muted">These instantaneous checks may differ from sustained alert state.</p></div>
+            <div className="content-panel"><h2>Current threshold checks</h2>{operations.warning_details.length ? operations.warning_details.map(item => <p className="ops-warning" key={item.alert_id}>{item.alert_id.replaceAll('_', ' ')} · {item.owner}<small>{item.impact}</small></p>) : <p className="muted">No current queue, graph, media or sandbox threshold is exceeded.</p>}<p className="muted">These instantaneous checks may differ from sustained alert state.</p></div>
             <div className="content-panel"><h2>Metrics awaiting instrumentation</h2><p className="muted">{operations.unavailable.map(item => item.replaceAll('_', ' ')).join(' · ')}</p></div>
           </>}
         </section>}

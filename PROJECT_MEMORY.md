@@ -1367,3 +1367,37 @@ source references and status immediately before serialization. A controlled
 provider test confirmed one verified fact entered the proposal and an
 unverified model claim did not. Focused context/general/memory tests: 9 passed;
 Ruff passed. No live provider was called.
+
+The hosted proposal now reads indexed symbols/imports for its allowed paths
+from the canonical code snapshot. It requires exact tenant, project, commit
+and archive hash, then compares each indexed file SHA-256 against the same
+file extracted for the model prompt. A controlled provider test confirmed
+the symbol was included and a changed indexed file hash fails before another
+provider call. Focused general-agent/code-index tests: 2 passed, 1 skipped.
+
+2026-10-03 operations increment: the owner-only operations snapshot now pairs persisted
+model.started/completed/rejected events by run and step, reporting completed,
+definitely rejected and still open calls, plus completed-call p50/p95 duration.
+The UI displayed these from the local API in Chromium without page errors.
+The tenant-locked alert evaluator now raises durable warnings for media.transcode
+jobs older than ten minutes and nonterminated sandbox leases beyond expiry plus
+a five-minute cleanup grace. Their snapshot counts, age and warning details are
+tenant scoped; controlled tests cover firing, resolution and cross-tenant
+exclusion. Provider first-event latency, uncertain outcomes, sandbox utilization
+and live hosted telemetry are still unmeasured. The full Python suite before
+the final alert additions passed 260 tests with 5 skips; focused alert/operations
+tests passed 6 and Ruff/TypeScript checks passed after the additions.
+
+2026-10-03 SSE capacity correction: the prior SSE route kept request-scoped
+FastAPI yield dependencies during streaming. A 20-viewer loopback replay
+succeeded, while 50 and 100 simultaneous viewers timed out and stalled API
+readiness. Replacing only the dependency scope did not fix that deadlock.
+The SSE route now authenticates and authorizes with a short SessionLocal context
+before constructing StreamingResponse; each stream poll still opens and closes
+its own scoped session. Production-style bearer/tenant denial tests pass. A
+repeatable loopback probe (`scripts.verify_local_capacity`) measured 250/250
+project reads at offered 50 requests/s with p95 19.8 ms and 100/100 SSE
+viewers receiving replay event IDs, p95 initial ID 1909.9 ms. This is local
+SQLite development evidence, not hosted 99.5% availability, connected-viewer
+delivery target, OIDC, recovery or API production capacity. The local API at
+8098 and Vite at 5173 remain running after the correction.
