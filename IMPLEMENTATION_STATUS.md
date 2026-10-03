@@ -105,10 +105,11 @@ not a live provider, customer repository, AWS or GitHub qualification.
   actual EC2/S3 end-to-end run are still absent.
 - `infra/control-plane/Dockerfile` packages the locked API/migrations/operator
   code as a non-root image separate from the synthetic fixture runner. The
-  WSL Docker build produced local image digest
-  `sha256:8c7c46b3f0f550d92410bff41bc37f6393a2d91cfbd0584478a00e7fb77af4b5`.
-  A read-only, capability-dropped smoke container returned health 200,
-  unauthenticated projects 401 and token-authorized empty projects. It has not
+  current WSL Docker build produced local image digest
+  `sha256:d74d049c419e8bc754047231f462f2a27c92a82d9ba94487cae44116e7ba1885`
+  from revision `c74dbb60aaf1c778ce21b08fd459f242e948f9c5`.
+  Its non-root, read-only, capability-dropped container returned internal health
+  and readiness 200 and served the local-only development projects route. It has not
   been pushed, deployed, or run against hosted PostgreSQL/OIDC.
 - `infra/terraform/trusted-network`, `control-plane` and `pilot` now define a
   two-zone trusted VPC with private NAT egress, ECS API/agent/publication
@@ -120,9 +121,11 @@ not a live provider, customer repository, AWS or GitHub qualification.
   values, the image is pinned by digest, initial desired counts are zero and
   hosted admission defaults off. AWS provider 6.67.0 `fmt` and `validate`
   passed for the root and new modules. No account plan/apply, app DB bootstrap,
-  restore or live network/IAM qualification exists; the Memgraph server and
-  telemetry collection remain outside this stack. The media image built
-  locally but has not consumed a live AWS queue.
+  hosted restore or live network/IAM qualification exists; the Memgraph server and
+  telemetry collection remain outside this stack. The current media image
+  `sha256:c38b984b501b1580bfaa53b63c17051191f0ee8d7df60eee0c858da0bb380d26`
+  built locally and encoded a real fixture WebM through `encode_hls` in a
+  non-root, read-only, no-network container. It has not consumed a live AWS queue.
 - Scoped GitHub repository connection records accept canonical HTTPS
   owner/repo identity and opaque `secret://` references. Maintainers can register
   or disable them; readers can list readiness without seeing the secret reference.
@@ -167,8 +170,8 @@ not a live provider, customer repository, AWS or GitHub qualification.
   durable outbox wakeup to the independent media SQS queue, encode HLS in a
   separate worker, publish checksummed private objects and expose hosted
   manifest links only after publication. A controlled fake guest/SQS/S3 replay
-  passed; the actual FFmpeg encoder already has a local development test, but
-  the new media image, AWS queue, EFS and CDN path are not live qualified.
+  passed; the current media image completed a real local FFmpeg encode, but
+  the AWS queue, EFS and CDN path are not live qualified.
 - `platform_app/run_ledger.py`: fenced leases, state transition and effect intent/receipt.
   Three consecutive completed actions with the same normalized signature and
   stable result fields now fail the active run with a visible loop event.
@@ -493,7 +496,7 @@ acceptance behavior is not verified. `Missing` means no complete implementation.
 | FR-SEC-05 | Partial | Admission/cancel and membership changes are audited; OIDC tenant/project roles are enforced in local tests. Hosted browser sessions use validated ID tokens, PKCE, server-side session storage, CSRF/origin checks and membership rechecks in controlled tests. Immutable retention and live identity qualification absent. |
 | FR-OBS-01 | Partial | API, admission, outbox, worker, tool, model, context and media spans carry W3C trace context; in-memory lineage test passed. No collector/export validation or hosted load trace qualification. |
 | FR-OBS-02 | Partial | Owner-only operations API/UI show tenant-scoped 24-hour run states, verification and reviewer rates, queue/graph/media-job age, expired sandbox leases, tool failures, media state, spend/reservations, export quota, durable alerts and pager backlog. Persisted model call events provide completed/rejected/uncertain/open counts, completed-call p50/p95 latency, compaction count, median conservative input estimate and median estimate error against reported input for completed calls; older calls without estimates show unavailable samples. First-event latency, sandbox utilization, ABR playback and hosted telemetry remain unavailable. |
-| FR-OPS-01 | Partial | The versioned catalog assigns owner, impact and runbook to five paging and five warning classes. A tenant-row-locked evaluator persists queue warnings only after repeated samples over ten minutes, resets after a monitoring gap, fires graph lag and overdue media-job/expired-sandbox-lease warnings, and derives sticky budget-breach pages from canonical run events. A provider warning requires at least 20 decided calls, error rate over 20 percent in a five-minute window and five minutes of continuous samples; the outcome sample includes definite rejections and unresolved failures. Owner-only API/UI resolution requires a reason. A separate signed HTTPS webhook dispatcher uses durable retry state and an event ID idempotency key; controlled HTTP and PostgreSQL probes passed. The local evaluator runs continuously. Live pager delivery, hosted egress/supervision, responder qualification and restore drill remain absent. |
+| FR-OPS-01 | Partial | The versioned catalog assigns owner, impact and runbook to five paging and five warning classes. A tenant-row-locked evaluator persists queue warnings only after repeated samples over ten minutes, resets after a monitoring gap, fires graph lag and overdue media-job/expired-sandbox-lease warnings, and derives sticky budget-breach pages from canonical run events. A provider warning requires at least 20 decided calls, error rate over 20 percent in a five-minute window and five minutes of continuous samples; the outcome sample includes definite rejections and unresolved failures. Owner-only API/UI resolution requires a reason. A separate signed HTTPS webhook dispatcher uses durable retry state and an event ID idempotency key; controlled HTTP and PostgreSQL probes passed. The local evaluator runs continuously. An isolated local PostgreSQL structural restore drill passed; live pager delivery, hosted egress/supervision, responder qualification and hosted restore remain absent. |
 | FR-EVL-01 | Partial | A strict versioned suite contains 40 distinct synthetic fixtures with hidden oracles, 12 development, 12 regression and 16 release cases. All 30 bug baselines fail, 10 non-bug baselines pass, and all 40 references pass their hidden checks. The manifest validates pinned Git assets and a local sandbox image ID; hosted protected oracle execution and real provider trials remain absent. |
 | FR-EVL-02 | Partial | A conservative scorer requires one distinct attempt per case and one model, includes failures in denominators and flags false success. Supplied result fields are labelled unverified; no provider has run a complete benchmark or received qualification. |
 | FR-EVL-03 | Partial | Push/PR workflow runs Python tests/lint, pinned benchmark asset validation and synthetic oracle checks, web build, PostgreSQL migration/race probe and controlled container fixture. Local equivalents passed; no GitHub remote or hosted workflow run exists, and live model-change qualification remains. |
@@ -540,10 +543,12 @@ tests passed. No hosted FFmpeg task has been verified.
    checkpointed phase restart passed. The safe prelaunch and recorded-baseline restart paths passed controlled
    tests, while uncertain in-flight effects and hosted restore remain unexercised.
 4. The worker publishes local HLS recordings and a tenant-scoped route; the
-   independent media queue, hosted authorization and private CDN remain.
-5. A pinned synthetic benchmark exists, but no model has run its 40 cases and
-   no restore drill exists, so success, reliability, latency and cost targets
-   cannot be claimed.
+   independent media queue has controlled tests, while hosted authorization and
+   private CDN delivery remain unqualified.
+5. A pinned synthetic benchmark and repeatable local PostgreSQL restore drill
+   exist, but no model has run all 40 cases and no hosted restore or failover
+   drill has run, so success, reliability, latency and cost targets cannot be
+   claimed.
 
 ## Next implementation sequence
 

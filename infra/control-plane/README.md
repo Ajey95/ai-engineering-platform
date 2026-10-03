@@ -12,6 +12,13 @@ Build with Docker Engine:
 wsl -d Ubuntu-24.04 -u root -- docker build -f /mnt/d/projects/aiplatform/infra/control-plane/Dockerfile -t aip-control-plane:0.1.1 /mnt/d/projects/aiplatform
 ```
 
+The current local image built from revision
+`c74dbb60aaf1c778ce21b08fd459f242e948f9c5` as
+`sha256:d74d049c419e8bc754047231f462f2a27c92a82d9ba94487cae44116e7ba1885`.
+Its non-root, read-only, capability-dropped smoke container served internal
+health and readiness 200. These are local image checks, not hosted release
+qualification.
+
 The API defaults to port 8000. A hosted task must inject a migrated PostgreSQL
 URL, validated OIDC settings, the public HTTPS base URL and scoped secret
 references, and use a workload role. Run `alembic upgrade head` as a separate

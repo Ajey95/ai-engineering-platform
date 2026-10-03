@@ -1859,3 +1859,14 @@ INCONCLUSIVE without a qualified provider. Media reached READY; the local WebM
 SHA-256 matched its browser action receipt. Chromium played the seven-second
 HLS at 360p and observed 230 ms to first frame with no page or server errors.
 This is a fixture-only flow and does not qualify live model repair.
+
+2026-10-03 current deployment-image check: WSL Docker built the trusted
+control-plane image from revision `c74dbb60aaf1c778ce21b08fd459f242e948f9c5`
+as `sha256:d74d049c419e8bc754047231f462f2a27c92a82d9ba94487cae44116e7ba1885`.
+An unprivileged, read-only, capability-dropped smoke container passed internal
+health and readiness 200. The media image built as
+`sha256:c38b984b501b1580bfaa53b63c17051191f0ee8d7df60eee0c858da0bb380d26`.
+Under no-network, read-only, capability-dropped flags it imported the worker
+and encoded the fresh UI run's real WebM through `encode_hls`, producing a
+master playlist. Neither image has been pushed or hosted; the AWS queue,
+OIDC, EFS, Memgraph server, CDN and provider accounts remain unqualified.
