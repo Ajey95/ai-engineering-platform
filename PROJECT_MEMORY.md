@@ -1890,3 +1890,9 @@ The control image imported API and hosted consumer modules as non-root under
 read-only/no-network/capability-dropped flags. The media image completed an
 actual `encode_hls` of the UI run WebM under the same flags with a writable
 tmpfs. These are local image checks; neither image was pushed or hosted.
+
+2026-10-03 OTLP export check: a separate Python process configured the
+development loopback OTLP endpoint, emitted `hosted.export.smoke`, flushed its
+batch processor, and a controlled local HTTP receiver parsed the protobuf
+request and found exactly that span. `tests/test_telemetry.py` passed 4/4.
+This verifies local export wiring, not a hosted collector or correlated load.

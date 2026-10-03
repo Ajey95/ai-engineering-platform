@@ -1,8 +1,14 @@
 import json
+import os
+import subprocess
+import sys
+import threading
 from decimal import Decimal
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from opentelemetry import trace
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -178,3 +184,51 @@ def test_hosted_run_and_media_consumers_resume_recorded_parent(exporter):
         item.context.span_id for item in spans if item.name == "run.parent"
     ) for span in spans if span.name != "run.parent")
     engine.dispose()
+
+
+def test_configured_otlp_exports_to_local_collector():
+    received = []
+
+    class Collector(BaseHTTPRequestHandler):
+        def do_POST(self):
+            assert self.path == "/v1/traces"
+            length = int(self.headers["Content-Length"])
+            received.append(self.rfile.read(length))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Collector)
+    server.timeout = 10
+    thread = threading.Thread(target=server.handle_request, daemon=True)
+    thread.start()
+    environment = os.environ.copy()
+    environment.update({
+        "AIP_ENVIRONMENT": "development",
+        "AIP_OTLP_TRACES_ENDPOINT": (
+            f"http://127.0.0.1:{server.server_port}/v1/traces"
+        ),
+    })
+    script = (
+        "from opentelemetry import trace; "
+        "from platform_app.telemetry import configure_telemetry, tracer; "
+        "configure_telemetry(); "
+        "span=tracer.start_span('hosted.export.smoke'); span.end(); "
+        "assert trace.get_tracer_provider().force_flush(timeout_millis=5000)"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script], check=False, capture_output=True,
+            text=True, timeout=12, env=environment,
+        )
+        thread.join(timeout=10)
+        assert result.returncode == 0, result.stderr
+        assert len(received) == 1
+        request = ExportTraceServiceRequest.FromString(received[0])
+        names = [span.name for resource in request.resource_spans
+                 for scope in resource.scope_spans for span in scope.spans]
+        assert names == ["hosted.export.smoke"]
+    finally:
+        server.server_close()
