@@ -22,6 +22,7 @@ from platform_app.models import (
     Project,
     Run,
     RunEvent,
+    SandboxLease,
     Task,
     Tenant,
     ToolAction,
@@ -251,4 +252,119 @@ def test_hosted_worker_joins_two_guest_generations_and_review_receipt(
     with factory() as db:
         assert db.get(Run, "run-d").state == "FAILED"
         assert db.get(OutboxEvent, "dispatch-d").status == "failed"
+        baseline_result = {
+            "phase": "baseline", "lease_id": "lease-old-baseline",
+            "source_sha256": build_guest_bundle(source, manifest).sha256,
+            "guest_exit_code": 0,
+            "baseline": {
+                "status": "BASELINE_RECORDED",
+                "manifest_sha256": build_guest_bundle(source, manifest).manifest_sha256,
+                "named_tests": {"unit": {
+                    "status": "PASSED", "tested_tree_sha256": "c" * 64,
+                    "post_test_tree_sha256": "c" * 64,
+                }},
+                "browser": {
+                    "status": "FAILED", "tested_tree_sha256": "c" * 64,
+                    "post_browser_tree_sha256": "c" * 64,
+                },
+            },
+        }
+        db.add(Run(
+            id="run-e", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="k5",
+            request_hash="f" * 64, base_commit=source.commit,
+            model_entry_id="model-a", state="INVESTIGATING",
+            lease_owner="dead-worker", lease_fence=1,
+            lease_until=datetime.now(UTC) - timedelta(seconds=1),
+            config_snapshot=run.config_snapshot,
+        ))
+        db.add(SandboxLease(
+            id="lease-old-baseline", tenant_id="tenant-a", project_id="project-a",
+            run_id="run-e", generation=1, phase="baseline", lease_fence=1,
+            client_token="f" * 64, state="terminated", image_id=spec.image_id,
+            instance_type=spec.instance_type, subnet_id=spec.subnet_id,
+            security_group_id=spec.security_group_id,
+            root_device_name=spec.root_device_name, disk_gib=spec.disk_gib,
+            reserved_seconds=1800, expires_at=datetime.now(UTC),
+            source_sha256=baseline_result["source_sha256"],
+            result_summary=baseline_result,
+            result_sha256=hashlib.sha256(json.dumps(
+                baseline_result, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest(),
+            result_received_at=datetime.now(UTC), terminated_at=datetime.now(UTC),
+        ))
+        db.add(OutboxEvent(
+            id="dispatch-e", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-e"}, status="processing", attempts=1,
+        ))
+        db.commit()
+    monkeypatch.setattr(module, "fetch_guest_output", lambda *_args, **_kwargs:
+                        GuestOutput(baseline_result, b""))
+    assert worker.recover_stale() == 1
+    with factory() as db:
+        assert db.get(Run, "run-e").state == "QUEUED"
+        assert db.get(OutboxEvent, "dispatch-e").status == "pending"
+    launched_before = len(phases)
+    assert worker.process_event("dispatch-e") == "run-e"
+    assert phases[launched_before:] == ["candidate"]
+    with factory() as db:
+        assert db.get(Run, "run-e").state == "REVIEW_READY"
+        assert db.get(OutboxEvent, "dispatch-e").status == "delivered"
+        db.add(Run(
+            id="run-f", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="k6",
+            request_hash="f" * 64, base_commit=source.commit,
+            model_entry_id="model-a", state="REPRODUCING",
+            lease_owner="dead-worker", lease_fence=1,
+            lease_until=datetime.now(UTC) - timedelta(seconds=1),
+            config_snapshot=run.config_snapshot,
+        ))
+        db.add(OutboxEvent(
+            id="dispatch-f", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-f"}, status="processing", attempts=1,
+        ))
+        db.commit()
+    assert worker.recover_stale() == 1
+    with factory() as db:
+        assert db.get(Run, "run-f").state == "QUEUED"
+        assert db.get(OutboxEvent, "dispatch-f").status == "pending"
+        tamper_receipt = {**baseline_result, "lease_id": "lease-tampered"}
+        db.add(Run(
+            id="run-g", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="k7",
+            request_hash="f" * 64, base_commit=source.commit,
+            model_entry_id="model-a", state="INVESTIGATING",
+            lease_owner="dead-worker", lease_fence=1,
+            lease_until=datetime.now(UTC) - timedelta(seconds=1),
+            config_snapshot=run.config_snapshot,
+        ))
+        db.add(SandboxLease(
+            id="lease-tampered", tenant_id="tenant-a", project_id="project-a",
+            run_id="run-g", generation=1, phase="baseline", lease_fence=1,
+            client_token="e" * 64, state="terminated", image_id=spec.image_id,
+            instance_type=spec.instance_type, subnet_id=spec.subnet_id,
+            security_group_id=spec.security_group_id,
+            root_device_name=spec.root_device_name, disk_gib=spec.disk_gib,
+            reserved_seconds=1800, expires_at=datetime.now(UTC),
+            source_sha256=tamper_receipt["source_sha256"],
+            result_summary=tamper_receipt,
+            result_sha256=hashlib.sha256(json.dumps(
+                tamper_receipt, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest(),
+            result_received_at=datetime.now(UTC), terminated_at=datetime.now(UTC),
+        ))
+        db.add(OutboxEvent(
+            id="dispatch-g", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-g"}, status="processing", attempts=1,
+        ))
+        db.commit()
+    monkeypatch.setattr(module, "fetch_guest_output", lambda *_args, **_kwargs:
+                        GuestOutput({**tamper_receipt, "guest_exit_code": 9}, b""))
+    assert worker.recover_stale() == 1
+    launched_before = len(phases)
+    assert worker.process_event("dispatch-g") == "run-g"
+    assert len(phases) == launched_before
+    with factory() as db:
+        assert db.get(Run, "run-g").state == "INCONCLUSIVE"
+        assert db.get(OutboxEvent, "dispatch-g").status == "failed"
     engine.dispose()

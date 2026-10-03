@@ -1798,3 +1798,15 @@ showed the 5 GB field and metric without page errors. Full suite: 291 passed,
 2 Windows symlink skips with PostgreSQL/Memgraph gates; Ruff, TypeScript and
 Vite production build passed. The quota covers private HLS objects only; live
 AWS publication and other artifact classes remain unverified/unmetered.
+
+2026-10-03 hosted recorded-effect restart: stale hosted dispatches may requeue
+PREPARING/REPRODUCING with no prior effect, or later active phases only when
+all guest leases are terminated with canonical results and all tool actions
+are completed. A new worker fence is claimed, and completed guest replay
+rechecks the pinned source bundle, launch spec, old-fence S3 result and its
+canonical digest/summary. A controlled post-baseline restart reached
+REVIEW_READY while launching only the candidate guest; pending effects still
+fail closed. Focused hosted tests, a tampered-receipt rejection, Ruff and the full
+Python suite (291 passed, 2 Windows symlink skips with PostgreSQL/Memgraph
+gates) passed. Live AWS restart and uncertain in-flight provider/guest outcomes
+remain unverified.

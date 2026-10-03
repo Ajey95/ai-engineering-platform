@@ -38,6 +38,7 @@ from platform_app.sandbox_broker import (
     terminate_revoked_sandbox,
 )
 from platform_app.sandbox_bundle import build_guest_bundle
+from platform_app.sandbox_transport import SandboxObjectKeys, fetch_guest_output
 from platform_app.service import ServiceError, append_event, request_cancel
 
 
@@ -94,6 +95,9 @@ class HostedWorker:
 
     def _guest(self, run_id: str, fence: int, source, phase: str):
         self._check(run_id, fence)
+        replayed = self._replayed_guest(run_id, fence, source, phase)
+        if replayed is not None:
+            return replayed
         with self.session_factory() as db:
             lease = stage_and_launch_baseline(
                 db, run_id, self.worker_id, fence, source, self.spec,
@@ -128,6 +132,56 @@ class HostedWorker:
                 self._stop.wait(self.poll_seconds)
             else:
                 raise ServiceError("SANDBOX_CLEANUP_PENDING", "VM termination is unconfirmed", 503)
+
+    def _replayed_guest(self, run_id: str, fence: int, source, phase: str):
+        """Reuse a terminated guest only after rechecking its immutable S3 evidence."""
+        with self.session_factory() as db:
+            run = db.get(Run, run_id)
+            assert_fence(run, self.worker_id, fence)
+            manifest = EnvironmentManifest.model_validate(
+                run.config_snapshot["environment_manifest"]
+            )
+            source_sha = build_guest_bundle(source, manifest).sha256
+            prior = db.scalars(select(SandboxLease).where(
+                SandboxLease.tenant_id == run.tenant_id,
+                SandboxLease.project_id == run.project_id,
+                SandboxLease.run_id == run.id,
+                SandboxLease.phase == phase,
+                SandboxLease.source_sha256 == source_sha,
+            ).order_by(SandboxLease.generation)).all()
+            if not prior:
+                return None
+            if len(prior) != 1:
+                raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Guest replay is ambiguous", 409)
+            lease = prior[0]
+            if (
+                lease.state != "terminated" or lease.result_received_at is None
+                or lease.result_sha256 is None or lease.result_summary is None
+                or lease.image_id != self.spec.image_id
+                or lease.instance_type != self.spec.instance_type
+                or lease.subnet_id != self.spec.subnet_id
+                or lease.security_group_id != self.spec.security_group_id
+                or lease.root_device_name != self.spec.root_device_name
+                or lease.disk_gib != self.spec.disk_gib
+            ):
+                raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Guest replay is unverified", 409)
+            keys = SandboxObjectKeys.scoped(
+                lease.tenant_id, lease.project_id, lease.run_id, lease.id
+            )
+            output = fetch_guest_output(
+                self.s3, self.bucket, keys, lease.id, lease.lease_fence,
+                source_sha, phase=phase,
+            )
+            digest = hashlib.sha256(json.dumps(
+                output.result, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest() if output is not None else None
+            if (
+                output is None or digest != lease.result_sha256
+                or output.result != lease.result_summary
+            ):
+                raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Guest evidence changed", 409)
+        self._check(run_id, fence)
+        return output
 
     def _inputs(self, run_id: str, fence: int):
         with self.session_factory() as db:
@@ -428,16 +482,32 @@ class HostedWorker:
                     recovered += 1
                     continue
                 else:
-                    if run.state == "PREPARING" and event.attempts < 3 and not active:
-                        any_sandbox = db.scalar(select(SandboxLease.id).where(
+                    if event.attempts < 3 and not active:
+                        leases = db.scalars(select(SandboxLease).where(
                             SandboxLease.tenant_id == run.tenant_id,
                             SandboxLease.run_id == run.id,
-                        ).limit(1))
-                        any_tool = db.scalar(select(ToolAction.id).where(
+                        )).all()
+                        tools = db.scalars(select(ToolAction).where(
                             ToolAction.tenant_id == run.tenant_id,
                             ToolAction.run_id == run.id,
-                        ).limit(1))
-                        if any_sandbox is None and any_tool is None:
+                        )).all()
+                        prelaunch = (
+                            run.state in {"PREPARING", "REPRODUCING"}
+                            and not leases and not tools
+                        )
+                        completed_effects = (
+                            run.state in {"INVESTIGATING", "PATCHING", "VERIFYING"}
+                            and any(lease.phase == "baseline" for lease in leases)
+                            and all(
+                                lease.state == "terminated"
+                                and lease.result_sha256 is not None
+                                and lease.result_summary is not None
+                                and lease.result_received_at is not None
+                                for lease in leases
+                            )
+                            and all(tool.status == "COMPLETED" for tool in tools)
+                        )
+                        if prelaunch or completed_effects:
                             owned, _ = claim_run(
                                 db, run.id, self.worker_id, settings().lease_seconds
                             )
@@ -445,7 +515,9 @@ class HostedWorker:
                             owned.lease_owner = None
                             owned.lease_until = None
                             append_event(db, owned, "run.state_changed", {
-                                "state": "QUEUED", "recovery": "prelaunch_retry",
+                                "state": "QUEUED", "recovery": (
+                                    "prelaunch_retry" if prelaunch else "verified_effect_replay"
+                                ),
                             })
                             event.status = "pending"
                             recovered += 1
