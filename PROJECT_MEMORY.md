@@ -59,8 +59,11 @@ for the private **source** repository only.
    Playwright Chromium, and the sandbox probe reached `REVIEW_READY/PASSED`
    but media encoding failed without host FFmpeg. The workflow now installs
    Chromium/dependencies in the Python job and FFmpeg in the sandbox job.
-   Commit/push, inspect the next Actions run, and fix any remaining failing
-   gate before reporting CI green.
+   The third run for `0ff52dc` passed Linux pytest (293 passed, 4 skipped),
+   PostgreSQL, web and sandbox with READY media. Its benchmark validator found
+   that the default shallow checkout omitted the historical pinned fixture
+   commit. The Python job now fetches full Git history. Commit/push, inspect
+   the next Actions run, and fix any remaining gate before reporting CI green.
 2. On continuation, run `git status --short`, `git log -1 --oneline`,
    `gh run list --repo Ajey95/ai-engineering-platform --limit 3` and read this
    section plus `IMPLEMENTATION_STATUS.md`. Recheck any long-running local
