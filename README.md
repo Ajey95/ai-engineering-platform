@@ -232,7 +232,7 @@ external plugin is currently executed by the worker.
 uv sync --extra dev
 Copy-Item .env.example .env
 .\scripts\start_wsl_docker.ps1
-wsl -d Ubuntu-24.04 -u root -- bash -lc 'cd /mnt/d/projects/aiplatform && docker compose up -d postgres'
+.\scripts\compose-wsl.ps1 up -d postgres memgraph
 .venv\Scripts\uvicorn.exe platform_app.api:app --host 127.0.0.1 --port 8098
 ```
 
@@ -307,7 +307,8 @@ python -m platform_app.fixture_evaluation --manifest benchmarks/fixtures/form-su
 The candidate workspace is a manually prepared, ignored local artifact. The
 verdict proves only this fixture's exercised behavior; no model generated the
 patch. The Windows `docker` CLI still targets the broken Docker Desktop pipe;
-use `wsl -d Ubuntu-24.04 -u root -- docker ...` for this project.
+use `.\scripts\compose-wsl.ps1 ps` or `.\scripts\compose-wsl.ps1 up -d postgres memgraph`
+for Compose, and `wsl -d Ubuntu-24.04 -u root -- docker ...` for other Docker commands.
 
 WSL systemd services do not keep the distribution alive after the last user
 process exits. A hidden `wsl.exe ... sleep infinity` process is currently

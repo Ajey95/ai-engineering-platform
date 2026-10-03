@@ -14,15 +14,18 @@ load balancing, TLS, availability, recovery or customer repositories.
 | Isolated restored PostgreSQL, 20+20 pool and short empty polls | 100 simultaneous SSE replay viewers | 100/100 received an event ID; initial replay p95 3,469.8 ms |
 | Isolated restored PostgreSQL, 20+20 pool and short empty polls | 100 already connected viewers, one new durable event | 100/100 received it; four p95 trials: 1,129.7, 1,178.7, 1,177.6 and 1,131.9 ms |
 | Same setup | 50 already connected viewers, one new durable event | 50/50 received it; p95 623.9 ms |
+| Isolated restored PostgreSQL, 20+20 pool, commit notifications and one-query stream authorization | 100 already connected viewers, one new durable event | 100/100 in each of three trials; p95 968.3, 851.5 and 885.2 ms |
 
 The first 100-viewer tests exposed a stream-dependency lifetime deadlock: 50
 simultaneous viewers timed out while 20 succeeded. The API now closes its
 initial authorization session before streaming and runs short poll queries in
 a thread. It rechecks authorization before delivering each event batch and at
-least every five seconds while idle. Empty polls use one query. The final
-connected-viewer 100-client p95 **does not meet** the PRD target below one
-second in this single-process local setup. The 50-client measurement cannot
-be extrapolated to the proposed two-instance hosted service without a live
+least every five seconds while idle. Empty polls use one query. The earlier
+polling-only 100-client p95 missed the PRD target. PostgreSQL commit
+notifications now wake each active run stream; a disconnect falls back to
+polling. Three repeat 100-client local trials met the below-one-second target,
+although three local trials cannot establish a hosted SLO. The 50-client
+measurement cannot be extrapolated to the proposed two-instance hosted service without a live
 load-balancer and identity-provider test.
 
 The repeatable probes are `python -m scripts.verify_local_capacity` and

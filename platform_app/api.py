@@ -19,7 +19,7 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,7 @@ from platform_app.browser_auth import (
 from platform_app.code_index import code_files_for_revision
 from platform_app.config import settings
 from platform_app.db import Base, SessionLocal, engine, session_scope
+from platform_app.event_signal import EventSignal
 from platform_app.evidence_bundle import BundleError, build_evidence_bundle
 from platform_app.export_quota import reserve_export
 from platform_app.graph_memory import (
@@ -153,7 +154,13 @@ async def lifespan(_: FastAPI):
                 db.add(Tenant(id=settings().dev_tenant, name="Local development"))
                 db.commit()
         reconcile_local_recording_deletions(SessionLocal, settings().artifact_dir)
-    yield
+    signal = EventSignal(settings().database_url)
+    _.state.event_signal = signal
+    signal.start()
+    try:
+        yield
+    finally:
+        await signal.stop()
 
 
 app = FastAPI(title="AI Engineering Platform API", version="0.1.0", lifespan=lifespan)
@@ -324,6 +331,30 @@ def authorized_run(
     run = require_run(db, identity[0], run_id)
     require_project_role(db, identity, run.project_id, roles)
     return run
+
+
+def sse_authorized_run(db: Session, identity: tuple[str, str], run_id: str) -> None:
+    """Recheck one stream's run and membership in one database round trip."""
+    query = select(Run.id).join(Project, and_(
+        Project.id == Run.project_id, Project.tenant_id == Run.tenant_id,
+    )).where(Run.id == run_id, Run.tenant_id == identity[0])
+    if settings().environment != "development":
+        query = query.join(TenantMembership, and_(
+            TenantMembership.tenant_id == Run.tenant_id,
+            TenantMembership.subject == identity[1],
+            TenantMembership.status == "active",
+        )).join(Tenant, and_(
+            Tenant.id == Run.tenant_id, Tenant.status == "active",
+        )).outerjoin(ProjectMembership, and_(
+            ProjectMembership.tenant_id == Run.tenant_id,
+            ProjectMembership.project_id == Run.project_id,
+            ProjectMembership.subject == identity[1],
+            ProjectMembership.status == "active",
+        )).where(or_(
+            TenantMembership.role == "owner", ProjectMembership.role.in_(READ_ROLES),
+        ))
+    if db.scalar(query.limit(1)) is None:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
 
 
 @app.get("/v1/health")
@@ -1327,7 +1358,7 @@ async def run_events(
     def authorize() -> tuple[str, str]:
         with SessionLocal() as auth_db:
             identity = principal(request, authorization, x_tenant_id, auth_db)
-            authorized_run(auth_db, identity, run_id)
+            sse_authorized_run(auth_db, identity, run_id)
             return identity
 
     identity = await asyncio.to_thread(authorize)
@@ -1341,6 +1372,8 @@ async def run_events(
         loop = asyncio.get_running_loop()
         last_activity = loop.time()
         last_auth_check = loop.time()
+        signal: EventSignal = request.app.state.event_signal
+        wake = signal.subscribe(run_id)
 
         def poll(force_auth: bool) -> list[EventRead]:
             with SessionLocal() as read_db:
@@ -1348,7 +1381,7 @@ async def run_events(
                     current_identity = principal(request, authorization, x_tenant_id, read_db)
                     if current_identity != identity:
                         raise ServiceError("UNAUTHENTICATED", "Stream identity changed", 401)
-                    authorized_run(read_db, identity, run_id)
+                    sse_authorized_run(read_db, identity, run_id)
 
                 if force_auth:
                     recheck_access()
@@ -1368,27 +1401,36 @@ async def run_events(
                     recheck_access()
                 return [event_read(row) for row in rows]
 
-        while not await request.is_disconnected():
-            force_auth = loop.time() - last_auth_check >= 5
-            try:
-                events = await asyncio.to_thread(poll, force_auth)
-            except ServiceError:
-                break
-            if force_auth or events:
-                last_auth_check = loop.time()
-            if events:
-                for event in events:
-                    cursor = event.sequence
-                    yield (
-                        f"id: {event.sequence}\nevent: {event.event_type}\n"
-                        f"data: {event.model_dump_json()}\n\n"
-                    )
-                last_activity = loop.time()
-            else:
-                await asyncio.sleep(0.25)
-                if loop.time() - last_activity >= 15:
-                    yield ": heartbeat\n\n"
+        try:
+            while not await request.is_disconnected():
+                # Clearing before the durable read prevents a commit between
+                # that read and the wait from being missed.
+                wake.clear()
+                force_auth = loop.time() - last_auth_check >= 5
+                try:
+                    events = await asyncio.to_thread(poll, force_auth)
+                except ServiceError:
+                    break
+                if force_auth or events:
+                    last_auth_check = loop.time()
+                if events:
+                    for event in events:
+                        cursor = event.sequence
+                        yield (
+                            f"id: {event.sequence}\nevent: {event.event_type}\n"
+                            f"data: {event.model_dump_json()}\n\n"
+                        )
                     last_activity = loop.time()
+                else:
+                    try:
+                        await asyncio.wait_for(wake.wait(), timeout=5 if signal.listening else 0.25)
+                    except TimeoutError:
+                        pass
+                    if loop.time() - last_activity >= 15:
+                        yield ": heartbeat\n\n"
+                        last_activity = loop.time()
+        finally:
+            signal.unsubscribe(run_id, wake)
 
     return StreamingResponse(
         stream(),

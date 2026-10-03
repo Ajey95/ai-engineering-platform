@@ -1485,3 +1485,19 @@ keyboard Enter/Escape test passed, with no horizontal overflow. The initial
 mobile screenshot was captured during the 200-ms slide-out transition, not a
 persistent sidebar overlap; waiting for the transition confirmed it was fully
 offscreen.
+
+2026-10-03 Docker/SSE increment: added `scripts/compose-wsl.ps1`, a PowerShell
+Compose wrapper that starts the existing Ubuntu-24.04 WSL Engine and maps the
+project Compose path without routing through the stopped Docker Desktop pipe.
+Its `ps` command returned healthy PostgreSQL and running Memgraph. Added
+PostgreSQL transaction-commit run-event NOTIFY and a per-process listener
+thread with reconnect/poll fallback. SSE streams subscribe per run, still read
+durable events and recheck tenant/project/role access before delivery; the
+access recheck now uses one scoped SQL query. One SQLite test covers subscriber
+scope and another checks owner/member/revoked/cross-tenant access. Ruff passed,
+the full Python suite passed 265 tests with 5 skips, and the disposable
+PostgreSQL admission/race probe passed after the event-write change. On the
+isolated restored PostgreSQL API with a 20+20 pool, three 100-connected-viewer
+new-event trials delivered 100/100 with p95 968.3, 851.5 and 885.2 ms.
+This meets the local below-one-second target on those three samples only;
+hosted two-instance/OIDC/load-balancer behavior remains unverified.

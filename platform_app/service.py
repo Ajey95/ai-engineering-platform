@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import PurePosixPath
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from platform_app.config import settings
@@ -81,6 +81,10 @@ def append_event(db: Session, run: Run, event_type: str, payload: dict) -> RunEv
         payload=payload,
     )
     db.add(event)
+    if db.get_bind().dialect.name == "postgresql":
+        # NOTIFY is delivered only after the surrounding transaction commits.
+        # The SSE stream always reads the durable row before forwarding it.
+        db.execute(text("SELECT pg_notify('aip_run_events', :run_id)"), {"run_id": run.id})
     return event
 
 
