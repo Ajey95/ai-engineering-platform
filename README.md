@@ -111,6 +111,10 @@ The inventory connects the PRD's model, tool, orchestration, context, memory, ex
 
 ## Backend architecture
 
+![Backend-focused AI Engineering Platform architecture](docs/assets/backend-architecture.png)
+
+The trusted control and evidence services coordinate a separate isolated sandbox. PostgreSQL owns canonical state; Memgraph is its derived retrieval projection.
+
 ### 1. Request, execution and evidence planes
 
 ```mermaid
