@@ -1850,3 +1850,12 @@ and hls.js rendition/fragment changes. Local Chromium played an admitted
 fixture recording at 360p, measured 111 ms to first frame and showed no page
 errors; at 390 px the player had no horizontal overflow. These are local
 observations, not CDN or bandwidth-adaptation qualification.
+
+2026-10-03 visible UI end-to-end recheck after image refresh: Chromium used
+`http://127.0.0.1:5173/` to admit synthetic run
+`78286c44-53c1-41f3-9b4b-6dfc4f5a2c00`. The polling WSL worker completed
+four effects and 17 durable events, reproduced the form bug, and closed
+INCONCLUSIVE without a qualified provider. Media reached READY; the local WebM
+SHA-256 matched its browser action receipt. Chromium played the seven-second
+HLS at 360p and observed 230 ms to first frame with no page or server errors.
+This is a fixture-only flow and does not qualify live model repair.
