@@ -76,6 +76,13 @@ const nav: { id: Page; label: string; icon: typeof FolderGit2 }[] = [
 
 const shortId = (id: string) => id.slice(0, 8)
 const date = (value: string) => new Date(value).toLocaleString()
+const contextSummaryDigest = (event: RunEvent, runId: string): string | null => {
+  if (event.event_type !== 'context.compacted') return null
+  const ref = event.payload.summary_ref
+  if (typeof ref !== 'string' || !ref.startsWith(`${runId}/context/summary-`)) return null
+  const suffix = ref.slice(`${runId}/context/summary-`.length)
+  return /^[0-9a-f]{64}\.json$/.test(suffix) ? suffix.slice(0, -5) : null
+}
 
 function Status({ value }: { value: string }) {
   const style = ['FAILED', 'CANCELLED', 'DISABLED'].includes(value) ? 'bad'
@@ -722,7 +729,10 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
     <div className="review-right"><div className="tabbar" role="tablist" aria-label="Run details">{(['evidence', 'changes', 'logs', 'environment'] as const).map(item => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item === 'changes' ? 'Changed files' : item[0].toUpperCase() + item.slice(1)}</button>)}</div>
       <div className="content-panel detail-panel">{tab === 'evidence' && <EvidencePanel packet={packet} run={run} deleteRecording={deleteRecording} busy={busy} />}
         {tab === 'changes' && <><div className="section-title"><Code2 size={18} /><h3>Changed files</h3></div>{packet?.changed_files.length ? packet.changed_files.map(file => <div className="list-row" key={file}>{file}</div>) : <p className="muted">No patch has been produced.</p>}{packet?.diagnosis_hypothesis && <p className="muted">Model hypothesis: {packet.diagnosis_hypothesis}</p>}{packet?.patch_url && <PatchViewer url={packet.patch_url} />}</>}
-        {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{packet?.diagnosis_evidence_refs?.map(ref => <a className="list-row" href={ref} download key={ref}>Download {ref.split('/').at(-2)?.replaceAll('_', ' ')} verification log</a>)}{events.map(event => <div className="list-row" key={event.event_id}><span>{event.event_type}</span><small>{date(event.timestamp)}</small></div>)}</>}
+        {tab === 'logs' && <><div className="section-title"><Activity size={18} /><h3>Activity log</h3></div>{packet?.diagnosis_evidence_refs?.map(ref => <a className="list-row" href={ref} download key={ref}>Download {ref.split('/').at(-2)?.replaceAll('_', ' ')} verification log</a>)}{events.map(event => {
+          const digest = contextSummaryDigest(event, run.id)
+          return <div className="list-row" key={event.event_id}><span>{event.event_type}{digest && <> · <a href={`/v1/runs/${run.id}/context/${digest}`} download>Summary</a> · <a href={`/v1/runs/${run.id}/context/${digest}?include_source=true`} download>Original context</a></>}</span><small>{date(event.timestamp)}</small></div>
+        })}</>}
         {tab === 'environment' && <><div className="section-title"><FolderGit2 size={18} /><h3>Pinned environment</h3></div><dl><dt>Base commit</dt><dd className="mono">{run.base_commit}</dd><dt>Model entry</dt><dd>{run.model_entry_id}</dd></dl></>}
       </div>
       <div className="content-panel verdict-panel"><div className="section-title"><CheckCircle2 size={18} /><h3>Review status</h3></div><p><Status value={run.verdict} /> {packet?.limitations.join(' ') || 'The verdict covers only recorded verification evidence.'}</p>

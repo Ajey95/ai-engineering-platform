@@ -1689,3 +1689,14 @@ unrecorded digest denial and changed-source conflict; context tests passed 6/6.
 The original retrieval is for authenticated users; provider-side retrieval is
 still absent. Full suite passed 281 tests with 5 skips; scoped Ruff and diff
 whitespace checks passed.
+
+2026-10-03 context UI and Docker check: the Run activity log now links each
+recorded compaction to its authenticated summary and original JSON. TypeScript
+and Vite build passed. Native Docker Desktop still cannot create its inference
+listener because `AppData\\Local\\Docker\\run\\dockerInference` is an
+inaccessible reparse point (Windows error 1920). An exact-path rename and
+`fsutil reparsepoint delete` failed with that filesystem error; automatic
+approval review blocked a PowerShell `Remove-Item` attempt. No further removal
+was attempted. The independent Ubuntu WSL Engine reports Docker 29.8.2 and
+continues to run the project containers. Docker Desktop repair remains open;
+the product's local container path works through WSL.
