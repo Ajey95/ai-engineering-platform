@@ -1467,3 +1467,21 @@ Runs screen without browser errors after the API on 8098 restarted on the new
 code. The isolated PostgreSQL probe API on 8102 was stopped after load tests;
 the restored DB and private dump remain for review. The primary local UI/API
 and WSL Docker/PostgreSQL/Memgraph services remain running.
+
+2026-10-03 Settings UI increment: added owner-facing tenant and project membership
+lists and role/status update forms on the existing Settings page. The forms
+use the existing role-checked/audited API, preserve the last-owner guard and
+show nonowner/API errors without exposing member data. TypeScript and Vite
+production builds passed. Chromium on the live 5173 local fixture created
+synthetic-reviewer-20261003 as a workspace member and a project reviewer;
+both rendered in Settings with zero page errors. Quota/model/plugin admin and
+real OIDC role testing remain pending.
+
+The Settings forms initially rendered inline because only modal forms had input
+layout styles. Added a scoped grid form style and checked 1440-pixel desktop
+and 390-pixel mobile Chromium screenshots. Mobile navigation now exposes its
+open/closed state with aria-expanded/aria-controls and closes on Escape; a
+keyboard Enter/Escape test passed, with no horizontal overflow. The initial
+mobile screenshot was captured during the 200-ms slide-out transition, not a
+persistent sidebar overlap; waiting for the transition confirmed it was fully
+offscreen.

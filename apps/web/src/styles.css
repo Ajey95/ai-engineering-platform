@@ -15,3 +15,8 @@
 .ops-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.ops-metrics-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.ops-metric{display:grid;gap:9px}.ops-metric small{color:#536879;font-weight:700}.ops-metric strong{font-size:26px;color:#092d42}.ops-metric span{font-size:12px;color:#536879}.ops-warning{color:#8a4b00;font-weight:700}.ops-grid .content-panel{margin:0}@media(max-width:850px){.ops-metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.ops-grid,.ops-metrics-grid{grid-template-columns:1fr}}
 .ops-warning small{display:block;margin-top:4px;color:#536879;font-weight:400}
 .auth-page{min-height:100vh;display:grid;place-items:center;padding:24px}.auth-page .content-panel{width:min(100%,420px)}.auth-page form{display:grid;gap:16px}.auth-page label{display:grid;gap:8px;font-weight:600}.auth-page input{width:100%;border:1px solid #cbd9e1;border-radius:5px;padding:11px}.auth-page p{color:#536879}
+.settings-grid form{display:grid;gap:12px;margin-top:18px}
+.settings-grid form label{display:grid;gap:6px;color:#536879;font-size:12px;font-weight:700}
+.settings-grid form input,.settings-grid form select{width:100%;min-width:0;border:1px solid #cbd9e1;border-radius:6px;padding:10px 11px;background:#fff;color:#102239}
+.settings-grid form button{justify-self:start}
+.settings-grid .list-row span{overflow-wrap:anywhere}

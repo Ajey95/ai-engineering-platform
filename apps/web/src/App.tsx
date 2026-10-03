@@ -18,6 +18,7 @@ type DevEvaluation = {
   }>
 }
 type MemoryStatus = 'proposed' | 'verified' | 'rejected' | 'superseded' | 'expired' | 'deleted'
+type Membership = { subject: string; role: string; status: 'active' | 'disabled' }
 type MemoryRecord = {
   id: string; fact_type: string; repository_ref: string; source_revision: string
   subject: string; statement: string; source_refs: string[]; verification_scope: string | null
@@ -70,9 +71,9 @@ const shortId = (id: string) => id.slice(0, 8)
 const date = (value: string) => new Date(value).toLocaleString()
 
 function Status({ value }: { value: string }) {
-  const style = ['FAILED', 'CANCELLED'].includes(value) ? 'bad'
+  const style = ['FAILED', 'CANCELLED', 'DISABLED'].includes(value) ? 'bad'
     : ['INCONCLUSIVE', 'PAUSED_INPUT', 'PAUSED_BUDGET', 'PAUSED_APPROVAL', 'FIXTURE ONLY'].includes(value) ? 'warn'
-      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED'].includes(value) ? 'good' : 'neutral'
+      : ['COMPLETED', 'PASSED', 'REVIEW_READY', 'QUALIFIED', 'ACTIVE'].includes(value) ? 'good' : 'neutral'
   return <span className={`status ${style}`}>{value.replaceAll('_', ' ')}</span>
 }
 
@@ -110,7 +111,19 @@ export default function App({ identity, onSignOut }: {
   const [devEvaluation, setDevEvaluation] = useState<DevEvaluation | null>(null)
   const [operations, setOperations] = useState<OperationsSummary | null>(null)
   const [operationsError, setOperationsError] = useState('')
+  const [tenantMembers, setTenantMembers] = useState<Membership[]>([])
+  const [projectMembers, setProjectMembers] = useState<Membership[]>([])
+  const [settingsError, setSettingsError] = useState('')
   const [devFixture, setDevFixture] = useState<{ case_id: string; base_commit: string } | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [menuOpen])
 
   const refresh = useCallback(async () => {
     try {
@@ -159,6 +172,25 @@ export default function App({ identity, onSignOut }: {
     })
     return () => { active = false }
   }, [page])
+
+  const loadMemberships = useCallback(async () => {
+    const [tenantRows, projectRows] = await Promise.all([
+      api<Membership[]>('/memberships'),
+      selectedProject ? api<Membership[]>(`/projects/${selectedProject}/members`) : Promise.resolve([]),
+    ])
+    setTenantMembers(tenantRows)
+    setProjectMembers(projectRows)
+    setSettingsError('')
+  }, [selectedProject])
+
+  useEffect(() => {
+    if (page !== 'settings') return
+    let active = true
+    void loadMemberships().catch(cause => {
+      if (active) setSettingsError(cause instanceof Error ? cause.message : 'Memberships unavailable')
+    })
+    return () => { active = false }
+  }, [page, loadMemberships])
 
   const loadMemoryRecords = useCallback(async (offset = 0) => {
     if (!selectedProject) { setMemoryRecords([]); return }
@@ -213,6 +245,23 @@ export default function App({ identity, onSignOut }: {
   ))
   const reservedTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.reserved_usd, 0), [usage])
   const actualTotal = useMemo(() => usage.entries.reduce((sum, entry) => sum + entry.actual_usd, 0), [usage])
+
+  async function saveMembership(event: React.FormEvent<HTMLFormElement>, scope: 'tenant' | 'project') {
+    event.preventDefault(); setBusy(true); setSettingsError('')
+    const form = event.currentTarget
+    const data = new FormData(form)
+    const subject = String(data.get('subject') || '').trim()
+    const body = jsonBody({ role: String(data.get('role')), status: String(data.get('status')) })
+    try {
+      const path = scope === 'tenant' ? `/memberships/${encodeURIComponent(subject)}`
+        : `/projects/${selectedProject}/members/${encodeURIComponent(subject)}`
+      await api(path, { method: 'PUT', body })
+      form.reset()
+      await loadMemberships()
+    } catch (cause) {
+      setSettingsError(cause instanceof Error ? cause.message : 'Membership update failed')
+    } finally { setBusy(false) }
+  }
 
   async function submitProject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('')
@@ -405,7 +454,7 @@ export default function App({ identity, onSignOut }: {
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
       <div className="brand"><span className="brand-mark"><Code2 size={18} /></span><span>Forge</span></div>
-      <nav aria-label="Main navigation">
+      <nav id="app-navigation" aria-label="Main navigation">
         {nav.map(item => <button key={item.id} type="button" className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}>
           <item.icon size={18} aria-hidden="true" /><span>{item.label}</span>
         </button>)}
@@ -414,7 +463,7 @@ export default function App({ identity, onSignOut }: {
     </aside>
     <div className="app-content">
       <header className="topbar">
-        <button type="button" className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
+        <button type="button" className="icon-button mobile-menu" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} aria-controls="app-navigation" onClick={() => setMenuOpen(!menuOpen)}><Menu size={20} /></button>
         <div className="project-picker"><FolderGit2 size={17} /><select aria-label="Selected project" value={selectedProject} onChange={event => setSelectedProject(event.target.value)}>
           {projects.length === 0 && <option value="">No project</option>}
           {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -482,7 +531,15 @@ export default function App({ identity, onSignOut }: {
           </>}
         </section>}
         {page === 'usage' && <section className="page-section"><div className="page-heading"><div><h1>Usage</h1><p>Reservations and actual charges from the run ledger.</p></div></div><div className="summary-strip"><div><small>Reserved</small><strong>${reservedTotal.toFixed(2)}</strong></div><div><small>Actual</small><strong>${actualTotal.toFixed(2)}</strong></div><div><small>Ledger entries</small><strong>{usage.entries.length}</strong></div></div><div className="content-panel"><h2>Ledger</h2>{usage.entries.length ? usage.entries.map((entry, index) => <div className="list-row" key={`${entry.run_id}-${index}`}><span>Run #{shortId(entry.run_id)} · {entry.status}</span><strong>${entry.reserved_usd.toFixed(2)} reserved</strong></div>) : <Empty title="No usage" description="Charges will be recorded when qualified runs execute." />}</div></section>}
-        {page === 'settings' && <section className="page-section"><div className="page-heading"><div><h1>Settings</h1><p>Model registry readiness in this local workspace.</p></div></div><div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Use the versioned model registry API to register a model. A live conformance check is required before enabling it." />}</div></section>}
+        {page === 'settings' && <section className="page-section">
+          <div className="page-heading"><div><h1>Settings</h1><p>Model readiness and owner-managed workspace access.</p></div></div>
+          {settingsError && <div className="notice" role="alert">{settingsError}</div>}
+          <div className="content-panel"><h2>Models</h2>{models.length ? models.map(model => <div className="list-row" key={model.id}><span>{model.provider} · {model.model_id}</span><Status value={model.qualified ? 'QUALIFIED' : model.fixture_only ? 'FIXTURE ONLY' : model.state.toUpperCase()} /></div>) : <Empty title="No model entries" description="Register a model through the versioned registry. Live conformance is required before enabling it." />}</div>
+          {!settingsError && <div className="ops-grid settings-grid">
+            <div className="content-panel"><h2>Workspace members</h2><p className="muted">Only owners can change tenant access. The last active owner cannot be disabled.</p>{tenantMembers.map(member => <div className="list-row" key={member.subject}><span>{member.subject} · {member.role}</span><Status value={member.status.toUpperCase()} /></div>)}{!tenantMembers.length && <p className="muted">No members recorded.</p>}<form onSubmit={event => void saveMembership(event, 'tenant')}><label>Identity subject<input name="subject" required maxLength={200} placeholder="OIDC subject" /></label><label>Workspace role<select name="role"><option value="member">Member</option><option value="owner">Owner</option></select></label><label>Status<select name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></label><button className="secondary-button" disabled={busy}>Save workspace access</button></form></div>
+            <div className="content-panel"><h2>Project members</h2><p className="muted">{project ? `Access to ${project.name}. Add a workspace member first.` : 'Select a project to manage access.'}</p>{projectMembers.map(member => <div className="list-row" key={member.subject}><span>{member.subject} · {member.role}</span><Status value={member.status.toUpperCase()} /></div>)}{!projectMembers.length && <p className="muted">No project members recorded.</p>}{selectedProject && <form onSubmit={event => void saveMembership(event, 'project')}><label>Identity subject<input name="subject" required maxLength={200} placeholder="Existing workspace member" /></label><label>Project role<select name="role"><option value="viewer">Viewer</option><option value="reviewer">Reviewer</option><option value="contributor">Contributor</option><option value="maintainer">Maintainer</option></select></label><label>Status<select name="status"><option value="active">Active</option><option value="disabled">Disabled</option></select></label><button className="secondary-button" disabled={busy}>Save project access</button></form>}</div>
+          </div>}
+        </section>}
         {page === 'memory' && <section className="page-section">
           <div className="page-heading"><div><h1>Memory</h1><p>Inspect source-backed facts and their decisions.</p></div></div>
           <form className="memory-search content-panel" onSubmit={searchMemory}>
