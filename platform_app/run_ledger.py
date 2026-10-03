@@ -7,7 +7,17 @@ from sqlalchemy.orm import Session
 
 from platform_app.config import settings
 from platform_app.db import utcnow
-from platform_app.models import AuditEvent, OutboxEvent, Run, SandboxLease, Tenant, ToolAction
+from platform_app.model_qualification import qualification_for_pinned_run
+from platform_app.models import (
+    AuditEvent,
+    ModelEntry,
+    OutboxEvent,
+    Run,
+    RunEvent,
+    SandboxLease,
+    Tenant,
+    ToolAction,
+)
 from platform_app.service import ServiceError, append_event, canonical_hash
 from platform_app.telemetry import inject_trace, set_safe_attributes, tracer
 
@@ -228,6 +238,162 @@ def resume_input_run(
         )
     )
     return run
+
+
+@tracer.start_as_current_span("run.resume_approval")
+def resume_model_approval_run(
+    db: Session,
+    tenant_id: str,
+    run_id: str,
+    actor: str,
+    reason: str,
+    idempotency_key: str,
+) -> Run:
+    """Resume a fenced emergency pause after fresh qualification and owner approval."""
+    set_safe_attributes(run_id=run_id, tenant_id=tenant_id)
+    reason = reason.strip()
+    if not 8 <= len(reason) <= 2000:
+        raise ServiceError("APPROVAL_REASON_REQUIRED", "A bounded approval reason is required", 400)
+    # Match emergency-disable and model reservation lock order.
+    pinned = db.scalar(select(Run).where(Run.id == run_id, Run.tenant_id == tenant_id))
+    if pinned is None:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
+    model = db.scalar(select(ModelEntry).where(
+        ModelEntry.id == pinned.model_entry_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    run = db.scalar(select(Run).where(
+        Run.id == run_id, Run.tenant_id == tenant_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if model is None or run is None or model.id != run.model_entry_id:
+        raise ServiceError("MODEL_UNAVAILABLE", "Pinned model is unavailable", 409)
+    approval_hash = canonical_hash({"actor": actor, "reason": reason, "kind": "model_resume"})
+    if run.resume_key == idempotency_key and run.state != "PAUSED_APPROVAL":
+        if run.resume_input_hash != approval_hash:
+            raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for another approval", 409)
+        return run
+    if run.state != "PAUSED_APPROVAL" or run.resume_target not in (
+        ACTIVE_STATES | {"QUEUED", "REVIEW_READY"}
+    ):
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run is not waiting for model approval", 409)
+    if run.resume_key == idempotency_key:
+        raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a prior resume", 409)
+    if run.cancel_requested or run.lease_owner or run.lease_until:
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run still has active ownership", 409)
+    required = db.scalar(select(RunEvent).where(
+        RunEvent.tenant_id == tenant_id,
+        RunEvent.run_id == run_id,
+        RunEvent.event_type == "approval.required",
+    ).order_by(RunEvent.sequence.desc()).limit(1))
+    if required is None or (required.payload or {}).get("kind") != "model_emergency_disable":
+        raise ServiceError("APPROVAL_UNAVAILABLE", "No model resume approval is pending", 409)
+    if aware(required.created_at) + timedelta(hours=24) <= utcnow():
+        raise ServiceError("APPROVAL_EXPIRED", "Model resume approval expired", 409)
+    tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
+    if tenant is None or tenant.status != "active":
+        raise ServiceError("TENANT_DISABLED", "Tenant is not active", 403)
+    snapshot = run.config_snapshot or {}
+    if tenant.policy_revision != snapshot.get("policy_version"):
+        raise ServiceError("POLICY_REVIEW_REQUIRED", "Run policy changed", 409)
+    if (
+        snapshot.get("model_registry_revision") != model.registry_revision
+        or snapshot.get("model_price_revision") != model.price_revision
+        or snapshot.get("model_context_limit") != model.context_limit
+        or snapshot.get("model_output_limit") != model.output_limit
+        or snapshot.get("model_price_per_m_input") != str(model.price_per_m_input)
+        or snapshot.get("model_price_per_m_output") != str(model.price_per_m_output)
+        or not qualification_for_pinned_run(model)
+    ):
+        raise ServiceError(
+            "MODEL_QUALIFICATION_REQUIRED", "Pinned model needs fresh qualification", 409
+        )
+    if snapshot.get("execution_profile") == "hosted_vm_v1" and not (
+        settings().environment != "development" and settings().hosted_execution_enabled
+    ):
+        raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted execution is disabled", 503)
+    uncertain = db.scalar(select(ToolAction.id).where(
+        ToolAction.tenant_id == tenant_id,
+        ToolAction.run_id == run_id,
+        ToolAction.status == "INTENDED",
+    ).limit(1))
+    if uncertain is not None:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    target = run.resume_target
+    run.state = "REVIEW_READY" if target == "REVIEW_READY" else "QUEUED"
+    run.resume_key = idempotency_key
+    run.resume_input_hash = approval_hash
+    append_event(db, run, "approval.granted", {
+        "kind": "model_emergency_disable", "actor": actor,
+        "required_event_id": required.id,
+    })
+    append_event(db, run, "run.resumed", {"resume_target": target, "actor": actor})
+    if run.state == "QUEUED":
+        stale_dispatches = db.scalars(select(OutboxEvent).where(
+            OutboxEvent.tenant_id == tenant_id,
+            OutboxEvent.topic == "run.dispatch",
+            OutboxEvent.status.in_(["pending", "processing"]),
+            OutboxEvent.payload["run_id"].as_string() == run.id,
+        ).with_for_update()).all()
+        for event in stale_dispatches:
+            event.status = "delivered"
+        db.add(OutboxEvent(
+            tenant_id=tenant_id, topic="run.dispatch",
+            payload={"run_id": run.id, "resume_key": idempotency_key, **inject_trace()},
+        ))
+    db.add(AuditEvent(
+        tenant_id=tenant_id, actor=actor, action="run.approval_resume",
+        target_ref=run.id,
+        arguments_hash=canonical_hash({"run_id": run.id, "reason": reason}),
+        policy_revision=tenant.policy_revision, outcome="allowed",
+    ))
+    return run
+
+
+def expire_model_approvals(
+    db: Session, tenant_id: str, *, now: datetime | None = None, limit: int = 100
+) -> int:
+    """Close emergency pauses whose 24-hour owner approval window elapsed."""
+    now = now or utcnow()
+    runs = db.scalars(select(Run).where(
+        Run.tenant_id == tenant_id,
+        Run.state == "PAUSED_APPROVAL",
+    ).order_by(Run.updated_at, Run.id).with_for_update(skip_locked=True).limit(limit)).all()
+    expired = 0
+    for run in runs:
+        required = db.scalar(select(RunEvent).where(
+            RunEvent.tenant_id == tenant_id,
+            RunEvent.run_id == run.id,
+            RunEvent.event_type == "approval.required",
+        ).order_by(RunEvent.sequence.desc()).limit(1))
+        if (
+            required is None
+            or (required.payload or {}).get("kind") != "model_emergency_disable"
+            or aware(required.created_at) + timedelta(hours=24) > now
+        ):
+            continue
+        run.state = "CANCELLED"
+        run.verdict = "INCONCLUSIVE"
+        run.cancel_requested = True
+        run.lease_fence += 1
+        run.lease_owner = None
+        run.lease_until = None
+        append_event(db, run, "approval.expired", {
+            "kind": "model_emergency_disable", "required_event_id": required.id,
+        })
+        append_event(db, run, "run.state_changed", {
+            "state": "CANCELLED", "verdict": run.verdict,
+        })
+        append_event(db, run, "run.closed", {
+            "state": "CANCELLED", "verdict": run.verdict,
+        })
+        db.add(AuditEvent(
+            tenant_id=tenant_id, actor="approval-expiry-worker",
+            action="run.approval_expired", target_ref=run.id,
+            arguments_hash=canonical_hash({"run_id": run.id, "required_event_id": required.id}),
+            policy_revision=(run.config_snapshot or {}).get("policy_version", "unknown"),
+            outcome="expired",
+        ))
+        expired += 1
+    return expired
 
 
 def begin_tool_action(

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from platform_app.db import SessionLocal
 from platform_app.models import Tenant
 from platform_app.operational_alerts import evaluate_tenant_alerts
+from platform_app.run_ledger import expire_model_approvals
 
 
 def main() -> int:
@@ -30,6 +31,7 @@ def main() -> int:
         fired = 0
         for tenant_id in tenant_ids:
             with SessionLocal() as db:
+                expire_model_approvals(db, tenant_id)
                 alerts = evaluate_tenant_alerts(db, tenant_id)
                 fired += sum(item.state == "firing" for item in alerts)
                 db.commit()

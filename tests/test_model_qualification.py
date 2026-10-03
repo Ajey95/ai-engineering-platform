@@ -26,9 +26,14 @@ from platform_app.models import (
     SandboxLease,
     Task,
     Tenant,
+    ToolAction,
 )
 from platform_app.providers import ProviderTurn
-from platform_app.run_ledger import assert_fence
+from platform_app.run_ledger import (
+    assert_fence,
+    expire_model_approvals,
+    resume_model_approval_run,
+)
 from platform_app.schemas import ModelRegister
 from platform_app.service import ServiceError
 from platform_app.tool_broker import CompletedToolCall
@@ -239,6 +244,16 @@ def test_emergency_disable_fences_runs_and_queues_guest_cleanup(registry, attest
     qualify_model_entry(registry, "entry-a", ScriptedAdapter(), attestation,
                         "operator-a", enable=True)
     with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        snapshot = {
+            "policy_version": "1.0",
+            "model_registry_revision": model.registry_revision,
+            "model_price_revision": model.price_revision,
+            "model_context_limit": model.context_limit,
+            "model_output_limit": model.output_limit,
+            "model_price_per_m_input": str(model.price_per_m_input),
+            "model_price_per_m_output": str(model.price_per_m_output),
+        }
         db.add(Tenant(id="tenant-a", name="A"))
         db.add(Project(id="project-a", tenant_id="tenant-a", name="A"))
         db.add(Task(
@@ -252,7 +267,7 @@ def test_emergency_disable_fences_runs_and_queues_guest_cleanup(registry, attest
             request_hash="a" * 64, base_commit="b" * 40,
             model_entry_id="entry-a", state="INVESTIGATING", verdict="NOT_RUN",
             lease_owner="worker-a", lease_fence=4,
-            lease_until=datetime.now(UTC) + timedelta(minutes=2), config_snapshot={},
+            lease_until=datetime.now(UTC) + timedelta(minutes=2), config_snapshot=snapshot,
         ))
         db.add(SandboxLease(
             id="lease-a", tenant_id="tenant-a", project_id="project-a",
@@ -282,6 +297,79 @@ def test_emergency_disable_fences_runs_and_queues_guest_cleanup(registry, attest
         assert [event.event_type for event in db.query(RunEvent).order_by(RunEvent.sequence)] == [
             "run.state_changed", "approval.required", "sandbox.revoked",
         ]
+        with pytest.raises(ServiceError) as not_qualified:
+            resume_model_approval_run(db, "tenant-a", "run-a", "owner-a",
+                                      "Reviewed provider recovery", "approval-key-a")
+        assert not_qualified.value.code == "MODEL_QUALIFICATION_REQUIRED"
+        db.rollback()
+        required = db.query(RunEvent).filter_by(event_type="approval.required").one()
+        original_time = required.created_at
+        required.created_at = datetime.now(UTC) - timedelta(hours=25)
+        db.commit()
+        with pytest.raises(ServiceError) as expired:
+            resume_model_approval_run(db, "tenant-a", "run-a", "owner-a",
+                                      "Reviewed provider recovery", "approval-key-a")
+        assert expired.value.code == "APPROVAL_EXPIRED"
+        db.rollback()
+        required = db.query(RunEvent).filter_by(event_type="approval.required").one()
+        required.created_at = original_time
+        db.commit()
+    qualify_model_entry(registry, "entry-a", ScriptedAdapter(), attestation,
+                        "operator-a", enable=True)
+    with registry() as db:
+        db.add(ToolAction(
+            tenant_id="tenant-a", run_id="run-a", step_id="model-a",
+            logical_action="model.generate", effect_key="e" * 64,
+            arguments_hash="a" * 64, policy_result="allowed", status="INTENDED",
+        ))
+        db.commit()
+        with pytest.raises(ServiceError) as uncertain:
+            resume_model_approval_run(db, "tenant-a", "run-a", "owner-a",
+                                      "Reviewed provider recovery", "approval-key-a")
+        assert uncertain.value.code == "EFFECT_OUTCOME_UNKNOWN"
+        db.rollback()
+        db.query(ToolAction).one().status = "COMPLETED"
+        db.get(Tenant, "tenant-a").policy_revision = "2.0"
+        db.commit()
+        with pytest.raises(ServiceError) as policy:
+            resume_model_approval_run(db, "tenant-a", "run-a", "owner-a",
+                                      "Reviewed provider recovery", "approval-key-a")
+        assert policy.value.code == "POLICY_REVIEW_REQUIRED"
+        db.rollback()
+        db.get(Tenant, "tenant-a").policy_revision = "1.0"
+        db.commit()
+        resumed = resume_model_approval_run(
+            db, "tenant-a", "run-a", "owner-a", "Reviewed provider recovery",
+            "approval-key-a",
+        )
+        db.commit()
+        assert resumed.state == "QUEUED"
+        assert resume_model_approval_run(
+            db, "tenant-a", "run-a", "owner-a", "Reviewed provider recovery",
+            "approval-key-a",
+        ).id == resumed.id
+        assert db.query(OutboxEvent).filter_by(topic="run.dispatch", status="pending").count() == 1
+        assert db.query(RunEvent).filter_by(event_type="approval.granted").count() == 1
+        db.add(Run(
+            id="run-expired", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="key-expired",
+            request_hash="c" * 64, base_commit="b" * 40,
+            model_entry_id="entry-a", state="PAUSED_APPROVAL",
+            resume_target="PATCHING", config_snapshot=snapshot, last_sequence=1,
+        ))
+        db.add(RunEvent(
+            tenant_id="tenant-a", run_id="run-expired", sequence=1,
+            event_type="approval.required", payload={"kind": "model_emergency_disable"},
+            created_at=datetime.now(UTC) - timedelta(hours=25),
+        ))
+        db.commit()
+        assert expire_model_approvals(db, "tenant-a") == 1
+        db.commit()
+        assert db.get(Run, "run-expired").state == "CANCELLED"
+        assert expire_model_approvals(db, "tenant-a") == 0
+        assert db.query(RunEvent).filter_by(
+            run_id="run-expired", event_type="approval.expired"
+        ).count() == 1
 
 
 def test_mismatched_metadata_is_rejected_before_spend(registry, attestation):

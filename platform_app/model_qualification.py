@@ -464,7 +464,9 @@ def qualify_model_entry(
             select(Run.id)
             .where(
                 Run.model_entry_id == model.id,
-                Run.state.not_in({"COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED"}),
+                Run.state.not_in({
+                    "COMPLETED", "INCONCLUSIVE", "FAILED", "CANCELLED", "PAUSED_APPROVAL",
+                }),
             )
             .limit(1)
         )

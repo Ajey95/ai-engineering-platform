@@ -1519,3 +1519,27 @@ database; the run timeline rendered `approval · required` once with zero page
 errors. Screenshots are outside the repository at
 `D:\projects\frontend-sse-check-20261003.png` and
 `D:\projects\frontend-sse-approval-20261003.png`.
+
+2026-10-03 emergency-model approval increment: `qualify_model_entry` now
+permits fresh qualification when the model's remaining open runs are fenced
+`PAUSED_APPROVAL`. An owner-only `POST /v1/runs/{id}/resume-approval` accepts a
+reason and idempotency key. Its transaction locks model/run/tenant, requires a
+24-hour pending emergency approval event, exact pinned model metadata and
+current qualification, unchanged tenant policy, no uncertain intended tool
+effect, and enabled hosted execution for hosted runs. It restores a review-ready
+run or queues one dispatch for active work. The operations evaluator now closes
+expired emergency pauses with durable expiry/closed events and an audit row.
+The UI renders an approval reason form and explains the gates. Controlled tests
+covered requalification, stale model, expiration, uncertain effect, changed
+policy, one dispatch and idempotent replay. Targeted 10 tests passed; the full
+Python suite passed 265 with 5 skips; Ruff, TypeScript and Vite builds passed.
+The disposable PostgreSQL admission/race probe still passed. Chromium showed
+the approval form enabled in an intercepted paused state, with no page errors;
+that browser state was mocked for layout only, not a live approval. Screenshot
+outside repo: `D:\projects\frontend-approval-form-20261003.png`. Hosted
+provider/account and full checkpoint resume remain unverified.
+The restarted local API exposed the new endpoint and rejected an approval POST
+against an already `INCONCLUSIVE` run with HTTP 409 `RUN_NOT_RESUMABLE`, as
+expected. The local operations evaluator one-shot passed and a hidden 30-second
+loop was started against the synthetic SQLite tenant; its first sample reported
+zero firing alerts. This is a local process, not a scheduled automation.

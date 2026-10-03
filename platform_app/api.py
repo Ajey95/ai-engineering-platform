@@ -104,7 +104,7 @@ from platform_app.recording_deletion import (
 )
 from platform_app.repository_connections import github_repository_ref, validate_credential_ref
 from platform_app.review_patch import verified_fixture_diff
-from platform_app.run_ledger import resume_input_run
+from platform_app.run_ledger import resume_input_run, resume_model_approval_run
 from platform_app.schemas import (
     AlertResolutionCreate,
     ErrorBody,
@@ -118,6 +118,7 @@ from platform_app.schemas import (
     PublicationApprovalRead,
     RepositoryConnectionCreate,
     RepositoryConnectionRead,
+    ResumeApprovalCreate,
     ResumeInputCreate,
     ReviewDecisionCreate,
     RunCreate,
@@ -1222,6 +1223,24 @@ def resume_run(
 ):
     authorized_run(db, identity, run_id, WRITE_ROLES)
     run = resume_input_run(db, identity[0], run_id, identity[1], body.input_text, idempotency_key)
+    db.commit()
+    db.refresh(run)
+    return run_read(run)
+
+
+@app.post("/v1/runs/{run_id}/resume-approval", response_model=RunRead, status_code=202)
+def resume_approval(
+    run_id: str,
+    body: ResumeApprovalCreate,
+    idempotency_key: str = Header(min_length=8, max_length=200),
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    authorized_run(db, identity, run_id)
+    run = resume_model_approval_run(
+        db, identity[0], run_id, identity[1], body.reason, idempotency_key
+    )
     db.commit()
     db.refresh(run)
     return run_read(run)
