@@ -27,6 +27,29 @@ The included `form-submit-001` case exercises a pinned baseline, a candidate pat
 
 The LLM is a bounded reasoning component inside a durable engineering system. The harness decides *when* to ask a model, *which evidence* to give it, *which tools* it may request, *how much* the call may cost, and *what must be independently checked* afterward. The model can propose a patch or a tool call; it cannot advance the run state, certify its own repair, enlarge its permissions, or publish code by writing persuasive text.
 
+### Platform layers around the AI harness
+
+| Layer | Responsibility in this codebase |
+|---|---|
+| **Frontend workspace** | Project, report, run, review, evaluation, memory, usage and operations views; progress events, approvals, diff and evidence playback. |
+| **FastAPI control plane** | Identity, tenant and project authorization, task and run APIs, review actions, artifact access and replayable execution events. |
+| **Model gateway** | Native provider adapters, versioned model entries, policy-aware routing, bounded failover and reported-usage accounting. |
+| **Agent orchestration** | LangGraph phases and PostgreSQL checkpoints; a worker coordinates source preparation, baseline, proposal, candidate and review stages. |
+| **Agent harness** | Fenced leases, run limits, effect intents and receipts, pauses, cancellation, replay and stopping conditions. |
+| **Context management** | Builds provenance-labelled ContextBundles from task state, pinned code, failure evidence and verified memory. |
+| **Token management** | Bounds the input envelope, output reservation, safety margin, log excerpts and compaction before a provider call. |
+| **Repository retrieval** | Lists and searches pinned files, navigates symbols and records revision-specific code dependencies. |
+| **Session memory and continuity** | Keeps durable run events, workflow checkpoints, context lineage and completed tool receipts for resumption. |
+| **Long-term project memory** | Stores source-backed facts and reviewer decisions with scope, validity and transition history; projects relationships to Memgraph. |
+| **Tool execution** | Authorizes typed actions for approved tests, browser scenarios, patch workspaces and separately approved publication. |
+| **Execution isolation** | Runs source and browser checks outside FastAPI in bounded development containers; defines separate hosted guest execution contracts. |
+| **Guardrails** | Enforces tenant scope, action policy, plugin manifest integrity, allowed targets, secret boundaries and approval gates in code. |
+| **Independent evaluation** | Runs declared tests, browser checks and hidden oracles; scores synthetic attempts, including false-success claims. |
+| **Observability** | Carries trace context and records run, model, tool, queue, media, latency, reservation and compaction signals. |
+| **Persistence** | Uses PostgreSQL for canonical records and checkpoints, Memgraph as a derived retrieval projection, and hashed artifacts for evidence. |
+| **Review and publication** | Keeps diff, test receipts, media and reviewer decision separate; draft-PR publication requires a distinct approval and reconciliation path. |
+| **Evidence media** | Encodes recordings to HLS and serves scoped playback with deletion and private-publication records. |
+
 ### AI harness component inventory
 
 The inventory connects the PRD's model, tool, orchestration, context, memory, execution and evaluation concepts to the backend modules that implement their contracts.
