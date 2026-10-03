@@ -146,8 +146,13 @@ def test_hosted_video_stages_then_publishes_private_hls(tmp_path, monkeypatch):
         encode_calls.append(run_id)
         variant = target / "low"
         variant.mkdir(parents=True, exist_ok=True)
-        (target / "master.m3u8").write_text("#EXTM3U\nlow/index.m3u8\n")
-        (variant / "index.m3u8").write_text("#EXTM3U\ninit.mp4\nsegment_0000.m4s\n")
+        (target / "master.m3u8").write_text(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=350000\nlow/index.m3u8\n"
+        )
+        (variant / "index.m3u8").write_text(
+            '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:2.0,\n'
+            'segment_0000.m4s\n#EXT-X-ENDLIST\n'
+        )
         (variant / "init.mp4").write_bytes(b"init")
         (variant / "segment_0000.m4s").write_bytes(b"segment")
         return target / "master.m3u8"

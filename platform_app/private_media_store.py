@@ -32,6 +32,51 @@ MAX_BYTES = 500_000_000
 MAX_OBJECT_BYTES = 50_000_000
 
 
+def _validate_playlists(files: list[tuple[str, bytes, str]]) -> None:
+    """Keep every HLS reference inside the checksummed private publication."""
+    objects = {name: value for name, value, _ in files}
+    try:
+        master = objects["master.m3u8"].decode("utf-8").splitlines()
+        if not master or master[0] != "#EXTM3U":
+            raise ValueError("Master playlist header is invalid")
+        if any("URI=" in line or line.startswith("#EXT-X-KEY") for line in master):
+            raise ValueError("Master playlist has an unsupported reference")
+        variants = [line for line in master if line and not line.startswith("#")]
+        available = {name for name in objects if name.endswith("/index.m3u8")}
+        if (
+            not variants or len(variants) != len(set(variants))
+            or set(variants) != available
+        ):
+            raise ValueError("Master playlist variants are incomplete")
+        for variant in variants:
+            lines = objects[variant].decode("utf-8").splitlines()
+            if not lines or lines[0] != "#EXTM3U" or "#EXT-X-ENDLIST" not in lines:
+                raise ValueError("Variant playlist is incomplete")
+            if sum(line == '#EXT-X-MAP:URI="init.mp4"' for line in lines) != 1:
+                raise ValueError("Variant initialization is incomplete")
+            if any(
+                "URI=" in line and line != '#EXT-X-MAP:URI="init.mp4"'
+                or line.startswith("#EXT-X-KEY")
+                for line in lines
+            ):
+                raise ValueError("Variant playlist has an unsupported reference")
+            segment_refs = [line for line in lines if line and not line.startswith("#")]
+            prefix = variant.removesuffix("index.m3u8")
+            if (
+                not segment_refs or len(segment_refs) != len(set(segment_refs))
+                or any(not re.fullmatch(r"segment_[0-9]{4}\.m4s", ref)
+                       for ref in segment_refs)
+                or {name for name in objects if name.startswith(prefix) and name.endswith(".m4s")}
+                != {prefix + ref for ref in segment_refs}
+                or prefix + "init.mp4" not in objects
+            ):
+                raise ValueError("Variant objects differ from its playlist")
+    except (KeyError, UnicodeDecodeError, ValueError) as error:
+        raise ServiceError(
+            "MEDIA_NOT_READY", "Recording playlists contain unverified references", 409
+        ) from error
+
+
 def _collect_objects(
     run: Run, label: str, artifact_root: Path, master_ref: str, effect_hash: str,
 ) -> tuple[list[tuple[str, bytes, str]], bytes]:
@@ -71,6 +116,7 @@ def _collect_objects(
             raise ServiceError("MEDIA_LIMIT", "Recording exceeds object store limits", 413)
     if len(files) < 4 or not any(name == "master.m3u8" for name, _, _ in files):
         raise ServiceError("MEDIA_NOT_READY", "Recording files are incomplete", 409)
+    _validate_playlists(files)
     manifest = json.dumps({
         "schema_version": "1.0", "effect_hash": effect_hash,
         "objects": [

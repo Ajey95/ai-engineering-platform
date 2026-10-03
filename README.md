@@ -326,7 +326,7 @@ $env:AIP_DATABASE_URL='postgresql+psycopg://aip:local_only@127.0.0.1:54329/aip'
 uv run alembic upgrade head
 uv run alembic check
 python -m scripts.verify_postgres_admission
-python -m scripts.verify_dev_container_security
+python -m scripts.verify_dev_container_security --image aip-dev-sandbox:0.1.3
 ```
 
 The latest migration reserves `aip_workflow` for LangGraph checkpoints. The

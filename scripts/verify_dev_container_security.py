@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from pathlib import Path
@@ -10,18 +11,21 @@ from platform_app.dev_sandbox import docker_browser_command
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--image", default="aip-dev-sandbox:0.1.0")
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     artifacts = root / "artifacts" / "container-security-check"
     artifacts.mkdir(parents=True, exist_ok=True)
     command = docker_browser_command(
-        "aip-dev-sandbox:0.1.0",
+        args.image,
         root / "benchmarks" / "fixtures" / "form-submit" / "base",
         root / "benchmarks" / "fixtures" / "form-submit" / "manifest.json",
         artifacts,
         "aip-dev-security-check",
         runtime="wsl",
     )
-    image_index = command.index("aip-dev-sandbox:0.1.0")
+    image_index = command.index(args.image)
     probe = """
 import json, os, pathlib, socket
 checks = {}

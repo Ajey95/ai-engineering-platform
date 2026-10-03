@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
@@ -84,8 +85,11 @@ class FakeS3:
     def __init__(self):
         self.objects = {}
         self.uploads = 0
+        self.fail_after = None
 
     def put_object(self, **args):
+        if self.fail_after is not None and self.uploads >= self.fail_after:
+            raise ClientError({"Error": {"Code": "ServiceUnavailable"}}, "PutObject")
         self.uploads += 1
         self.objects[args["Key"]] = args
 
@@ -149,8 +153,13 @@ def test_private_publication_uploads_verifies_and_replays(tmp_path):
         root = tmp_path / relative
         variant = root / "low"
         variant.mkdir(parents=True)
-        (root / "master.m3u8").write_text("#EXTM3U\nlow/index.m3u8\n")
-        (variant / "index.m3u8").write_text("#EXTM3U\ninit.mp4\nsegment_0000.m4s\n")
+        (root / "master.m3u8").write_text(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=350000\nlow/index.m3u8\n"
+        )
+        (variant / "index.m3u8").write_text(
+            '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:2.0,\n'
+            'segment_0000.m4s\n#EXT-X-ENDLIST\n'
+        )
         (variant / "init.mp4").write_bytes(b"init")
         (variant / "segment_0000.m4s").write_bytes(b"segment")
         db.add(ToolAction(
@@ -161,9 +170,37 @@ def test_private_publication_uploads_verifies_and_replays(tmp_path):
         ))
         db.commit()
         client = FakeS3()
+        master = root / "master.m3u8"
+        valid_master = master.read_text()
+        master.write_text(valid_master.replace("low/index.m3u8", "https://elsewhere.test/a"))
+        with pytest.raises(ServiceError) as escaped:
+            publication_inventory(db, run, "baseline", tmp_path)
+        assert escaped.value.code == "MEDIA_NOT_READY"
+        master.write_text(valid_master)
+        playlist = variant / "index.m3u8"
+        valid_playlist = playlist.read_text()
+        playlist.write_text(valid_playlist + '#EXT-X-KEY:METHOD=AES-128,URI="https://elsewhere.test/key"\n')
+        with pytest.raises(ServiceError) as injected:
+            publication_inventory(db, run, "baseline", tmp_path)
+        assert injected.value.code == "MEDIA_NOT_READY"
+        playlist.write_text(valid_playlist)
         digest, byte_count = publication_inventory(db, run, "baseline", tmp_path)
         reserve_artifact(db, run.id, "private_media", "baseline", digest, byte_count)
         db.commit()
+        client.fail_after = 2
+        with pytest.raises(ClientError):
+            publish_recording(db, config, run, "baseline", tmp_path, client)
+        db.rollback()
+        assert db.query(PrivateMediaPublication).count() == 0
+        assert db.query(ArtifactCharge).one().status == "reserved"
+        assert client.uploads == 2
+        assert not any(key.endswith("manifest.json") for key in client.objects)
+        client.fail_after = None
+        publish_recording(db, config, run, "baseline", tmp_path, client)
+        assert client.uploads == 5
+        db.rollback()  # Simulate a crash after S3 completed but before the DB commit.
+        assert db.query(PrivateMediaPublication).count() == 0
+        assert db.query(ArtifactCharge).one().status == "reserved"
         publication = publish_recording(db, config, run, "baseline", tmp_path, client)
         db.commit()
         assert publication.status == "ready"

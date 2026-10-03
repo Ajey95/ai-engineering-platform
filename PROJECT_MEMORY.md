@@ -1832,3 +1832,13 @@ recording tombstones against synthetic local media. Latest run at head
 `b902d4ef6a30` passed 32 table counts, zero sequence mismatches, no drift,
 and two of two synthetic media removals; local structural restore elapsed
 4.56 seconds. This does not establish hosted backup age, RPO, RTO or failover.
+
+2026-10-03 private HLS publication recovery and playlist scope: the publisher
+now rejects external/missing HLS references, unknown URI tags and unreferenced
+variants or segments before S3 upload. Actual baseline/candidate FFmpeg HLS
+from the controlled WSL run passed validation. A fake-S3 failure after two
+objects left no DB publication and one reserved byte charge; a second simulated
+crash after all S3 objects but before DB commit still left no publication.
+Replay verified existing objects and committed one publication without another
+byte reservation. The refreshed sandbox image security probe passed all seven
+local containment checks. Live S3/CDN behavior remains unverified.
