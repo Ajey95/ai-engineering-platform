@@ -1842,3 +1842,11 @@ crash after all S3 objects but before DB commit still left no publication.
 Replay verified existing objects and committed one publication without another
 byte reservation. The refreshed sandbox image security probe passed all seven
 local containment checks. Live S3/CDN behavior remains unverified.
+
+2026-10-03 local playback observability: the React HLS player now shows
+actual decoded rendition height, time from Play to the first rendered video
+frame, and post-first-frame stall time. It listens for native video resize
+and hls.js rendition/fragment changes. Local Chromium played an admitted
+fixture recording at 360p, measured 111 ms to first frame and showed no page
+errors; at 390 px the player had no horizontal overflow. These are local
+observations, not CDN or bandwidth-adaptation qualification.

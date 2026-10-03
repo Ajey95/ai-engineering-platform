@@ -15,27 +15,52 @@ export default function MediaPlayer({ manifestUrl, markers = [], grantPath }: {
   const [duration, setDuration] = useState(0)
   const [position, setPosition] = useState(0)
   const [stallSeconds, setStallSeconds] = useState(0)
+  const [currentHeight, setCurrentHeight] = useState<number | null>(null)
+  const [startupMs, setStartupMs] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    const startedAt = performance.now()
+    let playRequestedAt: number | null = null
+    let firstFrameHandle: number | null = null
+    let firstFrameSeen = false
     let waitingAt: number | null = null
-    const onWaiting = () => { waitingAt = performance.now() }
+    const onPlay = () => {
+      if (playRequestedAt !== null) return
+      playRequestedAt = performance.now()
+      if (video.requestVideoFrameCallback) {
+        firstFrameHandle = video.requestVideoFrameCallback(() => {
+          firstFrameSeen = true
+          setStartupMs(Math.round(performance.now() - playRequestedAt!))
+          firstFrameHandle = null
+        })
+      }
+    }
+    const onWaiting = () => {
+      if (firstFrameSeen && waitingAt === null) waitingAt = performance.now()
+    }
     const onPlaying = () => {
+      if (!video.requestVideoFrameCallback && playRequestedAt !== null) {
+        firstFrameSeen = true
+        setStartupMs(current => current ?? Math.round(performance.now() - playRequestedAt!))
+      }
       if (waitingAt !== null) {
         setStallSeconds(current => current + (performance.now() - waitingAt!) / 1000)
         waitingAt = null
       }
     }
-    const onLoaded = () => {
-      video.dataset.startupMs = String(Math.round(performance.now() - startedAt))
-    }
+    const onLoaded = () => setCurrentHeight(video.videoHeight || null)
+    const onResize = () => setCurrentHeight(video.videoHeight || null)
+    setCurrentHeight(null)
+    setStartupMs(null)
+    setStallSeconds(0)
     video.addEventListener('waiting', onWaiting)
+    video.addEventListener('play', onPlay)
     video.addEventListener('playing', onPlaying)
     video.addEventListener('loadeddata', onLoaded)
+    video.addEventListener('resize', onResize)
     let stopped = false
     const refreshGrant = async () => {
       if (!grantPath) return
@@ -51,6 +76,12 @@ export default function MediaPlayer({ manifestUrl, markers = [], grantPath }: {
         hlsRef.current = hls
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setLevels(hls.levels.map((level, index) => ({ index, height: level.height })))
+        })
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+          setCurrentHeight(hls.levels[data.level]?.height ?? null)
+        })
+        hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
+          setCurrentHeight(hls.levels[data.frag.level]?.height ?? null)
         })
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) onWaiting()
@@ -72,8 +103,11 @@ export default function MediaPlayer({ manifestUrl, markers = [], grantPath }: {
       stopped = true
       if (refreshTimer !== null) window.clearInterval(refreshTimer)
       video.removeEventListener('waiting', onWaiting)
+      video.removeEventListener('play', onPlay)
       video.removeEventListener('playing', onPlaying)
       video.removeEventListener('loadeddata', onLoaded)
+      video.removeEventListener('resize', onResize)
+      if (firstFrameHandle !== null) video.cancelVideoFrameCallback(firstFrameHandle)
       hlsRef.current?.destroy()
       hlsRef.current = null
       video.removeAttribute('src')
@@ -100,7 +134,7 @@ export default function MediaPlayer({ manifestUrl, markers = [], grantPath }: {
         setSpeed(event.target.value)
         if (videoRef.current) videoRef.current.playbackRate = Number(event.target.value)
       }}><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
-      <span aria-live="polite">{Math.floor(position)} / {Math.floor(duration)} s · {stallSeconds.toFixed(1)} s stalled</span>
+      <span>{Math.floor(position)} / {Math.floor(duration)} s · {stallSeconds.toFixed(1)} s stalled · {currentHeight ? `${currentHeight}p` : startupMs === null ? 'quality pending' : 'browser managed quality'} · first frame {startupMs === null ? 'pending' : `${startupMs} ms`}</span>
     </div>
     {markers.length > 0 && <div className="evidence-timeline"><h4>Evidence timeline</h4>{markers.map((marker, index) => <button key={`${marker.at_seconds}-${index}`} type="button" onClick={() => {
       if (videoRef.current) videoRef.current.currentTime = marker.at_seconds
