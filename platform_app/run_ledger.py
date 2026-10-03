@@ -49,6 +49,7 @@ ALLOWED_TRANSITIONS = {
         "FAILED",
         "PAUSED_INPUT",
         "PAUSED_APPROVAL",
+        "PAUSED_BUDGET",
         "CANCEL_REQUESTED",
     },
     "PATCHING": {"VERIFYING", "FAILED", "PAUSED_BUDGET", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
@@ -435,7 +436,9 @@ def resume_budget_run(
         if run.resume_input_hash != approval_hash:
             raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for another approval", 409)
         return run
-    if run.state != "PAUSED_BUDGET" or run.resume_target not in {"PATCHING", "VERIFYING"}:
+    if run.state != "PAUSED_BUDGET" or run.resume_target not in {
+        "INVESTIGATING", "PATCHING", "VERIFYING",
+    }:
         raise ServiceError("RUN_NOT_RESUMABLE", "Run is not waiting for budget approval", 409)
     if run.resume_key == idempotency_key:
         raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a prior resume", 409)
@@ -456,7 +459,12 @@ def resume_budget_run(
     snapshot = run.config_snapshot or {}
     if tenant.policy_revision != snapshot.get("policy_version"):
         raise ServiceError("POLICY_REVIEW_REQUIRED", "Run policy changed", 409)
-    if not qualification_for_pinned_run(model):
+    controlled_fixture = bool(
+        settings().environment == "development"
+        and model.validated_at
+        and (model.capabilities or {}).get("controlled_provider_fixture") is True
+    )
+    if not qualification_for_pinned_run(model) and not controlled_fixture:
         raise ServiceError("MODEL_QUALIFICATION_REQUIRED", "Pinned model is unavailable", 409)
     current_limit = Decimal(str(snapshot.get("spend_limit_usd", "0")))
     operator_cap = Decimal(str(settings().max_run_spend_usd))

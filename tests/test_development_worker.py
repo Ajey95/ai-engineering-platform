@@ -241,13 +241,13 @@ def test_spend_exhaustion_pauses_and_acks_dispatch(tmp_path, monkeypatch):
     def exhausted(run_id, fence, _commit):
         worker._transition(run_id, fence, "REPRODUCING")
         worker._transition(run_id, fence, "INVESTIGATING")
-        worker._transition(run_id, fence, "PATCHING")
         raise ServiceError("RUN_SPEND_EXHAUSTED", "Run spend limit reached", 409)
 
     monkeypatch.setattr(worker, "_run_workflow", exhausted)
     assert worker.process_next() == "run-a"
     with factory() as db:
         assert db.get(Run, "run-a").state == "PAUSED_BUDGET"
+        assert db.get(Run, "run-a").resume_target == "INVESTIGATING"
         assert db.get(Run, "run-a").lease_owner is None
         assert db.get(OutboxEvent, "event-a").status == "delivered"
         assert db.scalar(select(RunEvent).where(RunEvent.event_type == "budget.pause"))

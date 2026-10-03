@@ -311,7 +311,7 @@ class HostedWorker:
                     if (
                         isinstance(error, ServiceError)
                         and error.code == "RUN_SPEND_EXHAUSTED"
-                        and run.state in {"PATCHING", "VERIFYING"}
+                        and run.state in {"INVESTIGATING", "PATCHING", "VERIFYING"}
                     ):
                         transition(db, run, self.worker_id, fence, "PAUSED_BUDGET")
                         append_event(db, run, "budget.pause", {

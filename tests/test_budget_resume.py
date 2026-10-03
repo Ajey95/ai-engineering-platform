@@ -87,6 +87,15 @@ def test_budget_resume_updates_cap_and_dispatches_once(paused):
     assert conflict.value.code == "IDEMPOTENCY_CONFLICT"
 
 
+def test_budget_resume_restores_investigation_target(paused):
+    paused.get(Run, "run").resume_target = "INVESTIGATING"
+    paused.commit()
+    run = approve(paused)
+    paused.commit()
+    assert run.state == "QUEUED"
+    assert run.resume_target == "INVESTIGATING"
+
+
 def test_budget_resume_refuses_cap_policy_uncertain_effect_and_expiry(paused):
     with pytest.raises(ServiceError) as cap:
         approve(paused, "6.000000")

@@ -1546,7 +1546,7 @@ zero firing alerts. This is a local process, not a scheduled automation.
 
 2026-10-03 run-budget increment: admission accepts an optional lower
 `max_spend_usd`, bounded by the operator cap, and records it in the run policy
-and run-cap ledger. A distinct run-spend error pauses a PATCHING/VERIFYING
+and run-cap ledger. A distinct run-spend error pauses an INVESTIGATING/PATCHING/VERIFYING
 worker as `PAUSED_BUDGET` while fencing leases and acknowledging its dispatch.
 The owner-only `/resume-budget` endpoint requires a reason, a higher cap no
 larger than the current operator maximum, an unexpired 24-hour pause, current
@@ -1572,3 +1572,20 @@ fixture model cannot autonomously repair. The review packet reported
 as INCONCLUSIVE with REPRODUCED baseline and no page errors. This proves the
 lower-cap admission/worker path, not a live budget pause or provider repair.
 Screenshot outside repo: `D:\projects\frontend-budget-run-20261003.png`.
+
+2026-10-03 controlled budget pause/replay: the first provider reservation in
+the fixture happens during `INVESTIGATING`, so the budget-pause transition and
+worker handlers now support that target as well as patching/verification.
+`scripts.verify_development_worker --controlled-provider --budget-pause-probe
+--runtime wsl --image aip-dev-sandbox:0.1.2` passed in isolated artifact
+directory `artifacts/worker-verification/5ae17c234ebd`, run
+`5662c25c-b814-49cf-ab86-fecda47bb84c`. The initial $0.000001 cap paused
+before any controlled provider HTTP request or `model.generate` tool action;
+one owner approval raised it to $5, one new dispatch ran, exactly one provider
+request occurred, and the run reached `REVIEW_READY`/`PASSED` with candidate
+named/browser/oracle checks and both media manifests ready. The controlled
+response is predetermined test data, so this proves local orchestration and
+budget ordering only. Targeted budget/development-worker tests passed 11/11;
+the full Python suite passed 271 with 5 skips, scoped Ruff and `git diff --check`
+passed. No frontend code changed in this increment; its previous TypeScript and
+Vite build remained the latest UI check.

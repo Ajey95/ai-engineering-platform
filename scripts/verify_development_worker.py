@@ -21,9 +21,18 @@ from sqlalchemy.orm import sessionmaker
 from platform_app.api import review_packet
 from platform_app.db import Base
 from platform_app.development_worker import DevelopmentWorker
-from platform_app.models import ModelEntry, OutboxEvent, Project, Run, Task, Tenant, ToolAction
+from platform_app.models import (
+    ModelEntry,
+    OutboxEvent,
+    Project,
+    Run,
+    RunEvent,
+    Task,
+    Tenant,
+    ToolAction,
+)
 from platform_app.providers import OpenAIResponses
-from platform_app.run_ledger import claim_run, resume_input_run, transition
+from platform_app.run_ledger import claim_run, resume_budget_run, resume_input_run, transition
 from platform_app.schemas import RunCreate
 from platform_app.service import admit_run
 
@@ -32,9 +41,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--controlled-provider", action="store_true")
     parser.add_argument("--resume-probe", action="store_true")
+    parser.add_argument("--budget-pause-probe", action="store_true")
     parser.add_argument("--runtime", choices=("wsl", "native"), default="wsl")
     parser.add_argument("--image", default="aip-dev-sandbox:0.1.0")
     args = parser.parse_args()
+    if args.budget_pause_probe and not args.controlled_provider:
+        parser.error("Budget pause probe requires the controlled provider")
     root = Path(__file__).resolve().parents[1]
     target = root / "artifacts" / "worker-verification" / uuid4().hex[:12]
     target.mkdir(parents=True)
@@ -95,6 +107,7 @@ def main() -> int:
                 base_commit=commit,
                 selected_model_entry="database-fixture-model",
                 reproduction={"fixture_case_id": "form-submit-001"},
+                max_spend_usd=Decimal("0.000001") if args.budget_pause_probe else None,
             ),
         )
         db.commit()
@@ -117,6 +130,7 @@ def main() -> int:
             db.commit()
 
     adapter = None
+    provider_requests: list[httpx.Request] = []
     if args.controlled_provider:
         original = (root / "benchmarks/fixtures/form-submit/base/server.py").read_text(
             encoding="utf-8"
@@ -132,6 +146,7 @@ def main() -> int:
         )
 
         def respond(_request: httpx.Request) -> httpx.Response:
+            provider_requests.append(_request)
             if args.resume_probe and (
                 b"Use the valid form submission scenario" not in _request.content
                 or b"authenticated_project_contributor_input" not in _request.content
@@ -162,6 +177,28 @@ def main() -> int:
         image=args.image,
     )
     processed = worker.process_next()
+    budget_pause_verified = False
+    if args.budget_pause_probe:
+        with factory() as db:
+            paused = db.get(Run, run_id)
+            if paused.state != "PAUSED_BUDGET":
+                raise RuntimeError(f"Expected a budget pause, got {paused.state}")
+            if provider_requests or db.scalar(select(ToolAction.id).where(
+                ToolAction.run_id == run_id,
+                ToolAction.logical_action == "model.generate",
+            )) is not None:
+                raise RuntimeError("Provider effect started before budget approval")
+            if db.scalar(select(RunEvent.id).where(
+                RunEvent.run_id == run_id, RunEvent.event_type == "budget.pause",
+            )) is None:
+                raise RuntimeError("Durable budget pause event is missing")
+            budget_pause_verified = True
+            resume_budget_run(
+                db, "fixture-tenant", run_id, "fixture-verifier",
+                "Reviewed controlled run budget", Decimal("5"), "budget-resume-probe-001",
+            )
+            db.commit()
+        processed = worker.process_next()
     with factory() as db:
         run = db.get(Run, run_id)
         outboxes = db.scalars(select(OutboxEvent).where(OutboxEvent.topic == "run.dispatch")).all()
@@ -176,6 +213,9 @@ def main() -> int:
             else "incomplete",
             "outbox_count": len(outboxes),
             "resume_probe": args.resume_probe,
+            "budget_pause_probe": args.budget_pause_probe,
+            "budget_pause_verified": budget_pause_verified,
+            "provider_request_count": len(provider_requests),
             "state": run.state,
             "verdict": run.verdict,
             "tool_actions": len(actions),
@@ -212,7 +252,9 @@ def main() -> int:
         if (
             processed == run_id
             and result["outbox_status"] == "delivered"
-            and result["outbox_count"] == (2 if args.resume_probe else 1)
+            and result["outbox_count"] == (
+                2 if args.resume_probe or args.budget_pause_probe else 1
+            )
             and result["state"] == ("REVIEW_READY" if args.controlled_provider else "INCONCLUSIVE")
             and result["verdict"] == ("PASSED" if args.controlled_provider else "INCONCLUSIVE")
             and result["tool_statuses"] == expected
@@ -221,6 +263,10 @@ def main() -> int:
             == ({"baseline", "candidate"} if args.controlled_provider else {"baseline"})
             and result["reproduction_status"] == "REPRODUCED"
             and result["autonomous_repair"] is False
+            and (
+                not args.budget_pause_probe
+                or result["budget_pause_verified"] and result["provider_request_count"] == 1
+            )
             and (
                 not args.controlled_provider
                 or result["qualification_scope"] == "synthetic_container_controlled_provider"
