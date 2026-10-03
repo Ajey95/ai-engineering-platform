@@ -51,6 +51,7 @@ class TenantQuotasSet(StrictModel):
     monthly_inference_cap_usd: Decimal = Field(gt=0, le=Decimal("999999.999999"), decimal_places=6)
     max_concurrent_runs: int = Field(ge=1, le=1000)
     daily_export_cap_bytes: int = Field(ge=1, le=2_000_000_000)
+    daily_sandbox_minutes: int | None = Field(default=None, ge=10, le=100_000)
     reason: str = Field(min_length=8, max_length=2000)
 
     @model_validator(mode="after")

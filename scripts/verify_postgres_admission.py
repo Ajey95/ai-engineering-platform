@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,12 +38,15 @@ from platform_app.models import (
     RecordingDeletion,
     Run,
     RunEvent,
+    SandboxLease,
     Task,
     Tenant,
     TenantMembership,
     ToolAction,
 )
 from platform_app.run_ledger import claim_run, resume_input_run, transition
+from platform_app.sandbox_broker import SandboxSpec, reserve_sandbox
+from platform_app.sandbox_quota import sandbox_usage_seconds
 from platform_app.schemas import RunCreate
 from platform_app.service import ServiceError, admit_run
 from platform_app.tenant_quota import QuotaError, check_inference_reservation, lock_tenant
@@ -302,6 +306,7 @@ def main() -> int:
             "--monthly-inference-cap-usd", "0.015",
             "--max-concurrent-runs", "2",
             "--daily-export-cap-bytes", "100",
+            "--daily-sandbox-minutes", "30",
         ]
         operator_result = subprocess.run(
             operator_command, env={**os.environ, "AIP_DATABASE_URL": url},
@@ -320,6 +325,7 @@ def main() -> int:
             quota_operator_audit = (
                 tenant.max_concurrent_runs == 2
                 and tenant.daily_export_cap_bytes == 100
+                and tenant.daily_sandbox_minutes == 30
                 and Decimal(tenant.daily_inference_cap_usd) == Decimal("0.015")
                 and session.scalar(select(func.count()).select_from(AuditEvent).where(
                     AuditEvent.tenant_id == tenant.id,
@@ -403,6 +409,51 @@ def main() -> int:
         postgres_export_quota_race = sorted(export_results) == [
             "EXPORT_QUOTA_EXHAUSTED", "exported"
         ] and export_rows == 1
+        with Session(engine) as session:
+            for index in range(2):
+                session.add(Run(
+                    id=f"sandbox-race-{index}", tenant_id="fixture-tenant",
+                    project_id="fixture-project", task_id="fixture-task",
+                    created_by="fixture", idempotency_key=f"sandbox-race-{index}",
+                    request_hash="a" * 64, base_commit="a" * 40,
+                    model_entry_id="database-fixture-model", state="PREPARING",
+                    lease_owner="quota-worker", lease_fence=1,
+                    lease_until=datetime.now(UTC) + timedelta(minutes=5),
+                    config_snapshot={},
+                ))
+            session.commit()
+        sandbox_barrier = Barrier(2)
+        sandbox_spec = SandboxSpec(
+            "ami-12345678", "m6i.large", "subnet-12345678",
+            "sg-12345678", "/dev/xvda",
+        )
+
+        def reserve_guest(index: int) -> str:
+            sandbox_barrier.wait(timeout=10)
+            with Session(engine) as session:
+                try:
+                    reserve_sandbox(
+                        session, f"sandbox-race-{index}", "quota-worker", 1,
+                        sandbox_spec,
+                    )
+                    return "reserved"
+                except ServiceError as error:
+                    session.rollback()
+                    return error.code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(reserve_guest, index) for index in range(2)]
+            sandbox_results = [future.result(timeout=30) for future in futures]
+        with Session(engine) as session:
+            sandbox_rows = session.scalar(select(func.count(SandboxLease.id)).where(
+                SandboxLease.tenant_id == "fixture-tenant",
+            ))
+            sandbox_seconds = sandbox_usage_seconds(
+                session, "fixture-tenant", now=datetime.now(UTC),
+            )
+        postgres_sandbox_quota_race = sorted(sandbox_results) == [
+            "SANDBOX_QUOTA_EXHAUSTED", "reserved",
+        ] and sandbox_rows == 1 and sandbox_seconds == 1800
         # Reproduce the PostgreSQL lock boundary at the actual deletion handler.
         # Both requests must return successfully while only one final event exists.
         import platform_app.api as api_module
@@ -490,6 +541,7 @@ def main() -> int:
             "postgres_run_quota_race": postgres_run_quota_race,
             "postgres_inference_quota_race": postgres_inference_quota_race,
             "postgres_export_quota_race": postgres_export_quota_race,
+            "postgres_sandbox_quota_race": postgres_sandbox_quota_race,
             "quota_operator_audit": quota_operator_audit,
             "same_run_id": ids[0] == ids[1],
             "bootstrap_owner": bootstrap_owner,
@@ -513,6 +565,7 @@ def main() -> int:
             and postgres_run_quota_race
             and postgres_inference_quota_race
             and postgres_export_quota_race
+            and postgres_sandbox_quota_race
             and quota_operator_audit
             and all(v == 1 for v in counts.values())
             else 1

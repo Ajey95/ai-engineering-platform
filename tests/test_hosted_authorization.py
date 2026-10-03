@@ -216,12 +216,14 @@ def test_hosted_project_roles_and_tenant_selection(hosted, monkeypatch):
             assert client.put("/v1/tenant/quotas", headers=bob, json={
                 "daily_inference_cap_usd": "5", "monthly_inference_cap_usd": "50",
                 "max_concurrent_runs": 2, "daily_export_cap_bytes": 100_000,
+                "daily_sandbox_minutes": 60,
                 "reason": "Approved pilot ceiling",
             }).status_code == 403
             quotas = {
                 "daily_inference_cap_usd": "5.000000",
                 "monthly_inference_cap_usd": "50.000000",
                 "max_concurrent_runs": 2, "daily_export_cap_bytes": 100_000,
+                "daily_sandbox_minutes": 60,
                 "reason": "Approved pilot ceiling",
             }
             assert client.put("/v1/tenant/quotas", headers=owner, json={

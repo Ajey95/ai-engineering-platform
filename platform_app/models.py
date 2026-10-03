@@ -26,6 +26,7 @@ class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
         CheckConstraint("daily_export_cap_bytes > 0", name="ck_tenant_export_cap_positive"),
+        CheckConstraint("daily_sandbox_minutes > 0", name="ck_tenant_sandbox_cap_positive"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200))
@@ -35,6 +36,7 @@ class Tenant(Base):
     monthly_inference_cap_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=500)
     max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=4)
     daily_export_cap_bytes: Mapped[int] = mapped_column(Integer, default=100_000_000)
+    daily_sandbox_minutes: Mapped[int] = mapped_column(Integer, default=120)
     model_routing_policy: Mapped[dict] = mapped_column(JsonType, default=dict)
     plugin_allowlist: Mapped[list] = mapped_column(JsonType, default=list)
 
@@ -375,6 +377,11 @@ class SandboxLease(Base):
         UniqueConstraint("instance_id", name="uq_sandbox_instance_id"),
         CheckConstraint("generation > 0", name="ck_sandbox_generation_positive"),
         CheckConstraint("disk_gib BETWEEN 8 AND 100", name="ck_sandbox_disk_bounds"),
+        CheckConstraint("reserved_seconds > 0", name="ck_sandbox_reserved_positive"),
+        CheckConstraint(
+            "used_seconds IS NULL OR used_seconds >= 0",
+            name="ck_sandbox_used_nonnegative",
+        ),
         CheckConstraint("phase IN ('baseline', 'candidate')", name="ck_sandbox_phase"),
         CheckConstraint(
             "state IN ('intended', 'bootstrapping', 'provisioned', 'revoked', "
@@ -399,6 +406,10 @@ class SandboxLease(Base):
     security_group_id: Mapped[str] = mapped_column(String(32))
     root_device_name: Mapped[str] = mapped_column(String(32))
     disk_gib: Mapped[int] = mapped_column(Integer)
+    reserved_seconds: Mapped[int] = mapped_column(Integer, default=1800)
+    used_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bootstrap_envelope: Mapped[str | None] = mapped_column(Text, nullable=True)
     bootstrap_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)

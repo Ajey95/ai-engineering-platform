@@ -1755,3 +1755,17 @@ the full suite passed 287 with two Windows symlink skips (PostgreSQL and
 Memgraph gates enabled), Ruff, TypeScript and Vite production build passed.
 The API on 8098 was restarted, and headless Chromium rendered all seven rows
 without page errors; the initial inline label spacing was fixed and checked.
+
+2026-10-03 sandbox-minute quota: migration `f89e4d70ab12` adds a default
+120-minute daily tenant cap and durable sandbox lease reservation/settlement
+fields. The hosted broker now checks the cap under a tenant row lock before
+S3/EC2, charges one lease once across replay, warns at 80%, and settles elapsed
+seconds only after EC2 confirms termination. Missing launch timestamps are
+charged conservatively. The owner Settings/API and trusted operator CLI expose
+the cap, and Operations shows the daily liability. Local PostgreSQL upgraded
+without Alembic drift; its disposable two-run quota race admitted exactly one
+30-minute lease. The local SQLite API database was backed up, upgraded and
+restarted on 8098. The UI showed the new 120-minute field and operations
+metric without page errors. Full Python suite: 288 passed, 2 Windows symlink
+skips with PostgreSQL and Memgraph gates enabled; Ruff, TypeScript and Vite
+production build passed. Media-minute and artifact-byte quotas remain.

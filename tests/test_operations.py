@@ -69,6 +69,7 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
             subnet_id="subnet-123", security_group_id="sg-123",
             root_device_name="/dev/sda1", disk_gib=20,
             expires_at=now - timedelta(minutes=6),
+            created_at=now - timedelta(minutes=40),
         ))
         db.add(ToolAction(
             tenant_id="tenant-a", run_id="passed", step_id="step",
@@ -134,7 +135,9 @@ def test_operations_snapshot_scopes_aggregates_and_marks_missing_metrics():
         assert snapshot["graph"] == {"pending_count": 1, "oldest_age_seconds": 90}
         assert snapshot["media_queue"] == {"pending_count": 1, "oldest_age_seconds": 660}
         assert snapshot["sandbox"] == {"expired_lease_count": 1,
-                                       "cleanup_grace_seconds": 300}
+                                       "cleanup_grace_seconds": 300,
+                                       "used_minutes_today": 30.0,
+                                       "daily_cap_minutes": 120}
         assert snapshot["tools"] == {"by_policy_result": {"denied": 1}, "failed_count": 1}
         assert snapshot["model_calls"] == {
             "status": "MEASURED", "completed_count": 1,

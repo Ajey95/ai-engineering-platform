@@ -16,6 +16,7 @@ def quota_read(tenant: Tenant) -> dict:
         "monthly_inference_cap_usd": format(tenant.monthly_inference_cap_usd, ".6f"),
         "max_concurrent_runs": tenant.max_concurrent_runs,
         "daily_export_cap_bytes": tenant.daily_export_cap_bytes,
+        "daily_sandbox_minutes": tenant.daily_sandbox_minutes,
     }
 
 
@@ -31,12 +32,17 @@ def update_quotas(
         "monthly_inference_cap_usd": format(requested.monthly_inference_cap_usd, ".6f"),
         "max_concurrent_runs": requested.max_concurrent_runs,
         "daily_export_cap_bytes": requested.daily_export_cap_bytes,
+        "daily_sandbox_minutes": (
+            requested.daily_sandbox_minutes
+            if requested.daily_sandbox_minutes is not None else tenant.daily_sandbox_minutes
+        ),
     }
     if before != after:
         tenant.daily_inference_cap_usd = requested.daily_inference_cap_usd
         tenant.monthly_inference_cap_usd = requested.monthly_inference_cap_usd
         tenant.max_concurrent_runs = requested.max_concurrent_runs
         tenant.daily_export_cap_bytes = requested.daily_export_cap_bytes
+        tenant.daily_sandbox_minutes = after["daily_sandbox_minutes"]
         db.add(AuditEvent(
             tenant_id=tenant_id, actor=actor, action="tenant.quotas.update",
             target_ref=tenant_id,

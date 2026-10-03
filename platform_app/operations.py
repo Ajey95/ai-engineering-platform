@@ -28,6 +28,7 @@ from platform_app.models import (
 )
 from platform_app.operational_alerts import SANDBOX_CLEANUP_GRACE, alert_read
 from platform_app.ops_alerts import current_warning_details
+from platform_app.sandbox_quota import sandbox_usage_seconds
 
 
 def _age(now: datetime, created_at: datetime | None) -> int | None:
@@ -306,7 +307,11 @@ def operations_snapshot(
         "graph": {"pending_count": graph_pending, "oldest_age_seconds": graph_age},
         "media_queue": {"pending_count": media_pending, "oldest_age_seconds": media_age},
         "sandbox": {"expired_lease_count": expired_leases,
-                    "cleanup_grace_seconds": int(SANDBOX_CLEANUP_GRACE.total_seconds())},
+                    "cleanup_grace_seconds": int(SANDBOX_CLEANUP_GRACE.total_seconds()),
+                    "used_minutes_today": round(
+                        sandbox_usage_seconds(db, tenant_id, now=now) / 60, 2
+                    ),
+                    "daily_cap_minutes": tenant.daily_sandbox_minutes},
         "tools": {"by_policy_result": tools, "failed_count": failed_tools},
         "media": {"by_status": media},
         "model_calls": _model_call_metrics(db, tenant_id, cutoff),

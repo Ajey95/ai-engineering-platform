@@ -15,7 +15,16 @@ from sqlalchemy.pool import StaticPool
 from platform_app.db import Base, utcnow
 from platform_app.environment_manifest import EnvironmentManifest
 from platform_app.hosted_baseline import seal_and_collect_baseline, stage_and_launch_baseline
-from platform_app.models import OutboxEvent, Project, Run, RunEvent, SandboxLease, Task, Tenant
+from platform_app.models import (
+    AuditEvent,
+    OutboxEvent,
+    Project,
+    Run,
+    RunEvent,
+    SandboxLease,
+    Task,
+    Tenant,
+)
 from platform_app.repository_archive import SourceArchive
 from platform_app.run_ledger import claim_run, transition
 from platform_app.sandbox_bootstrap_crypto import (
@@ -35,6 +44,7 @@ from platform_app.sandbox_broker import (
     seal_bootstrapping_sandbox,
     terminate_revoked_sandbox,
 )
+from platform_app.sandbox_quota import sandbox_usage_seconds
 from platform_app.sandbox_transport import SandboxObjectKeys
 from platform_app.service import ServiceError, request_cancel
 
@@ -196,6 +206,42 @@ def _ready(s3, lease, fence):
         "source_sha256": _SOURCE_SHA,
     }).encode()
     return keys
+
+
+def test_sandbox_minutes_reserve_once_block_and_settle_on_confirmed_termination(scoped_db):
+    db, run, fence = scoped_db
+    db.get(Tenant, "tenant-a").daily_sandbox_minutes = 31
+    db.commit()
+    first = reserve_sandbox(db, run.id, "worker-a", fence, _spec())
+    assert first.reserved_seconds == 1800
+    assert reserve_sandbox(db, run.id, "worker-a", fence, _spec()).id == first.id
+    assert sandbox_usage_seconds(db, "tenant-a", now=utcnow()) == 1800
+    assert db.scalar(select(AuditEvent).where(
+        AuditEvent.action == "sandbox.threshold_80",
+    )) is not None
+    db.add(Run(
+        id="run-b", tenant_id="tenant-a", project_id="project-a", task_id="task-a",
+        created_by="alice", idempotency_key="key-b", request_hash="b" * 64,
+        base_commit="a" * 40, model_entry_id="model-a", state="PREPARING",
+        lease_owner="worker-a", lease_fence=fence,
+        lease_until=utcnow() + timedelta(minutes=5), config_snapshot={},
+    ))
+    db.commit()
+    with pytest.raises(ServiceError) as blocked:
+        reserve_sandbox(db, "run-b", "worker-a", fence, _spec())
+    assert blocked.value.code == "SANDBOX_QUOTA_EXHAUSTED"
+    db.rollback()
+
+    _attach(db, first, fence)
+    ec2 = FakeEC2()
+    launch_reserved_sandbox(db, first.id, "worker-a", fence, ec2, _ENVELOPE_KEY)
+    revoke_sandbox(db, first.id, "closed")
+    assert terminate_revoked_sandbox(db, first.id, ec2) is False
+    assert terminate_revoked_sandbox(db, first.id, ec2) is True
+    assert first.used_seconds is not None and 0 < first.used_seconds < 1800
+    assert sandbox_usage_seconds(db, "tenant-a", now=utcnow()) == first.used_seconds
+    second = reserve_sandbox(db, "run-b", "worker-a", fence, _spec())
+    assert second.id != first.id
 
 
 def test_ec2_intent_is_fenced_private_encrypted_and_idempotent(scoped_db):

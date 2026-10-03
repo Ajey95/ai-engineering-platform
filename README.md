@@ -60,7 +60,7 @@ qualify; a read-only probe cannot prove those rights.
   successful response records its size and SHA-256 in a scoped export ledger;
   excess requests return 429 and crossing 80 percent writes an audit warning.
   The trusted `scripts.set_tenant_quotas` command accepts
-  `--daily-export-cap-bytes` for an operator change.
+  `--daily-export-cap-bytes` and `--daily-sandbox-minutes` for an operator change.
 - Fenced lease, state transition and tool effect ledger primitives.
 - A deterministic development effect policy checks tenant/project/run scope,
   reviewed action and version, target and tool budget before execution.
@@ -151,7 +151,7 @@ command audits changes and does nothing on an identical retry:
 
 ```powershell
 $env:AIP_DATABASE_URL = 'postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE'
-uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4
+uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4 --daily-sandbox-minutes 120
 ```
 
 The shown amounts are default examples, not a provider budget qualification.

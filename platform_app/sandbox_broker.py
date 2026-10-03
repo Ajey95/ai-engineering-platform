@@ -5,22 +5,25 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from math import ceil
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from platform_app.db import utcnow
-from platform_app.models import OutboxEvent, Run, SandboxLease
+from platform_app.models import AuditEvent, OutboxEvent, Run, SandboxLease
 from platform_app.run_ledger import ACTIVE_STATES, TERMINAL_STATES, assert_fence, aware
 from platform_app.sandbox_bootstrap_crypto import decrypt_user_data, encrypt_user_data
+from platform_app.sandbox_quota import sandbox_usage_seconds
 from platform_app.sandbox_transport import (
     SandboxObjectKeys,
     SandboxTransportError,
     guest_ready,
     publish_guest_go,
 )
-from platform_app.service import ServiceError, append_event
+from platform_app.service import ServiceError, append_event, canonical_hash
+from platform_app.tenant_quota import QuotaError, lock_tenant
 
 _AWS_ID = re.compile(r"(?:ami|subnet|sg)-[0-9a-f]{8,17}\Z")
 _INSTANCE_ID = re.compile(r"i-[0-9a-f]{8,17}\Z")
@@ -81,6 +84,10 @@ def reserve_sandbox(
     assert_fence(run, worker_id, fence)
     if run.cancel_requested or run.state not in ACTIVE_STATES:
         raise ServiceError("SANDBOX_NOT_ALLOWED", "Run is not executable", 409)
+    try:
+        tenant = lock_tenant(db, run.tenant_id)
+    except QuotaError as error:
+        raise ServiceError(error.code, str(error), 403) from error
     existing = db.scalar(select(SandboxLease).where(
         SandboxLease.tenant_id == run.tenant_id,
         SandboxLease.run_id == run.id,
@@ -95,6 +102,13 @@ def reserve_sandbox(
         ):
             return existing
         raise ServiceError("SANDBOX_STILL_ACTIVE", "Prior sandbox needs cleanup", 409)
+    now = utcnow()
+    used = sandbox_usage_seconds(db, tenant.id, now=now)
+    cap = tenant.daily_sandbox_minutes * 60
+    if used + spec.ttl_seconds > cap:
+        raise ServiceError(
+            "SANDBOX_QUOTA_EXHAUSTED", "Tenant daily sandbox-minute cap reached", 409
+        )
     generation = (db.scalar(select(func.max(SandboxLease.generation)).where(
         SandboxLease.run_id == run.id
     )) or 0) + 1
@@ -107,7 +121,8 @@ def reserve_sandbox(
         state="intended", image_id=spec.image_id, instance_type=spec.instance_type,
         subnet_id=spec.subnet_id, security_group_id=spec.security_group_id,
         root_device_name=spec.root_device_name, disk_gib=spec.disk_gib,
-        expires_at=utcnow() + timedelta(seconds=spec.ttl_seconds),
+        reserved_seconds=spec.ttl_seconds,
+        expires_at=now + timedelta(seconds=spec.ttl_seconds),
     )
     db.add(lease)
     db.flush()
@@ -115,6 +130,17 @@ def reserve_sandbox(
         "sandbox_lease_id": lease.id, "generation": generation,
         "phase": phase, "image_id": spec.image_id,
     })
+    if used < cap * 0.8 <= used + spec.ttl_seconds:
+        db.add(AuditEvent(
+            tenant_id=tenant.id, actor=worker_id, action="sandbox.threshold_80",
+            target_ref=run.id,
+            arguments_hash=canonical_hash({
+                "run_id": run.id, "lease_id": lease.id,
+                "reserved_seconds": spec.ttl_seconds, "used_before": used,
+                "daily_cap_seconds": cap,
+            }),
+            policy_revision=tenant.policy_revision, outcome="warning",
+        ))
     db.commit()
     db.refresh(lease)
     return lease
@@ -279,6 +305,11 @@ def launch_reserved_sandbox(
         raise ServiceError("SANDBOX_OUTCOME_UNKNOWN", "EC2 launch needs reconciliation", 503)
     instance = instances[0]
     lease.instance_id = instance["InstanceId"]
+    launch_time = instance.get("LaunchTime")
+    lease.started_at = lease.started_at or (
+        aware(launch_time) if isinstance(launch_time, datetime)
+        else aware(lease.created_at)
+    )
     try:
         assert_fence(run, worker_id, fence)
         fence_lost = False
@@ -472,8 +503,14 @@ def terminate_revoked_sandbox(db: Session, lease_id: str, ec2) -> bool:
     if len(instances) != 1 or instances[0].get("InstanceId") != lease.instance_id:
         raise ServiceError("SANDBOX_OUTCOME_UNKNOWN", "EC2 state is ambiguous", 503)
     if instances[0].get("State", {}).get("Name") == "terminated":
+        now = utcnow()
         lease.state = "terminated"
-        lease.updated_at = utcnow()
+        lease.terminated_at = now
+        lease.used_seconds = (
+            max(1, ceil((now - aware(lease.started_at)).total_seconds()))
+            if lease.started_at else lease.reserved_seconds
+        )
+        lease.updated_at = now
         db.commit()
         return True
     lease.state = "terminating"

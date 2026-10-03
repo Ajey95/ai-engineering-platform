@@ -42,6 +42,13 @@ def _export_bytes(value: str) -> int:
     return number
 
 
+def _sandbox_minutes(value: str) -> int:
+    number = _positive_int(value)
+    if not 10 <= number <= 100_000:
+        raise argparse.ArgumentTypeError("Sandbox cap must be 10 to 100000 minutes")
+    return number
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tenant-id", required=True)
@@ -49,6 +56,7 @@ def main() -> int:
     parser.add_argument("--monthly-inference-cap-usd", required=True, type=_money)
     parser.add_argument("--max-concurrent-runs", required=True, type=_positive_int)
     parser.add_argument("--daily-export-cap-bytes", type=_export_bytes)
+    parser.add_argument("--daily-sandbox-minutes", type=_sandbox_minutes)
     args = parser.parse_args()
     if args.monthly_inference_cap_usd < args.daily_inference_cap_usd:
         parser.error("Monthly inference cap must be at least the daily cap")
@@ -68,6 +76,7 @@ def main() -> int:
                 "monthly_inference_cap_usd": format(tenant.monthly_inference_cap_usd, ".6f"),
                 "max_concurrent_runs": tenant.max_concurrent_runs,
                 "daily_export_cap_bytes": tenant.daily_export_cap_bytes,
+                "daily_sandbox_minutes": tenant.daily_sandbox_minutes,
             }
             after = {
                 "daily_inference_cap_usd": format(args.daily_inference_cap_usd, ".6f"),
@@ -78,12 +87,18 @@ def main() -> int:
                     if args.daily_export_cap_bytes is not None
                     else tenant.daily_export_cap_bytes
                 ),
+                "daily_sandbox_minutes": (
+                    args.daily_sandbox_minutes
+                    if args.daily_sandbox_minutes is not None
+                    else tenant.daily_sandbox_minutes
+                ),
             }
             if before != after:
                 tenant.daily_inference_cap_usd = args.daily_inference_cap_usd
                 tenant.monthly_inference_cap_usd = args.monthly_inference_cap_usd
                 tenant.max_concurrent_runs = args.max_concurrent_runs
                 tenant.daily_export_cap_bytes = after["daily_export_cap_bytes"]
+                tenant.daily_sandbox_minutes = after["daily_sandbox_minutes"]
                 db.add(
                     AuditEvent(
                         tenant_id=tenant.id,
