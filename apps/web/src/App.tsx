@@ -231,7 +231,7 @@ export default function App({ identity, onSignOut }: {
         }
       } catch { /* malformed event is ignored; durable history remains source of truth */ }
     }
-    for (const name of ['run.admitted', 'run.resumed', 'run.state_changed', 'model.started', 'model.completed', 'tool.authorized', 'tool.completed', 'verification.completed', 'artifact.ready', 'artifact.failed', 'artifact.deletion_requested', 'artifact.deleted', 'review.decision', 'run.closed']) stream.addEventListener(name, receive)
+    stream.onmessage = receive
     return () => { active = false; stream.close() }
   }, [selectedRun, refresh])
 

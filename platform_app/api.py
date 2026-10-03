@@ -1417,7 +1417,7 @@ async def run_events(
                     for event in events:
                         cursor = event.sequence
                         yield (
-                            f"id: {event.sequence}\nevent: {event.event_type}\n"
+                            f"id: {event.sequence}\n"
                             f"data: {event.model_dump_json()}\n\n"
                         )
                     last_activity = loop.time()

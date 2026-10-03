@@ -1501,3 +1501,21 @@ isolated restored PostgreSQL API with a 20+20 pool, three 100-connected-viewer
 new-event trials delivered 100/100 with p95 968.3, 851.5 and 885.2 ms.
 This meets the local below-one-second target on those three samples only;
 hosted two-instance/OIDC/load-balancer behavior remains unverified.
+
+2026-10-03 event UI correction: the web client previously registered only a
+fixed subset of named SSE event types, so approval, budget, failover, worker
+error and some sandbox/media updates appeared only after history reload. The
+API now sends every durable event as a standard SSE message with `event_type`
+inside its versioned JSON payload; the web client handles `onmessage` and
+keeps its event-ID deduplication. A local stream returned HTTP 200 with
+`id: 1` and the expected JSON envelope, and the TypeScript/Vite production
+build passed. The primary SQLite API was restarted with the current source;
+`/v1/health` and `/v1/ready` returned success, and the Vite page returned 200.
+Regular Playwright was used because the Browser plugin was not available in
+this session. Chromium loaded the 5173 app (title and Runs heading correct),
+received a real `run.admitted` SSE message, and had zero page errors. A route
+intercept injected an `approval.required` SSE message without changing the
+database; the run timeline rendered `approval · required` once with zero page
+errors. Screenshots are outside the repository at
+`D:\projects\frontend-sse-check-20261003.png` and
+`D:\projects\frontend-sse-approval-20261003.png`.
