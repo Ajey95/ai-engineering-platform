@@ -1,12 +1,53 @@
 # AI Engineering Platform
 
-This repository implements an early **local development foundation** for the
-[AI Engineering Platform PRD](E:/vab-downloads/AI_Engineering_Platform_PRD.md),
-version 1.0. It is **not a complete implementation or a paid pilot release**.
-See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for requirement evidence
-and release blockers.
+This repository implements the AI Engineering Platform PRD v1.0 (1 October
+2026). It investigates browser-reproducible application bugs, records evidence,
+proposes bounded code changes and presents independently checked results for
+human review. The current system is a **working local development prototype**,
+not a qualified hosted release. No customer repository or live model account
+has been exercised. [Implementation status](IMPLEMENTATION_STATUS.md) records
+requirement-by-requirement evidence and open release gates. The source PRD was
+supplied separately and is not included in this repository.
+
+## Core features and their verified scope
+
+| Area | Implemented behavior | Current verification |
+|---|---|---|
+| Workspace and identity | Project, report, run, review, usage, Settings and Operations screens; tenant/project role checks; OIDC bearer and browser PKCE session paths | Local UI and controlled issuer tests; real issuer pending |
+| Admission and lifecycle | Idempotent task/run admission, frozen commit/policy/model snapshot, spend reservation, durable outbox, fenced leases, cancellation and explicit inconclusive results | SQLite and migrated PostgreSQL tests; local fixture runs |
+| Agent and model routing | LangGraph checkpointed fixture workflow; bounded hosted coordinator; native OpenAI, Anthropic and Google adapters; model qualification, budget/usage accounting, controlled fallback and context compaction | Controlled HTTP/model responses only; live provider qualification pending |
+| Repository and sandbox | Pinned Git archive/fetch, approved repair paths, independent baseline and candidate execution, per-run VM launch/cleanup and scoped S3 guest transport | WSL containers for synthetic fixtures; fake AWS tests; hosted VM isolation pending |
+| Browser and repair evidence | Named tests, browser actions, screenshots, WebM, sanitized logs, hidden synthetic oracle, exact-tree patch/diff and review packet | Real browser and FFmpeg for local fixture; no customer repository |
+| Media delivery | Separate media queue/worker, digest-verified HLS variants, private S3 publication, path-scoped CloudFront grant, deletion/invalidation, playback rendition and first-frame metrics | Local playback and controlled S3/CDN clients; live CDN pending |
+| Memory and retrieval | Canonical lifecycle/provenance in PostgreSQL, revision-pinned code index, bounded graph projection to Memgraph and scoped fallback | Local PostgreSQL/Memgraph gates; hosted graph service pending |
+| Plugins and tools | Reviewed versioned manifests, JSON schemas, permission scopes, artifact digests, tenant allowlist, typed tool results and full-log artifacts | Internal/controlled tools; remote MCP execution remains disabled |
+| Governance and operations | Tenant inference, concurrency, export, sandbox-minute, media-minute and private-HLS-byte quotas; deletion records; audits, alerts, runbooks and trace propagation | Local concurrency/restore/OTLP probes; hosted paging and recovery pending |
+| Evaluation and deployment | Forty pinned synthetic benchmark cases, CI checks, Terraform network/ECS/RDS/SQS/S3/edge definitions, Packer guest image and separate control/media Docker images | Baseline/reference cases and local image smoke passed; no AWS apply or paid-pilot release gate |
+
+**What an end-to-end local run does.** A user selects the synthetic project,
+submits a report and admits a run from the React workspace. FastAPI commits the
+run, reservation, event and outbox together. The development worker claims a
+fenced lease, checks out the pinned fixture, runs named/browser/oracle checks
+in separate WSL containers, stores evidence and encodes authenticated local
+HLS. Without a qualified provider it correctly ends `INCONCLUSIVE`. A separate
+controlled-provider verifier sends a predetermined HTTP response through the
+native adapter, applies a bounded candidate patch, independently reruns the
+checks and reaches a `REVIEW_READY` packet with a passing synthetic verdict.
+That controlled result is protocol evidence, not live autonomous repair.
+
+**Hosted design.** The trusted API and workers use PostgreSQL, SQS and private
+artifact storage. A run-pinned source is staged to S3; separate baseline and
+candidate EC2 guests receive exact, short-lived object capabilities and return
+bounded evidence. The control plane validates receipts before review, and a
+separate media worker publishes private HLS. Draft GitHub PR publication needs
+an explicit review approval and reconciles uncertain writes. Hosted admission
+defaults off until the selected account passes isolation, identity, provider,
+repository, CDN and restore qualification. The Terraform stack does not yet
+provision the Memgraph server or telemetry collector.
+
 The [benchmark contract](benchmarks/README.md) rejects incomplete or duplicate
-case suites; no complete benchmark has run yet.
+case suites. Its 40 baseline/reference fixture pairs passed locally; no model
+has completed all 40 cases, so model success metrics are unavailable.
 
 ## What runs today
 
@@ -60,8 +101,8 @@ qualify; a read-only probe cannot prove those rights.
   successful response records its size and SHA-256 in a scoped export ledger;
   excess requests return 429 and crossing 80 percent writes an audit warning.
   The trusted `scripts.set_tenant_quotas` command accepts
-  `--daily-export-cap-bytes`, `--daily-sandbox-minutes` and
-  `--daily-media-minutes` for an operator change.
+  `--daily-export-cap-bytes`, `--daily-sandbox-minutes`,
+  `--daily-media-minutes` and `--artifact-cap-bytes` for an operator change.
 - Fenced lease, state transition and tool effect ledger primitives.
 - A deterministic development effect policy checks tenant/project/run scope,
   reviewed action and version, target and tool budget before execution.
@@ -138,7 +179,7 @@ synthetic form case and keep its development worker polling the durable outbox:
 
 ```powershell
 uv run python -m scripts.seed_local_demo
-uv run python -m platform_app.development_worker --serve --runtime wsl
+uv run python -m platform_app.development_worker --serve --runtime wsl --image aip-dev-sandbox:0.1.3
 ```
 
 The Runs form labels this as a synthetic fixture and fills the pinned local
@@ -152,14 +193,15 @@ command audits changes and does nothing on an identical retry:
 
 ```powershell
 $env:AIP_DATABASE_URL = 'postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE'
-uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4 --daily-sandbox-minutes 120 --daily-media-minutes 120
+uv run python -m scripts.set_tenant_quotas --tenant-id TENANT_ID --daily-inference-cap-usd 50 --monthly-inference-cap-usd 500 --max-concurrent-runs 4 --daily-export-cap-bytes 104857600 --daily-sandbox-minutes 120 --daily-media-minutes 120 --artifact-cap-bytes 1073741824
 ```
 
 The shown amounts are default examples, not a provider budget qualification.
 Inference caps count reserved upper-bound liability until usage is settled;
 daily and monthly periods use UTC. Provider usage above its reservation posts a
-breach event and blocks subsequent reservations once the cap is spent. Other
-PRD resource quotas remain pending.
+breach event and blocks subsequent reservations once the cap is spent. Sandbox,
+media, export and private artifact quotas are enforced by their respective
+admission and publication paths; hosted quota behavior needs live qualification.
 
 Automatic model selection is available through `selected_model_entry: "auto"`
 only after a trusted operator records an explicit tenant allowlist.
@@ -229,12 +271,27 @@ and invalid arguments. Remote MCP versions remain disabled until an isolated
 transport, credential audience and egress enforcement are implemented; no
 external plugin is currently executed by the worker.
 
+From the repository root, install dependencies, start the local databases,
+apply migrations and build the isolated code-only fixture image:
+
 ```powershell
 uv sync --extra dev
 Copy-Item .env.example .env
 .\scripts\start_wsl_docker.ps1
 .\scripts\compose-wsl.ps1 up -d postgres memgraph
+.venv\Scripts\python.exe -m alembic upgrade head
+wsl.exe -d Ubuntu-24.04 -u root -- docker build -f infra/dev-sandbox/Dockerfile.code-only -t aip-dev-sandbox:0.1.3 .
+.venv\Scripts\python.exe -m scripts.seed_local_demo
+```
+
+Start the API and worker in separate terminals from the repository root:
+
+```powershell
 .venv\Scripts\uvicorn.exe platform_app.api:app --host 127.0.0.1 --port 8098
+```
+
+```powershell
+.venv\Scripts\python.exe -m platform_app.development_worker --serve --runtime wsl --image aip-dev-sandbox:0.1.3
 ```
 
 In another terminal:
@@ -467,8 +524,9 @@ To export traces, set `AIP_OTLP_TRACES_ENDPOINT` to the OTLP HTTP traces URL
 of a collector. Hosted endpoints must use HTTPS; local development may use
 HTTP on loopback. The API and worker propagate W3C trace context through the
 durable dispatch outbox. Trace attributes contain identifiers and outcomes,
-not prompts, repository content or credentials. No collector or hosted trace
-backend has been qualified here.
+not prompts, repository content or credentials. Export of a real protobuf span
+to a local loopback OTLP receiver passed; no hosted collector or trace backend
+has been qualified here.
 
 To exercise the admitted-run worker against the trusted synthetic baseline:
 
@@ -493,6 +551,19 @@ disposable database. It verifies a model-call reservation/usage receipt, a
 bounded patch, separate candidate named/browser/hidden-oracle containers, and
 before/after HLS publication. It does not qualify an OpenAI account or prove
 autonomous repair. The script prints a review packet and run ID.
+For the same controlled end-to-end path against a newly migrated, disposable
+local PostgreSQL database, run:
+
+```powershell
+.\scripts\verify_local_postgres_worker.ps1
+.\scripts\verify_local_postgres_worker.ps1 -ResumeProbe
+.\scripts\verify_local_postgres_worker.ps1 -BudgetPauseProbe
+```
+
+Each command creates and drops its own `aip_verify_*` database, consumes the
+canonical outbox, and writes a review packet under `artifacts/worker-verification`.
+The last two commands check a paused-input or budget-approval resume. They
+still use the reviewed synthetic fixture and a controlled provider response.
 For a run in the API's configured artifact directory, the Changes tab loads a
 tenant-scoped unified diff and offers a patch download. The server reconstructs
 the pinned fixture base and rejects a candidate whose tree or patch hash no
@@ -504,9 +575,10 @@ For a local `PAUSED_INPUT` run, the Runs screen accepts a bounded answer and
 posts it to `/v1/runs/{id}/resume` with an `Idempotency-Key`. The API checks
 current project membership, unchanged policy revision and unresolved effects
 before it records the answer and requeues one dispatch. The fixture worker
-replays completed effects against their receipts. Approval and budget pauses
-do not have a resume path yet; hosted resume remains disabled with the hosted
-sandbox gate.
+replays completed effects against their receipts. Owner-gated model and budget
+approvals can also requeue a paused development run after fresh policy,
+qualification, lease, receipt and 24-hour window checks. These paths passed
+controlled tests; hosted resume remains disabled with the hosted sandbox gate.
 For a `REVIEW_READY` fixture run, the reviewer can accept or reject the packet
 in the Runs or Review screen. Rejection requires a reason. Both decisions are
 audited, close the run, and leave the test verdict intact. Accepting a packet

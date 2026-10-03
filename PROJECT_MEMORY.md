@@ -1904,3 +1904,19 @@ landmark if it is gone). The background is inert and hidden from assistive
 technology while a dialog is open. TypeScript and Vite production build passed.
 Chromium verified all three dialogs, including the project dialog at 390 px,
 with zero page errors. A full accessibility audit remains.
+
+2026-10-03 disposable PostgreSQL worker end-to-end: a verifier wrapper creates
+one randomly named `aip_verify_*` database, migrates it, runs the controlled
+fixture worker with WSL containers, then drops the database. Normal repair,
+input resume (`877391d5-f5a2-43b6-b90c-45b84a1b06e8`) and budget approval
+resume (`a41e38d8-572c-4ef7-9f9f-8398bd924a8b`) reached
+REVIEW_READY/PASSED, ten effects, two READY media recordings and delivered
+outbox rows. The budget run paused before provider HTTP, and the approved
+resume made one controlled provider request. The run exposed a canonical state
+bug: `process_next` reset resumed runs to PREPARING while the graph restarted
+at its saved patch stage. It now restores only the approved saved active stage;
+the transition guard requires a recorded resume key and matching target. A
+focused regression test covers this. No live model, AWS or customer repository
+was used.
+The final PostgreSQL/Memgraph-enabled Python suite passed 295 with two Windows
+symlink skips; focused resume tests passed 18/18, and Ruff passed.

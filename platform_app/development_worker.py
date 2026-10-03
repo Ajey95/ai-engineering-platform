@@ -168,6 +168,16 @@ def _pinned_fixture(repository: Path, commit: str, destination: Path) -> tuple[P
 
 
 class DevelopmentWorker:
+    @staticmethod
+    def _queued_start_state(run: Run) -> str:
+        # A resumed graph starts from its checkpoint, so the canonical run
+        # must re-enter the stage saved when it paused.
+        if run.resume_key and run.resume_target in {
+            "PREPARING", "REPRODUCING", "INVESTIGATING", "PATCHING", "VERIFYING"
+        }:
+            return run.resume_target
+        return "PREPARING"
+
     def __init__(
         self,
         repository: Path,
@@ -728,7 +738,7 @@ class DevelopmentWorker:
             commit = run.base_commit
             initial_state = run.state
             if initial_state == "QUEUED":
-                transition(db, run, self.worker_id, fence, "PREPARING")
+                transition(db, run, self.worker_id, fence, self._queued_start_state(run))
             db.commit()
 
         self._stop.clear()
@@ -838,7 +848,7 @@ class DevelopmentWorker:
             run_id = event.payload["run_id"]
             run, fence = claim_run(db, run_id, self.worker_id, settings().lease_seconds)
             if run.state == "QUEUED":
-                transition(db, run, self.worker_id, fence, "PREPARING")
+                transition(db, run, self.worker_id, fence, self._queued_start_state(run))
             elif run.state not in {
                 "PREPARING",
                 "REPRODUCING",

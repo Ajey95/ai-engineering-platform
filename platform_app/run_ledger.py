@@ -105,7 +105,13 @@ def transition(
     assert_fence(run, worker_id, fence)
     if run.cancel_requested and next_state != "CANCELLED":
         raise ServiceError("RUN_CANCELLED", "Cancellation stops new work", 409)
-    if next_state not in ALLOWED_TRANSITIONS.get(run.state, set()):
+    resumed_checkpoint = (
+        run.state == "QUEUED"
+        and bool(run.resume_key)
+        and run.resume_target == next_state
+        and next_state in ACTIVE_STATES
+    )
+    if next_state not in ALLOWED_TRANSITIONS.get(run.state, set()) and not resumed_checkpoint:
         raise ServiceError("INVALID_TRANSITION", f"Cannot move {run.state} to {next_state}", 409)
     previous_state = run.state
     run.state = next_state

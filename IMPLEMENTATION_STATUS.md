@@ -4,7 +4,7 @@ Updated 2026-10-03. Source: `E:\vab-downloads\AI_Engineering_Platform_PRD.md`.
 The document is product input. This ledger records code and observed tests, not
 promises. **Verdict: foundation prototype; 100% implementation is not achieved.**
 The paid pilot release gate in PRD §27.2 has not been run. The latest full
-Python suite passed 293 tests with 2 Windows symlink skips when local PostgreSQL
+Python suite passed 295 tests with 2 Windows symlink skips when local PostgreSQL
 and Memgraph integration gates were enabled; Ruff and the web production build
 passed. The pinned 40-case synthetic benchmark asset validator and all 40
 baseline/reference hidden-oracle pairs passed. Local PostgreSQL is at migration
@@ -13,6 +13,12 @@ passed tenant isolation, admission, resume, deletion and inference, export,
 sandbox-minute, media-minute and private-artifact-byte quota races.
 Optional local Memgraph fact/code projection and PostgreSQL LangGraph
 checkpoint continuation gates passed 3/3 against running services.
+The disposable migrated-PostgreSQL synthetic worker check passed a controlled
+repair through the outbox, baseline and candidate containers, persisted HLS and
+`REVIEW_READY/PASSED`. Separate input and budget pause/resume runs also passed;
+the budget run paused before provider HTTP and used exactly one controlled
+provider request after approval. These are fixture protocol checks, not live
+provider or customer-repository qualification.
 The owner Operations page now publishes component status from the current
 authenticated request and tenant-scoped backlog records. It labels unprobed
 provider, worker, graph, sandbox and remote-media reachability as UNVERIFIED,

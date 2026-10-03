@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -16,6 +18,8 @@ from uuid import uuid4
 
 import httpx
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import sessionmaker
 
 from platform_app.api import review_packet
@@ -44,19 +48,40 @@ def main() -> int:
     parser.add_argument("--budget-pause-probe", action="store_true")
     parser.add_argument("--runtime", choices=("wsl", "native"), default="wsl")
     parser.add_argument("--image", default="aip-dev-sandbox:0.1.0")
+    parser.add_argument(
+        "--disposable-postgres-env", action="store_true",
+        help="Use AIP_VERIFY_DATABASE_URL for a migrated disposable loopback database",
+    )
     args = parser.parse_args()
     if args.budget_pause_probe and not args.controlled_provider:
         parser.error("Budget pause probe requires the controlled provider")
     root = Path(__file__).resolve().parents[1]
     target = root / "artifacts" / "worker-verification" / uuid4().hex[:12]
     target.mkdir(parents=True)
-    database = target / "verify.db"
-    engine = create_engine(f"sqlite:///{database.as_posix()}")
-    Base.metadata.create_all(engine)
+    if args.disposable_postgres_env:
+        database_url = os.environ.get("AIP_VERIFY_DATABASE_URL", "")
+        try:
+            parsed = make_url(database_url)
+        except (ArgumentError, ValueError) as error:
+            parser.error(f"AIP_VERIFY_DATABASE_URL is invalid: {type(error).__name__}")
+        if (
+            parsed.drivername != "postgresql+psycopg"
+            or parsed.host not in {"127.0.0.1", "localhost"}
+            or not re.fullmatch(r"aip_verify_[0-9a-f]{12}", parsed.database or "")
+        ):
+            parser.error("Only a migrated disposable loopback PostgreSQL database is allowed")
+        engine = create_engine(database_url)
+        storage_backend = "migrated_local_postgresql"
+    else:
+        database = target / "verify.db"
+        engine = create_engine(f"sqlite:///{database.as_posix()}")
+        Base.metadata.create_all(engine)
+        storage_backend = "local_sqlite"
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     with factory() as db:
         db.add(Tenant(id="fixture-tenant", name="Isolated worker verification"))
+        db.flush()
         db.add(
             Project(
                 id="fixture-project",
@@ -67,6 +92,7 @@ def main() -> int:
                 environment_manifest={"case_id": "form-submit-001"},
             )
         )
+        db.flush()
         db.add(
             Task(
                 id="fixture-task",
@@ -204,7 +230,11 @@ def main() -> int:
         outboxes = db.scalars(select(OutboxEvent).where(OutboxEvent.topic == "run.dispatch")).all()
         actions = db.scalars(select(ToolAction).where(ToolAction.run_id == run_id)).all()
         packet = review_packet(run_id, ("fixture-tenant", "fixture-verifier"), db)
+        last_events = list(db.scalars(select(RunEvent).where(
+            RunEvent.run_id == run_id,
+        ).order_by(RunEvent.sequence.desc()).limit(8)))
         result = {
+            "storage_backend": storage_backend,
             "run_id": run_id,
             "pinned_commit": commit,
             "processed_run_id": processed,
@@ -226,6 +256,14 @@ def main() -> int:
             "patch_hash": packet["patch_hash"],
             "media_status": packet["media_status"],
             "media_manifest_urls": packet["media_manifest_urls"],
+            "last_events": [
+                {
+                    "type": event.event_type,
+                    "code": event.payload.get("code"),
+                    "state": event.payload.get("state"),
+                }
+                for event in reversed(last_events)
+            ],
         }
         (target / "review-packet.json").write_text(json.dumps(packet, indent=2), encoding="utf-8")
         (target / "verification.json").write_text(json.dumps(result, indent=2), encoding="utf-8")

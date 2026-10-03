@@ -284,3 +284,40 @@ def test_spend_exhaustion_pauses_and_acks_dispatch(tmp_path, monkeypatch):
         assert db.get(OutboxEvent, "event-a").status == "delivered"
         assert db.scalar(select(RunEvent).where(RunEvent.event_type == "budget.pause"))
     engine.dispose()
+
+
+def test_resumed_dispatch_restores_checkpoint_stage(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'budget-resume-worker.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        db.add(Run(
+            id="run-a", tenant_id="tenant-a", task_id="task-a", project_id="project-a",
+            created_by="alice", idempotency_key="key-a", request_hash="hash",
+            base_commit="a" * 40, model_entry_id="model-a", state="QUEUED",
+            resume_target="INVESTIGATING", resume_key="approved-budget-key",
+            config_snapshot={"reproduction": {"fixture_case_id": "form-submit-001"}},
+        ))
+        db.add(OutboxEvent(
+            id="event-a", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-a", "resume_key": "approved-budget-key"},
+        ))
+        db.commit()
+    worker = DevelopmentWorker(
+        Path(__file__).resolve().parents[1], tmp_path, session_factory=factory
+    )
+
+    def resumed_checkpoint(run_id, fence, _commit):
+        with factory() as db:
+            assert db.get(Run, run_id).state == "INVESTIGATING"
+        worker._transition(run_id, fence, "PATCHING")
+        worker._transition(run_id, fence, "VERIFYING")
+        worker._transition(run_id, fence, "REVIEW_READY", "PASSED")
+
+    monkeypatch.setattr(worker, "_run_workflow", resumed_checkpoint)
+    assert worker.process_next() == "run-a"
+    with factory() as db:
+        assert db.get(Run, "run-a").state == "REVIEW_READY"
+        assert db.get(OutboxEvent, "event-a").status == "delivered"
+    engine.dispose()
