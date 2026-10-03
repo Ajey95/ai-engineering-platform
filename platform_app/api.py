@@ -104,7 +104,7 @@ from platform_app.recording_deletion import (
 )
 from platform_app.repository_connections import github_repository_ref, validate_credential_ref
 from platform_app.review_patch import verified_fixture_diff
-from platform_app.run_ledger import resume_input_run, resume_model_approval_run
+from platform_app.run_ledger import resume_budget_run, resume_input_run, resume_model_approval_run
 from platform_app.schemas import (
     AlertResolutionCreate,
     ErrorBody,
@@ -119,6 +119,7 @@ from platform_app.schemas import (
     RepositoryConnectionCreate,
     RepositoryConnectionRead,
     ResumeApprovalCreate,
+    ResumeBudgetCreate,
     ResumeInputCreate,
     ReviewDecisionCreate,
     RunCreate,
@@ -1240,6 +1241,25 @@ def resume_approval(
     authorized_run(db, identity, run_id)
     run = resume_model_approval_run(
         db, identity[0], run_id, identity[1], body.reason, idempotency_key
+    )
+    db.commit()
+    db.refresh(run)
+    return run_read(run)
+
+
+@app.post("/v1/runs/{run_id}/resume-budget", response_model=RunRead, status_code=202)
+def resume_budget(
+    run_id: str,
+    body: ResumeBudgetCreate,
+    idempotency_key: str = Header(min_length=8, max_length=200),
+    identity: tuple[str, str] = Depends(principal),
+    db: Session = Depends(db_session),
+):
+    require_owner(db, identity)
+    authorized_run(db, identity, run_id)
+    run = resume_budget_run(
+        db, identity[0], run_id, identity[1], body.reason,
+        body.new_spend_limit_usd, idempotency_key,
     )
     db.commit()
     db.refresh(run)

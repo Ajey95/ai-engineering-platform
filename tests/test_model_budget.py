@@ -159,6 +159,15 @@ def test_reservation_refreshes_stale_model_after_emergency_disable(scope):
     assert db.scalar(select(BudgetEntry.id)) is None
 
 
+def test_spend_limit_has_distinct_pauseable_error(scope):
+    db, run, model, fence = scope
+    run.config_snapshot = {**run.config_snapshot, "spend_limit_usd": "0.000001"}
+    with pytest.raises(ServiceError) as error:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-1", "Fix the form")
+    assert error.value.code == "RUN_SPEND_EXHAUSTED"
+    assert db.scalar(select(BudgetEntry.id)) is None
+
+
 def test_definitive_rejection_releases_reservation_but_unknown_outcome_stays_pending(scope):
     db, run, model, fence = scope
     action, reservation, _ = reserve_model_call(

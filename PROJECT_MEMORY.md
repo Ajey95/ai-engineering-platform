@@ -1543,3 +1543,32 @@ against an already `INCONCLUSIVE` run with HTTP 409 `RUN_NOT_RESUMABLE`, as
 expected. The local operations evaluator one-shot passed and a hidden 30-second
 loop was started against the synthetic SQLite tenant; its first sample reported
 zero firing alerts. This is a local process, not a scheduled automation.
+
+2026-10-03 run-budget increment: admission accepts an optional lower
+`max_spend_usd`, bounded by the operator cap, and records it in the run policy
+and run-cap ledger. A distinct run-spend error pauses a PATCHING/VERIFYING
+worker as `PAUSED_BUDGET` while fencing leases and acknowledging its dispatch.
+The owner-only `/resume-budget` endpoint requires a reason, a higher cap no
+larger than the current operator maximum, an unexpired 24-hour pause, current
+model qualification, unchanged policy, no uncertain tool effect and an intact
+run-cap ledger; it updates the policy and ledger, events/audits the increase,
+and queues one dispatch. Tenant daily/monthly quotas still apply to each call,
+so the run cap is not booked as tenant spend. The operations evaluator closes
+expired budget pauses. Targeted tests covered admission, distinct spend error,
+worker pause/ack, cap/policy/uncertainty/expiry and idempotent resume. The full
+Python suite passed 270 tests with 5 skips before a Decimal normalization-only
+change; the targeted budget tests passed again afterward. Disposable PostgreSQL
+admission/race probe, Ruff, TypeScript and Vite builds passed. Chromium found
+the admission budget field and enabled the approval form with no page errors;
+the paused UI state was route-intercepted, not a live budget pause. Screenshot
+outside repo: `D:\projects\frontend-budget-form-20261003.png`. API, worker and
+operations evaluator were restarted on the current synthetic SQLite database.
+The refreshed API admitted a new local synthetic run
+`851d8ffb-d0d1-4876-b815-561910ccd653` with a $1.000000 cap. Its WSL worker
+completed the baseline named test/browser/hidden oracle path, persisted 17
+durable events, produced READY media and closed `INCONCLUSIVE` because the
+fixture model cannot autonomously repair. The review packet reported
+`REPRODUCED` and one baseline named-test receipt. Chromium displayed the run
+as INCONCLUSIVE with REPRODUCED baseline and no page errors. This proves the
+lower-cap admission/worker path, not a live budget pause or provider repair.
+Screenshot outside repo: `D:\projects\frontend-budget-run-20261003.png`.

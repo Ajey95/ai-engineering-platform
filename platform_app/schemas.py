@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
@@ -71,6 +72,9 @@ class RunCreate(StrictModel):
     selected_model_entry: str
     mode: Literal["investigate_and_propose"] = "investigate_and_propose"
     reproduction: dict[str, Any] = Field(default_factory=dict)
+    max_spend_usd: Decimal | None = Field(
+        default=None, gt=0, max_digits=12, decimal_places=6
+    )
 
 
 class RunRead(StrictModel):
@@ -82,6 +86,7 @@ class RunRead(StrictModel):
     media_status: str
     base_commit: str
     model_entry_id: str
+    spend_limit_usd: str
     cancel_requested: bool
     created_at: datetime
     updated_at: datetime
@@ -127,6 +132,11 @@ class ResumeInputCreate(StrictModel):
 
 class ResumeApprovalCreate(StrictModel):
     reason: str = Field(min_length=8, max_length=2000)
+
+
+class ResumeBudgetCreate(StrictModel):
+    reason: str = Field(min_length=8, max_length=2000)
+    new_spend_limit_usd: Decimal = Field(gt=0, max_digits=12, decimal_places=6)
 
 
 class AlertResolutionCreate(StrictModel):

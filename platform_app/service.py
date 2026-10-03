@@ -110,6 +110,7 @@ def run_read(run: Run) -> RunRead:
         media_status=run.media_status,
         base_commit=run.base_commit,
         model_entry_id=run.model_entry_id,
+        spend_limit_usd=str(run.config_snapshot.get("spend_limit_usd", "0")),
         cancel_requested=run.cancel_requested,
         created_at=run.created_at,
         updated_at=run.updated_at,
@@ -121,6 +122,8 @@ def admit_run(
     db: Session, tenant_id: str, actor: str, task_id: str, key: str, body: RunCreate
 ) -> Run:
     set_safe_attributes(tenant_id=tenant_id, task_id=task_id)
+    operator_cap = Decimal(str(settings().max_run_spend_usd))
+    run_spend_limit = body.max_spend_usd or operator_cap
     hosted_requested = body.reproduction.get("execution_profile") == "hosted_vm_v1"
     hosted_enabled = settings().environment != "development" and (
         settings().hosted_execution_enabled
@@ -144,6 +147,8 @@ def admit_run(
         if existing.request_hash != request_hash or existing.task_id != task_id:
             raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a different request", 409)
         return existing
+    if run_spend_limit > operator_cap:
+        raise ServiceError("RUN_BUDGET_CAP", "Run budget exceeds the operator cap", 409)
     project = require_project(db, tenant_id, task.project_id)
     routing_decision = None
     if body.selected_model_entry == "auto":
@@ -247,7 +252,7 @@ def admit_run(
         "max_tool_calls": settings().max_tool_calls,
         "max_patch_attempts": settings().max_patch_attempts,
         "active_timeout_seconds": settings().active_timeout_seconds,
-        "spend_limit_usd": settings().max_run_spend_usd,
+        "spend_limit_usd": str(run_spend_limit),
         "reproduction": body.reproduction,
         "repository_url": project.repository_url,
         "test_url": project.test_url,
@@ -292,7 +297,7 @@ def admit_run(
             tenant_id=tenant_id,
             run_id=run.id,
             category="run_cap",
-            reserved_usd=Decimal(str(settings().max_run_spend_usd)),
+            reserved_usd=run_spend_limit,
         )
     )
     append_event(db, run, "run.admitted", {"state": "QUEUED"})

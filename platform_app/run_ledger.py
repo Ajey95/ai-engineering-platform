@@ -1,6 +1,7 @@
 """Run ownership and side effect ledger. See FR-HAR-04 and AC-05/06."""
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from platform_app.db import utcnow
 from platform_app.model_qualification import qualification_for_pinned_run
 from platform_app.models import (
     AuditEvent,
+    BudgetEntry,
     ModelEntry,
     OutboxEvent,
     Run,
@@ -52,7 +54,7 @@ ALLOWED_TRANSITIONS = {
     "PATCHING": {"VERIFYING", "FAILED", "PAUSED_BUDGET", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
     "VERIFYING": {
         "PATCHING", "REVIEW_READY", "FAILED", "INCONCLUSIVE",
-        "PAUSED_APPROVAL", "CANCEL_REQUESTED",
+        "PAUSED_APPROVAL", "PAUSED_BUDGET", "CANCEL_REQUESTED",
     },
     "REVIEW_READY": {"PATCHING", "COMPLETED", "PAUSED_APPROVAL", "CANCEL_REQUESTED"},
     "PAUSED_INPUT": {"QUEUED", "CANCELLED"},
@@ -389,6 +391,170 @@ def expire_model_approvals(
             tenant_id=tenant_id, actor="approval-expiry-worker",
             action="run.approval_expired", target_ref=run.id,
             arguments_hash=canonical_hash({"run_id": run.id, "required_event_id": required.id}),
+            policy_revision=(run.config_snapshot or {}).get("policy_version", "unknown"),
+            outcome="expired",
+        ))
+        expired += 1
+    return expired
+
+
+@tracer.start_as_current_span("run.resume_budget")
+def resume_budget_run(
+    db: Session,
+    tenant_id: str,
+    run_id: str,
+    actor: str,
+    reason: str,
+    new_spend_limit_usd: Decimal,
+    idempotency_key: str,
+) -> Run:
+    """Approve one bounded run budget increase and requeue the fenced run."""
+    set_safe_attributes(run_id=run_id, tenant_id=tenant_id)
+    reason = reason.strip()
+    if not 8 <= len(reason) <= 2000:
+        raise ServiceError("APPROVAL_REASON_REQUIRED", "A bounded approval reason is required", 400)
+    if not new_spend_limit_usd.is_finite() or new_spend_limit_usd <= 0:
+        raise ServiceError("INVALID_BUDGET", "A positive budget is required", 400)
+    new_spend_limit_usd = new_spend_limit_usd.quantize(Decimal("0.000001"))
+    pinned = db.scalar(select(Run).where(Run.id == run_id, Run.tenant_id == tenant_id))
+    if pinned is None:
+        raise ServiceError("NOT_FOUND", "Run not found", 404)
+    model = db.scalar(select(ModelEntry).where(
+        ModelEntry.id == pinned.model_entry_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    run = db.scalar(select(Run).where(
+        Run.id == run_id, Run.tenant_id == tenant_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if model is None or run is None or model.id != run.model_entry_id:
+        raise ServiceError("MODEL_UNAVAILABLE", "Pinned model is unavailable", 409)
+    approval_hash = canonical_hash({
+        "actor": actor, "reason": reason,
+        "new_spend_limit_usd": str(new_spend_limit_usd),
+    })
+    if run.resume_key == idempotency_key and run.state != "PAUSED_BUDGET":
+        if run.resume_input_hash != approval_hash:
+            raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for another approval", 409)
+        return run
+    if run.state != "PAUSED_BUDGET" or run.resume_target not in {"PATCHING", "VERIFYING"}:
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run is not waiting for budget approval", 409)
+    if run.resume_key == idempotency_key:
+        raise ServiceError("IDEMPOTENCY_CONFLICT", "Key was used for a prior resume", 409)
+    if run.cancel_requested or run.lease_owner or run.lease_until:
+        raise ServiceError("RUN_NOT_RESUMABLE", "Run still has active ownership", 409)
+    pause = db.scalar(select(RunEvent).where(
+        RunEvent.tenant_id == tenant_id,
+        RunEvent.run_id == run_id,
+        RunEvent.event_type == "budget.pause",
+    ).order_by(RunEvent.sequence.desc()).limit(1))
+    if pause is None:
+        raise ServiceError("APPROVAL_UNAVAILABLE", "No budget pause is pending", 409)
+    if aware(pause.created_at) + timedelta(hours=24) <= utcnow():
+        raise ServiceError("APPROVAL_EXPIRED", "Budget approval window expired", 409)
+    tenant = db.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
+    if tenant is None or tenant.status != "active":
+        raise ServiceError("TENANT_DISABLED", "Tenant is not active", 403)
+    snapshot = run.config_snapshot or {}
+    if tenant.policy_revision != snapshot.get("policy_version"):
+        raise ServiceError("POLICY_REVIEW_REQUIRED", "Run policy changed", 409)
+    if not qualification_for_pinned_run(model):
+        raise ServiceError("MODEL_QUALIFICATION_REQUIRED", "Pinned model is unavailable", 409)
+    current_limit = Decimal(str(snapshot.get("spend_limit_usd", "0")))
+    operator_cap = Decimal(str(settings().max_run_spend_usd))
+    if (
+        new_spend_limit_usd <= current_limit
+        or new_spend_limit_usd > operator_cap
+    ):
+        raise ServiceError("RUN_BUDGET_CAP", "Increase exceeds the allowed budget", 409)
+    if snapshot.get("execution_profile") == "hosted_vm_v1" and not (
+        settings().environment != "development" and settings().hosted_execution_enabled
+    ):
+        raise ServiceError("EXECUTION_UNAVAILABLE", "Hosted execution is disabled", 503)
+    uncertain = db.scalar(select(ToolAction.id).where(
+        ToolAction.tenant_id == tenant_id,
+        ToolAction.run_id == run_id,
+        ToolAction.status == "INTENDED",
+    ).limit(1))
+    if uncertain is not None:
+        raise ServiceError("EFFECT_OUTCOME_UNKNOWN", "Effect must be reconciled", 409)
+    run_cap = db.scalar(select(BudgetEntry).where(
+        BudgetEntry.tenant_id == tenant_id,
+        BudgetEntry.run_id == run_id,
+        BudgetEntry.category == "run_cap",
+    ).with_for_update())
+    if run_cap is None or run_cap.status != "reserved":
+        raise ServiceError("LEDGER_INCOMPLETE", "Run cap reservation is unavailable", 409)
+    target = run.resume_target
+    run.config_snapshot = {**snapshot, "spend_limit_usd": str(new_spend_limit_usd)}
+    run_cap.reserved_usd = new_spend_limit_usd
+    run.state = "QUEUED"
+    run.resume_key = idempotency_key
+    run.resume_input_hash = approval_hash
+    stale_dispatches = db.scalars(select(OutboxEvent).where(
+        OutboxEvent.tenant_id == tenant_id,
+        OutboxEvent.topic == "run.dispatch",
+        OutboxEvent.status.in_(["pending", "processing"]),
+        OutboxEvent.payload["run_id"].as_string() == run.id,
+    ).with_for_update()).all()
+    for event in stale_dispatches:
+        event.status = "delivered"
+    append_event(db, run, "budget.approved", {
+        "previous_limit_usd": str(current_limit),
+        "new_limit_usd": str(new_spend_limit_usd),
+        "actor": actor, "pause_event_id": pause.id,
+    })
+    append_event(db, run, "run.resumed", {"resume_target": target, "actor": actor})
+    db.add(OutboxEvent(
+        tenant_id=tenant_id, topic="run.dispatch",
+        payload={"run_id": run.id, "resume_key": idempotency_key, **inject_trace()},
+    ))
+    db.add(AuditEvent(
+        tenant_id=tenant_id, actor=actor, action="run.budget_resume",
+        target_ref=run.id,
+        arguments_hash=canonical_hash({
+            "run_id": run.id, "reason": reason,
+            "previous_limit_usd": str(current_limit),
+            "new_limit_usd": str(new_spend_limit_usd),
+        }),
+        policy_revision=tenant.policy_revision, outcome="allowed",
+    ))
+    return run
+
+
+def expire_budget_pauses(
+    db: Session, tenant_id: str, *, now: datetime | None = None, limit: int = 100
+) -> int:
+    """Close unrevised run budgets after their 24-hour approval window."""
+    now = now or utcnow()
+    runs = db.scalars(select(Run).where(
+        Run.tenant_id == tenant_id,
+        Run.state == "PAUSED_BUDGET",
+    ).order_by(Run.updated_at, Run.id).with_for_update(skip_locked=True).limit(limit)).all()
+    expired = 0
+    for run in runs:
+        pause = db.scalar(select(RunEvent).where(
+            RunEvent.tenant_id == tenant_id,
+            RunEvent.run_id == run.id,
+            RunEvent.event_type == "budget.pause",
+        ).order_by(RunEvent.sequence.desc()).limit(1))
+        if pause is None or aware(pause.created_at) + timedelta(hours=24) > now:
+            continue
+        run.state = "CANCELLED"
+        run.verdict = "INCONCLUSIVE"
+        run.cancel_requested = True
+        run.lease_fence += 1
+        run.lease_owner = None
+        run.lease_until = None
+        append_event(db, run, "budget.expired", {"pause_event_id": pause.id})
+        append_event(db, run, "run.state_changed", {
+            "state": "CANCELLED", "verdict": run.verdict,
+        })
+        append_event(db, run, "run.closed", {
+            "state": "CANCELLED", "verdict": run.verdict,
+        })
+        db.add(AuditEvent(
+            tenant_id=tenant_id, actor="approval-expiry-worker",
+            action="run.budget_expired", target_ref=run.id,
+            arguments_hash=canonical_hash({"run_id": run.id, "pause_event_id": pause.id}),
             policy_revision=(run.config_snapshot or {}).get("policy_version", "unknown"),
             outcome="expired",
         ))

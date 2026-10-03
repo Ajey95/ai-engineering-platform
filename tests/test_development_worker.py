@@ -212,3 +212,43 @@ def test_duplicate_dispatch_for_closed_run_is_acknowledged(tmp_path):
     with factory() as db:
         assert db.get(OutboxEvent, "event-a").status == "delivered"
     engine.dispose()
+
+
+def test_spend_exhaustion_pauses_and_acks_dispatch(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'budget-pause.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        db.add(Run(
+            id="run-a", tenant_id="tenant-a", task_id="task-a", project_id="project-a",
+            created_by="alice", idempotency_key="key-a", request_hash="hash",
+            base_commit="a" * 40, model_entry_id="model-a", state="QUEUED",
+            config_snapshot={
+                "reproduction": {"fixture_case_id": "form-submit-001"},
+                "spend_limit_usd": "1.000000",
+            },
+        ))
+        db.add(OutboxEvent(
+            id="event-a", tenant_id="tenant-a", topic="run.dispatch",
+            payload={"run_id": "run-a"},
+        ))
+        db.commit()
+    worker = DevelopmentWorker(
+        Path(__file__).resolve().parents[1], tmp_path, session_factory=factory
+    )
+
+    def exhausted(run_id, fence, _commit):
+        worker._transition(run_id, fence, "REPRODUCING")
+        worker._transition(run_id, fence, "INVESTIGATING")
+        worker._transition(run_id, fence, "PATCHING")
+        raise ServiceError("RUN_SPEND_EXHAUSTED", "Run spend limit reached", 409)
+
+    monkeypatch.setattr(worker, "_run_workflow", exhausted)
+    assert worker.process_next() == "run-a"
+    with factory() as db:
+        assert db.get(Run, "run-a").state == "PAUSED_BUDGET"
+        assert db.get(Run, "run-a").lease_owner is None
+        assert db.get(OutboxEvent, "event-a").status == "delivered"
+        assert db.scalar(select(RunEvent).where(RunEvent.event_type == "budget.pause"))
+    engine.dispose()

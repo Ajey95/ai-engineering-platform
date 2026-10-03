@@ -8,6 +8,10 @@ class BudgetError(Exception):
     pass
 
 
+class RunSpendExhausted(BudgetError):
+    pass
+
+
 @dataclass(frozen=True)
 class TokenPolicy:
     application_envelope: int = 64000
@@ -104,4 +108,4 @@ def check_cumulative_budget(
     if used_output + plan.output_reserve > policy.cumulative_output_limit:
         raise BudgetError("BUDGET_EXHAUSTED: cumulative output token limit")
     if committed_usd + reserved_usd + plan.max_liability_usd > policy.spend_limit_usd:
-        raise BudgetError("BUDGET_EXHAUSTED: run spend limit")
+        raise RunSpendExhausted("BUDGET_EXHAUSTED: run spend limit")

@@ -23,6 +23,7 @@ from platform_app.tenant_quota import (
 from platform_app.token_budget import (
     BudgetError,
     PriceRule,
+    RunSpendExhausted,
     TokenPlan,
     TokenPolicy,
     check_cumulative_budget,
@@ -184,6 +185,8 @@ def reserve_model_call(
     )
     try:
         check_cumulative_budget(policy, used_input, used_output, committed, reserved, plan)
+    except RunSpendExhausted as error:
+        raise ServiceError("RUN_SPEND_EXHAUSTED", str(error), 409) from error
     except BudgetError as error:
         raise ServiceError("BUDGET_EXHAUSTED", str(error), 409) from error
     try:

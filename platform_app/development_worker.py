@@ -736,6 +736,15 @@ class DevelopmentWorker:
                 if run and run.lease_owner == self.worker_id and run.lease_fence == fence:
                     if run.cancel_requested:
                         transition(db, run, self.worker_id, fence, "CANCELLED", "NOT_RUN")
+                    elif (
+                        isinstance(error, ServiceError)
+                        and error.code == "RUN_SPEND_EXHAUSTED"
+                        and run.state in {"PATCHING", "VERIFYING"}
+                    ):
+                        transition(db, run, self.worker_id, fence, "PAUSED_BUDGET")
+                        append_event(db, run, "budget.pause", {
+                            "spend_limit_usd": run.config_snapshot["spend_limit_usd"],
+                        })
                     elif run.state in {"PREPARING", "REPRODUCING"}:
                         transition(db, run, self.worker_id, fence, "FAILED", "INCONCLUSIVE")
                     elif run.state == "INVESTIGATING":
@@ -834,7 +843,9 @@ class DevelopmentWorker:
                 self.execute(run_id, fence)
                 final_status = "delivered"
             except (ServiceError, SandboxError, PatchError, ProviderError, OSError, ValueError):
-                final_status = "failed"
+                with self.session_factory() as db:
+                    state = db.get(Run, run_id).state
+                final_status = "delivered" if state.startswith("PAUSED") else "failed"
         with self.session_factory() as db:
             event = db.get(OutboxEvent, event_id)
             event.status = final_status

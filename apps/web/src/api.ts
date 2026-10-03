@@ -36,6 +36,7 @@ export interface Run {
   media_status: string
   base_commit: string
   model_entry_id: string
+  spend_limit_usd: string
   cancel_requested: boolean
   created_at: string
   updated_at: string

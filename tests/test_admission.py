@@ -98,6 +98,23 @@ def test_admission_is_atomic_and_idempotent(db):
     assert len(db.scalars(select(RunEvent)).all()) == 1
 
 
+def test_admission_records_requested_lower_run_spend_limit(db):
+    body = RunCreate(
+        base_commit="a" * 40,
+        selected_model_entry="qualified-model",
+        reproduction={"fixture_case_id": "form-submit-001"},
+        max_spend_usd=Decimal("1.25"),
+    )
+    run = admit_run(db, "tenant-a", "alice", "task-a", "lower-budget", body)
+    db.commit()
+    assert Decimal(str(run.config_snapshot["spend_limit_usd"])) == Decimal("1.25")
+    assert Decimal(db.scalar(select(BudgetEntry.reserved_usd))) == Decimal("1.25")
+    too_high = body.model_copy(update={"max_spend_usd": Decimal("6")})
+    with pytest.raises(ServiceError) as error:
+        admit_run(db, "tenant-a", "alice", "task-a", "too-high", too_high)
+    assert error.value.code == "RUN_BUDGET_CAP"
+
+
 def test_tenant_concurrent_run_cap_allows_idempotent_retry_and_releases_on_close(db):
     tenant = db.get(Tenant, "tenant-a")
     tenant.max_concurrent_runs = 1

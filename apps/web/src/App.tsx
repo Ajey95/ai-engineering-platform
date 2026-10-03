@@ -331,11 +331,14 @@ export default function App({ identity, onSignOut }: {
         ...(!selectedModel?.fixture_only
           ? { execution_profile: 'hosted_vm_v1', repair_paths: repairPaths } : {}),
       }
+      const requestedSpend = String(form.get('max_spend_usd') || '').trim()
       const created = await api<Run>(`/tasks/${String(form.get('task_id'))}/runs`, {
         method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: jsonBody({ base_commit: String(form.get('base_commit')),
           selected_model_entry: String(form.get('model')),
-          mode: 'investigate_and_propose', reproduction }),
+          mode: 'investigate_and_propose', reproduction,
+          ...(requestedSpend ? { max_spend_usd: requestedSpend } : {}),
+        }),
       })
       setDialog(null); setSelectedRun(created.id); setPage('runs'); await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Run admission failed') }
@@ -371,6 +374,19 @@ export default function App({ identity, onSignOut }: {
       })
       await refresh()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Approval failed') }
+    finally { setBusy(false) }
+  }
+
+  async function resumeBudget(reason: string, newLimit: string, idempotencyKey: string) {
+    if (!run) return
+    setBusy(true); setError('')
+    try {
+      await api(`/runs/${run.id}/resume-budget`, {
+        method: 'POST', headers: { 'Idempotency-Key': idempotencyKey },
+        body: jsonBody({ reason, new_spend_limit_usd: newLimit }),
+      })
+      await refresh()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Budget approval failed') }
     finally { setBusy(false) }
   }
 
@@ -517,9 +533,9 @@ export default function App({ identity, onSignOut }: {
           <div className="page-heading"><div><h1>Runs</h1><p>Durable execution history and review evidence.</p></div><button className="primary-button" onClick={() => setDialog('run')} disabled={!scopedTasks.length || !runnableModels.length} title={!runnableModels.length ? 'No executable model is available' : undefined}><Play size={16} /> Start run</button></div>
           {!runnableModels.length && <div className="notice"><CircleHelp size={18} /> Registering a model does not qualify it. Validate a provider account and run the conformance suite before execution.</div>}
           {runnableModels.some(item => item.fixture_only) && <div className="notice"><CircleHelp size={18} /> The fixture model only reproduces the reviewed synthetic form bug. It is not a live provider or customer repository run.</div>}
-          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} resumeApproval={resumeApproval} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
+          <div className="workspace-grid"><div className="run-list content-panel"><h2>History</h2>{scopedRuns.length ? scopedRuns.map(item => <button key={item.id} className={`run-row ${selectedRun === item.id ? 'selected' : ''}`} onClick={() => setSelectedRun(item.id)}><span><strong>Run #{shortId(item.id)}</strong><small>{date(item.created_at)}</small></span><Status value={item.state} /></button>) : <Empty title="No runs" description="Submit a report, then start a qualified run." />}</div><div className="run-detail">{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} resumeApproval={resumeApproval} resumeBudget={resumeBudget} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="Select a run" description="Its progress and evidence will appear here." />}</div></div>
         </section>}
-        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} resumeApproval={resumeApproval} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
+        {page === 'review' && <section className="page-section"><div className="page-heading"><div><h1>Review packet</h1><p>Verification claims are linked to actual tool evidence.</p></div></div>{run ? <RunWorkspace run={run} task={task} packet={packet} events={events} tab={tab} setTab={setTab} cancel={cancel} resumeInput={resumeInput} resumeApproval={resumeApproval} resumeBudget={resumeBudget} decideReview={decideReview} approveDraft={approveDraft} repositoryConnections={repositoryConnections} deleteRecording={deleteRecording} busy={busy} /> : <Empty title="No run selected" description="Choose a run from the Runs screen." />}</section>}
         {page === 'operations' && <section className="page-section">
           <div className="page-heading"><div><h1>Operations</h1><p>Owner-only snapshot of persisted control-plane activity.</p></div></div>
           {operationsError && <div className="notice">{operationsError}</div>}
@@ -618,18 +634,19 @@ export default function App({ identity, onSignOut }: {
     {dialog && <div className="dialog-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setDialog(null) }}><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="panel-heading"><h2 id="dialog-title">{dialog === 'project' ? 'New project' : dialog === 'task' ? 'New bug report' : 'Start run'}</h2><button className="icon-button" aria-label="Close" onClick={() => setDialog(null)}><XCircle size={19} /></button></div>
       {dialog === 'project' && <form onSubmit={submitProject}><label>Name<input name="name" minLength={2} required placeholder="Web application" /></label><label>Repository URL<input name="repository_url" type="url" placeholder="https://github.com/organization/repository" /></label><label>Test URL<input name="test_url" type="url" placeholder="https://staging.example.com" /></label><label>Environment manifest (JSON)<textarea name="manifest" rows={5} defaultValue={'{"named_tests": {}}'} /></label><button className="primary-button" disabled={busy}>Create project</button></form>}
       {dialog === 'task' && <form onSubmit={submitTask}><label>Bug report<textarea name="report" rows={4} minLength={10} required placeholder="Describe the failure and reproduction steps" /></label><label>Expected behavior<textarea name="expected_behavior" rows={2} required /></label><label>Actual behavior<textarea name="actual_behavior" rows={2} required /></label><button className="primary-button" disabled={busy}>Submit report</button></form>}
-      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><label>Repair scope for hosted runs<input name="repair_paths" placeholder="src/app.py, src/routes.py" /><small>List up to four existing source files, separated by commas. The agent can edit only these files.</small></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
+      {dialog === 'run' && <form onSubmit={submitRun}><label>Report<select name="task_id" required>{scopedTasks.map(item => <option key={item.id} value={item.id}>{item.report.slice(0, 80)}</option>)}</select></label><label>Pinned base commit<input name="base_commit" pattern="[0-9a-fA-F]{40}" required defaultValue={project?.fixture_case_id === devFixture?.case_id ? devFixture?.base_commit : ''} placeholder="40-character Git commit SHA" /></label><label>Available model<select name="model" required>{runnableModels.map(item => <option key={item.id} value={item.id}>{item.fixture_only ? 'Synthetic fixture' : item.provider} · {item.model_id}</option>)}</select></label><label>Run budget in USD<input name="max_spend_usd" type="number" min="0.000001" max="999999.999999" step="0.000001" placeholder="Operator default" /><small>Optional lower cap for this run. An owner may approve an increase up to the operator limit after a budget pause.</small></label><label>Reproduction scenario<input name="scenario" placeholder="Describe the browser action" /></label><label>Repair scope for hosted runs<input name="repair_paths" placeholder="src/app.py, src/routes.py" /><small>List up to four existing source files, separated by commas. The agent can edit only these files.</small></label><button className="primary-button" disabled={busy}>Admit run</button></form>}
     </div></div>}
   </div>
 }
 
-function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, resumeApproval, decideReview, approveDraft, repositoryConnections, deleteRecording, busy }: {
+function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeInput, resumeApproval, resumeBudget, decideReview, approveDraft, repositoryConnections, deleteRecording, busy }: {
   run: Run; task?: Task; packet: ReviewPacket | null; events: RunEvent[]
   tab: 'evidence' | 'changes' | 'logs' | 'environment'
   setTab: (tab: 'evidence' | 'changes' | 'logs' | 'environment') => void
   cancel: () => void
   resumeInput: (inputText: string, idempotencyKey: string) => Promise<void>
   resumeApproval: (reason: string, idempotencyKey: string) => Promise<void>
+  resumeBudget: (reason: string, newLimit: string, idempotencyKey: string) => Promise<void>
   decideReview: (decision: 'accepted' | 'rejected', reason: string) => Promise<void>
   approveDraft: (connectionId: string, baseBranch: string) => Promise<void>
   repositoryConnections: RepositoryConnection[]
@@ -639,9 +656,11 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
   const [rejectionReason, setRejectionReason] = useState('')
   const [answer, setAnswer] = useState('')
   const [approvalReason, setApprovalReason] = useState('')
+  const [budgetReason, setBudgetReason] = useState('')
+  const [newBudget, setNewBudget] = useState('')
   const readyConnections = repositoryConnections.filter(connection => connection.status === 'ready')
   const [resumeKey, setResumeKey] = useState('')
-  useEffect(() => { setAnswer(''); setApprovalReason(''); setResumeKey('') }, [run.id, run.state])
+  useEffect(() => { setAnswer(''); setApprovalReason(''); setBudgetReason(''); setNewBudget(''); setResumeKey('') }, [run.id, run.state])
   return <div className="review-layout">
     <div className="review-left"><div className="review-header"><div><small>Run #{shortId(run.id)} · {date(run.created_at)}</small><h2>{task?.report || 'Loading report'}</h2></div><Status value={run.state} /></div>
       <div className="content-panel bug-report"><div className="section-title"><ClipboardList size={18} /><h3>Bug report</h3></div><p>{task?.report || 'Loading…'}</p><dl><dt>Expected</dt><dd>{task?.expected_behavior || '—'}</dd><dt>Actual</dt><dd>{task?.actual_behavior || '—'}</dd></dl></div>
@@ -678,7 +697,17 @@ function RunWorkspace({ run, task, packet, events, tab, setTab, cancel, resumeIn
           <label>Approval reason<textarea value={approvalReason} onChange={event => { setApprovalReason(event.target.value); setResumeKey('') }} minLength={8} maxLength={2000} rows={2} required /></label>
           <button className="secondary-button" type="submit" disabled={busy || approvalReason.trim().length < 8}>Approve resume</button>
         </form>}
-        {run.state === 'PAUSED_BUDGET' && <p className="muted">This run has reached its recorded budget. A new policy decision is required before more model calls.</p>}
+        {run.state === 'PAUSED_BUDGET' && <form className="review-actions" onSubmit={event => {
+          event.preventDefault()
+          const key = resumeKey || crypto.randomUUID()
+          if (!resumeKey) setResumeKey(key)
+          void resumeBudget(budgetReason.trim(), newBudget, key)
+        }}>
+          <p className="muted">This run reached its ${run.spend_limit_usd} limit. A workspace owner can approve a higher cap within 24 hours, subject to the operator and tenant limits.</p>
+          <label>New run budget in USD<input type="number" min="0.000001" max="999999.999999" step="0.000001" value={newBudget} onChange={event => { setNewBudget(event.target.value); setResumeKey('') }} required /></label>
+          <label>Approval reason<textarea value={budgetReason} onChange={event => { setBudgetReason(event.target.value); setResumeKey('') }} minLength={8} maxLength={2000} rows={2} required /></label>
+          <button className="secondary-button" type="submit" disabled={busy || budgetReason.trim().length < 8 || !newBudget || Number(newBudget) <= Number(run.spend_limit_usd)}>Approve budget and resume</button>
+        </form>}
         {run.state === 'REVIEW_READY' && <div className="review-actions">
           <p className="muted">Accepting this packet records a review decision. Draft PR publication requires separate approval.</p>
           <button className="primary-button" disabled={busy} onClick={() => void decideReview('accepted', '')}>Accept packet</button>

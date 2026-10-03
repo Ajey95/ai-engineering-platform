@@ -308,11 +308,21 @@ class HostedWorker:
                     for lease in active:
                         revoke_sandbox(db, lease.id, "closed")
                     db.refresh(run)
-                    state = "CANCELLED" if run.cancel_requested else (
-                        "INCONCLUSIVE" if run.state in {"REPRODUCING", "INVESTIGATING"}
-                        else "FAILED"
-                    )
-                    transition(db, run, self.worker_id, fence, state, "INCONCLUSIVE")
+                    if (
+                        isinstance(error, ServiceError)
+                        and error.code == "RUN_SPEND_EXHAUSTED"
+                        and run.state in {"PATCHING", "VERIFYING"}
+                    ):
+                        transition(db, run, self.worker_id, fence, "PAUSED_BUDGET")
+                        append_event(db, run, "budget.pause", {
+                            "spend_limit_usd": run.config_snapshot["spend_limit_usd"],
+                        })
+                    else:
+                        state = "CANCELLED" if run.cancel_requested else (
+                            "INCONCLUSIVE" if run.state in {"REPRODUCING", "INVESTIGATING"}
+                            else "FAILED"
+                        )
+                        transition(db, run, self.worker_id, fence, state, "INCONCLUSIVE")
                     append_event(db, run, "worker.error", {
                         "code": error.code if isinstance(error, (ServiceError, ProviderError))
                         else type(error).__name__,
@@ -359,7 +369,11 @@ class HostedWorker:
         try:
             self.execute(run_id)
         except ServiceError as error:
-            final = "pending" if error.code == "LEASE_HELD" else "failed"
+            with self.session_factory() as db:
+                paused = db.get(Run, run_id).state.startswith("PAUSED")
+            final = "pending" if error.code == "LEASE_HELD" else (
+                "delivered" if paused else "failed"
+            )
         except Exception:
             final = "failed"
         else:
