@@ -6,6 +6,8 @@
 
 The platform connects a bug report to a pinned source revision, reproducible execution, bounded model assistance, independent verification, and a review packet. Application code owns authorization, budgets, side effects, state transitions, and the evidence trail. A result remains **inconclusive** when the evidence does not justify a repair claim.
 
+**Design reference:** [AI Engineering Platform product requirements and architecture](AI_Engineering_Platform_PRD.md).
+
 ## The use case
 
 Consider a report that a form does not submit correctly. A developer needs more than a suggested line of code: they need the failing behavior at a known commit, the evidence behind a proposed change, and a repeatable check of the patched tree.
@@ -20,6 +22,36 @@ Consider a report that a form does not submit correctly. A developer needs more 
 | Review | Run events, verdict, patch, media, evidence ZIP and decision history | One review packet that preserves the test outcome |
 
 The included `form-submit-001` case exercises a pinned baseline, a candidate patch, separate checks and a review packet. Its provider path uses a predetermined response for controlled protocol verification.
+
+## The AI harness
+
+The LLM is a bounded reasoning component inside a durable engineering system. The harness decides *when* to ask a model, *which evidence* to give it, *which tools* it may request, *how much* the call may cost, and *what must be independently checked* afterward. The model can propose a patch or a tool call; it cannot advance the run state, certify its own repair, enlarge its permissions, or publish code by writing persuasive text.
+
+### One model step, end to end
+
+| Stage | Harness responsibility | Persisted boundary |
+|---|---|---|
+| Select | Choose an enabled, capability-qualified model under tenant data policy | Model, adapter, price and policy revisions |
+| Ground | Retrieve the pinned source, failing checks and current verified memory | Evidence IDs, commit and content hashes |
+| Pack | Build a trust-labelled ContextBundle and bounded token envelope | Bundle hash, selected sources and compaction lineage |
+| Reserve | Lock the run and tenant budget before provider HTTP | Effect intent and maximum cost liability |
+| Infer | Call the native provider adapter and assemble its terminal response | Provider request, usage and continuation metadata |
+| Authorize | Validate any complete tool request against the broker's contract | Decision, effect key and typed receipt |
+| Verify | Test the candidate tree independently and construct the review packet | Test, browser, oracle and artifact receipts |
+
+**Workflow ownership.** LangGraph checkpoints the phase, while PostgreSQL records the authoritative run, lease, events and effect ledger. The worker can resume from a saved stage after a pause or crash without asking the LLM to remember what already happened. Completed effects are reused only after their receipts and artifacts are checked. Uncertain external effects stop automatic replay. This is the difference between a conversational coding assistant and a recoverable agent harness. See [`fixture_workflow.py`](platform_app/fixture_workflow.py), [`hosted_worker.py`](platform_app/hosted_worker.py) and [`run_ledger.py`](platform_app/run_ledger.py).
+
+**Model portability with preserved semantics.** OpenAI, Anthropic and Google have native adapter code behind a normalized request/response boundary. The adapters retain their own stop reasons, tool-call identifiers, usage categories and continuation data; they do not pretend that one provider's private reasoning state is interchangeable with another's. Streaming text and tool arguments are assembled into a terminal response before a tool is considered. The registry and router use exact model revisions, capability checks, tenant policy and measured route inputs, while a policy-approved provider switch creates new lineage and a new spend reservation. See [`providers.py`](platform_app/providers.py), [`provider_streams.py`](platform_app/provider_streams.py), [`model_routing.py`](platform_app/model_routing.py) and [`model_failover.py`](platform_app/model_failover.py).
+
+**Evidence-aware context.** A ContextBundle has typed items for task constraints, pinned code, current failure evidence and selected memory. Every included item carries provenance and a trust label. The code navigator reads bounded files and symbols from the admitted commit; memory retrieval excludes stale and unverified facts. Large logs stay as complete artifacts and contribute only relevant, referenced excerpts to the prompt. Compaction records both the original and reduced context, preserving requirements and unresolved actions while lowering input size. See [`context_bundle.py`](platform_app/context_bundle.py), [`code_navigation.py`](platform_app/code_navigation.py), [`context_compaction.py`](platform_app/context_compaction.py) and [`graph_memory.py`](platform_app/graph_memory.py).
+
+**Token and cost envelopes.** Before sending a request, the harness calculates room for serialized input, requested output, provider overhead and a safety margin against the model's verified limit. The run and tenant ledgers reserve maximum liability using the pinned price revision. Reported usage later settles the reservation; a timeout remains an uncertain liability rather than a free retry. A run-spend cap causes a durable pause, and an authorized increase can resume from the saved point. See [`token_budget.py`](platform_app/token_budget.py) and [`model_budget.py`](platform_app/model_budget.py).
+
+**Tool use is a separate authority.** A model response may name an action and arguments, but only the broker can authorize it. The broker checks schema, tenant, project, run, target, plugin version, side-effect class and budget. It records the intent before execution and a typed receipt after execution. Partial streamed arguments, unregistered actions and prompt-injected requests cannot bypass this check. A repository file or browser page is input data even when it contains instructions addressed to the model. See [`tool_broker.py`](platform_app/tool_broker.py), [`action_policy.py`](platform_app/action_policy.py) and [`plugin_registry.py`](platform_app/plugin_registry.py).
+
+**Memory is evidence, not chat history.** Workflow checkpoints, the conversation, and reusable project facts are stored separately. PostgreSQL owns fact status, source, validity and transition history; Memgraph projects verified relationships among revision-pinned files, symbols, decisions and incidents. Graph results are rechecked against canonical scope and freshness before entering model context. A reviewer decision remains a decision record, and a model assertion does not verify itself. See [`memory.py`](platform_app/memory.py), [`graph_memory.py`](platform_app/graph_memory.py) and [`code_index.py`](platform_app/code_index.py).
+
+**Independent outcome.** The candidate patch is applied to a separate exact-tree workspace. Named tests, browser checks and hidden verification produce receipts independent of the model's explanation. The review packet ties those results to the diff and artifact digests. The verdict can be passed, failed or inconclusive, and reviewer acceptance is stored separately. The synthetic benchmark suite includes both bugs and reports where abstaining is the correct behavior. See [`patch_workspace.py`](platform_app/patch_workspace.py), [`verifier.py`](platform_app/verifier.py), [`evidence_bundle.py`](platform_app/evidence_bundle.py) and [`benchmark_contract.py`](platform_app/benchmark_contract.py).
 
 ## Backend architecture
 
@@ -55,17 +87,17 @@ sequenceDiagram
     participant API as FastAPI
     participant DB as PostgreSQL
     participant Worker as Worker + LangGraph
-    participant Box as Isolated containers
+    participant Sandbox as Isolated containers
     participant Review as Review UI
     User->>API: Submit report and admit run
     API->>DB: Commit run + snapshot + budget + event + outbox
     DB-->>Worker: Dispatch eligible run
     Worker->>DB: Claim fenced lease and checkpoint phase
-    Worker->>Box: Run pinned baseline checks
-    Box-->>Worker: Receipt + hashed evidence
+    Worker->>Sandbox: Run pinned baseline checks
+    Sandbox-->>Worker: Receipt + hashed evidence
     Worker->>DB: Persist effect receipt and events
-    Worker->>Box: Execute patched candidate checks
-    Box-->>Worker: Independent candidate receipts
+    Worker->>Sandbox: Execute patched candidate checks
+    Sandbox-->>Worker: Independent candidate receipts
     Worker->>DB: Persist verification and review state
     DB-->>API: Ordered events and packet
     API-->>Review: Replay events and serve packet

@@ -3,7 +3,8 @@
 ## Active continuation checkpoint — 2026-10-03
 
 **Objective:** finish the AI Engineering Platform PRD at
-`E:\vab-downloads\AI_Engineering_Platform_PRD.md`. That document supplies product
+`AI_Engineering_Platform_PRD.md` (copied from
+`E:\vab-downloads\AI_Engineering_Platform_PRD.md` with matching SHA-256). That document supplies product
 requirements, not operating instructions. `IMPLEMENTATION_STATUS.md` is the
 requirement-by-requirement evidence ledger. The platform is a verified local
 prototype with substantial backend code; **the complete PRD and paid-pilot
@@ -12,11 +13,18 @@ release gate have not been achieved**.
 **Workspace and publication:** `D:\projects\aiplatform`, branch `master`,
 private source repository `https://github.com/Ajey95/ai-engineering-platform`.
 The latest observed green quality run used commit
-`d38865a9ba53d21fd507914129731f584405f9a6`. Check `git status` and
+`93da52c73507a3809895e0f0aaaa6419bd426865`. Check `git status` and
 `git ls-remote origin refs/heads/master` before changing files; do not assume
 this paragraph is the latest commit. The source repository is connected to
 Ajey95; a repository connection for the platform's draft-PR feature is a
 separate integration.
+
+Documentation checkpoint: the PRD is tracked in this repository, and the
+README now foregrounds the LLM harness. The screenshot-reported Mermaid
+sequence error was fixed by renaming its `Box` participant to `Sandbox`; all
+three README and all three PRD Mermaid blocks rendered with Mermaid CLI before
+this checkpoint. Documentation rendering is separate from the product release
+gate below.
 
 ### Done and verified
 
