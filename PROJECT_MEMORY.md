@@ -1443,3 +1443,27 @@ dependency gates were explicitly enabled against Memgraph at 127.0.0.1:7687
 and the isolated restored PostgreSQL database: Memgraph fact and code
 roundtrips plus PostgreSQL LangGraph checkpoint continuation passed 3/3.
 These are local synthetic checks, not hosted durability or customer data proof.
+
+2026-10-03 PostgreSQL SSE load investigation: a second local API process on
+8102 used isolated restored PostgreSQL. With default 5+10 DB pool, 250/250
+project reads at offered 50/s passed (p95 24.6 ms) and 100/100 SSE viewers
+received replay IDs, but initial replay p95 was 4546.1 ms. A 100-viewer
+connected-event test gave 1503.8 ms p95. Moving short SSE authorization and
+poll reads off the async event loop, using 250-ms empty polls with timed
+heartbeats, and reducing idle authorization queries improved delivery but did
+not meet the PRD below-one-second p95 at 100 viewers in one process. The API
+reauthorizes before every event batch and every five seconds while idle.
+Configurable PostgreSQL pool bounds were added; with 20+20 and current code,
+100/100 connected viewers received a new event across four trials at p95
+1129.7, 1178.7, 1177.6 and 1131.9 ms, while 50/50 measured 623.9 ms. The
+local-only repeatable probe `scripts.verify_local_sse_delivery` requires an
+isolated restore/test DB and appends one synthetic event. Evidence/limits are
+in docs/operations/local-capacity-20261003.md. A real two-instance hosted
+load-balancer/OIDC test is still needed; do not claim the one-second target.
+
+The full Python suite after the SSE thread/authorization changes passed 263 tests
+with 5 skips; Ruff passed. The latest local UI on 5173 continued to load its
+Runs screen without browser errors after the API on 8098 restarted on the new
+code. The isolated PostgreSQL probe API on 8102 was stopped after load tests;
+the restored DB and private dump remain for review. The primary local UI/API
+and WSL Docker/PostgreSQL/Memgraph services remain running.

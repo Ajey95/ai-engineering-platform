@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AIP_", env_file=".env", extra="forbid")
 
     database_url: str = "sqlite:///./aiplatform.db"
+    db_pool_size: int = Field(default=5, ge=1, le=40)
+    db_max_overflow: int = Field(default=10, ge=0, le=40)
     environment: str = "development"
     hosted_execution_enabled: bool = False
     dev_actor: str = "local-developer"

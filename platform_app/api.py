@@ -1324,9 +1324,13 @@ async def run_events(
 ):
     # A streaming response can outlive the request handler for hours. Close the
     # initial authorization session before returning it; every poll opens its own.
-    with SessionLocal() as auth_db:
-        identity = principal(request, authorization, x_tenant_id, auth_db)
-        authorized_run(auth_db, identity, run_id)
+    def authorize() -> tuple[str, str]:
+        with SessionLocal() as auth_db:
+            identity = principal(request, authorization, x_tenant_id, auth_db)
+            authorized_run(auth_db, identity, run_id)
+            return identity
+
+    identity = await asyncio.to_thread(authorize)
     try:
         cursor = max(0, int(last_event_id or "0"))
     except ValueError as error:
@@ -1334,18 +1338,20 @@ async def run_events(
 
     async def stream():
         nonlocal cursor
-        idle = 0
-        while not await request.is_disconnected():
+        loop = asyncio.get_running_loop()
+        last_activity = loop.time()
+        last_auth_check = loop.time()
+
+        def poll(force_auth: bool) -> list[EventRead]:
             with SessionLocal() as read_db:
-                try:
-                    if settings().environment != "development":
-                        if not authorization or not authorization.startswith("Bearer "):
-                            break
-                        if verify_bearer(authorization.removeprefix("Bearer ")) != identity[1]:
-                            break
+                def recheck_access() -> None:
+                    current_identity = principal(request, authorization, x_tenant_id, read_db)
+                    if current_identity != identity:
+                        raise ServiceError("UNAUTHENTICATED", "Stream identity changed", 401)
                     authorized_run(read_db, identity, run_id)
-                except ServiceError:
-                    break
+
+                if force_auth:
+                    recheck_access()
                 rows = read_db.scalars(
                     select(RunEvent)
                     .where(
@@ -1356,7 +1362,20 @@ async def run_events(
                     .order_by(RunEvent.sequence)
                     .limit(100)
                 ).all()
-                events = [event_read(row) for row in rows]
+                # Empty polls need only a periodic access check. Every event
+                # batch is reauthorized before any row reaches the client.
+                if rows and not force_auth:
+                    recheck_access()
+                return [event_read(row) for row in rows]
+
+        while not await request.is_disconnected():
+            force_auth = loop.time() - last_auth_check >= 5
+            try:
+                events = await asyncio.to_thread(poll, force_auth)
+            except ServiceError:
+                break
+            if force_auth or events:
+                last_auth_check = loop.time()
             if events:
                 for event in events:
                     cursor = event.sequence
@@ -1364,13 +1383,12 @@ async def run_events(
                         f"id: {event.sequence}\nevent: {event.event_type}\n"
                         f"data: {event.model_dump_json()}\n\n"
                     )
-                idle = 0
+                last_activity = loop.time()
             else:
-                await asyncio.sleep(1)
-                idle += 1
-                if idle >= 15:
+                await asyncio.sleep(0.25)
+                if loop.time() - last_activity >= 15:
                     yield ": heartbeat\n\n"
-                    idle = 0
+                    last_activity = loop.time()
 
     return StreamingResponse(
         stream(),
