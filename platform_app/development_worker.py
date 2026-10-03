@@ -41,7 +41,7 @@ from platform_app.dev_sandbox import (
 )
 from platform_app.fixture_workflow import build_fixture_workflow, invoke_fixture_workflow
 from platform_app.media import MediaError, encode_hls, sha256_file
-from platform_app.model_qualification import qualification_current
+from platform_app.model_qualification import qualification_for_pinned_run
 from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, ToolAction
 from platform_app.patch_workspace import PatchError, PatchProposal, materialize_candidate
 from platform_app.providers import ProviderError
@@ -556,9 +556,10 @@ class DevelopmentWorker:
             qualified = bool(
                 model
                 and (
-                    qualification_current(model)
+                    qualification_for_pinned_run(model)
                     or (
-                        model.validated_at
+                        model.state in {"enabled", "deprecated"}
+                        and model.validated_at
                         and (model.capabilities or {}).get("controlled_provider_fixture") is True
                     )
                 )

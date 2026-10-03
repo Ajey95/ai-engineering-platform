@@ -248,7 +248,7 @@ def test_hosted_pipeline_replays_full_control_path(tmp_path, monkeypatch, retry)
         db.commit()
     import platform_app.hosted_worker as module
 
-    monkeypatch.setattr(module, "qualification_current", lambda _: True)
+    monkeypatch.setattr(module, "qualification_for_pinned_run", lambda _: True)
     monkeypatch.setattr(module, "fetch_authorized_run_source", lambda *_: source)
     calls = []
 

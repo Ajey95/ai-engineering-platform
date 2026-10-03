@@ -85,7 +85,7 @@ def test_hosted_worker_joins_two_guest_generations_and_review_receipt(
         db.commit()
     import platform_app.hosted_worker as module
 
-    monkeypatch.setattr(module, "qualification_current", lambda _: True)
+    monkeypatch.setattr(module, "qualification_for_pinned_run", lambda _: True)
     monkeypatch.setattr(module, "fetch_authorized_run_source", lambda *_: source)
     phases = []
     bundles = {}

@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 
 from platform_app.db import utcnow
-from platform_app.models import ModelEntry, ModelRegistryEvent, Run
+from platform_app.models import ModelEntry, ModelRegistryEvent, OutboxEvent, Run, SandboxLease
 from platform_app.providers import ProviderTurn
 from platform_app.schemas import ModelRegister
 from platform_app.tool_broker import ToolDefinition
@@ -33,7 +33,9 @@ class QualificationError(Exception):
         super().__init__(message)
 
 
-def _registry_event(db, model: ModelEntry, actor: str, action: str, outcome: str) -> None:
+def _registry_event(
+    db, model: ModelEntry, actor: str, action: str, outcome: str, reason: str | None = None
+) -> None:
     details = {
         "provider": model.provider,
         "model_id": model.model_id,
@@ -56,6 +58,7 @@ def _registry_event(db, model: ModelEntry, actor: str, action: str, outcome: str
             registry_revision=model.registry_revision,
             metadata_hash=digest,
             outcome=outcome,
+            reason=reason,
         )
     )
 
@@ -159,11 +162,10 @@ def adapter_digest() -> str:
     return digest.hexdigest()
 
 
-def qualification_current(model: ModelEntry) -> bool:
+def _qualification_evidence_current(model: ModelEntry) -> bool:
     record = (model.capabilities or {}).get("qualification") or {}
     return bool(
-        model.state == "enabled"
-        and model.validated_at
+        model.validated_at
         and (model.capabilities or {}).get("live_qualified") is True
         and record.get("registry_revision") == model.registry_revision
         and record.get("provider") == model.provider
@@ -176,6 +178,105 @@ def qualification_current(model: ModelEntry) -> bool:
         and record.get("adapter_digest") == adapter_digest()
         and record.get("status") == "passed"
     )
+
+
+def qualification_current(model: ModelEntry) -> bool:
+    """A new run may be admitted only to an enabled, currently qualified model."""
+    return model.state == "enabled" and _qualification_evidence_current(model)
+
+
+def qualification_for_pinned_run(model: ModelEntry) -> bool:
+    """Deprecation stops new admission while an already pinned run can finish."""
+    return model.state in {"enabled", "deprecated"} and _qualification_evidence_current(model)
+
+
+def change_model_state(
+    session_factory, model_entry_id: str, action: str, operator: str, reason: str
+) -> dict:
+    if not operator.strip() or len(operator) > 200:
+        raise QualificationError("INVALID_OPERATOR", "Operator identity is required")
+    if not 8 <= len(reason.strip()) <= 2000:
+        raise QualificationError("INVALID_REASON", "A lifecycle reason is required")
+    if action not in {"enable", "deprecate", "disable"}:
+        raise QualificationError("INVALID_ACTION", "Model lifecycle action is invalid")
+    affected_runs = 0
+    with session_factory() as db:
+        model = db.scalar(select(ModelEntry).where(
+            ModelEntry.id == model_entry_id
+        ).with_for_update())
+        if model is None:
+            raise QualificationError("NOT_FOUND", "Model entry not found")
+        before = model.state
+        if action == "enable":
+            if before not in {"qualified", "deprecated"} or not (
+                _qualification_evidence_current(model)
+            ):
+                raise QualificationError(
+                    "MODEL_QUALIFICATION_REQUIRED", "Current qualification is required"
+                )
+            model.state = "enabled"
+        elif action == "deprecate":
+            if before != "enabled":
+                raise QualificationError("MODEL_STATE_INVALID", "Only enabled models deprecate")
+            model.state = "deprecated"
+        else:
+            if before == "disabled":
+                raise QualificationError("MODEL_STATE_INVALID", "Model is already disabled")
+            model.state = "disabled"
+            model.capabilities = {
+                **(model.capabilities or {}),
+                "live_qualified": False,
+                "qualification": {
+                    **((model.capabilities or {}).get("qualification") or {}),
+                    "status": "disabled",
+                },
+            }
+            # Revoke worker fencing and guest capabilities in the same commit
+            # as the security disable. An in-flight provider request may still
+            # bill; its old fence cannot turn this pause into a success.
+            from platform_app.service import append_event
+
+            open_states = {
+                "QUEUED", "PREPARING", "REPRODUCING", "INVESTIGATING",
+                "PATCHING", "VERIFYING", "REVIEW_READY",
+            }
+            runs = db.scalars(select(Run).where(
+                Run.model_entry_id == model.id, Run.state.in_(open_states),
+            ).order_by(Run.id).with_for_update()).all()
+            for run in runs:
+                prior = run.state
+                run.state = "PAUSED_APPROVAL"
+                run.resume_target = prior
+                run.lease_fence += 1
+                run.lease_owner = None
+                run.lease_until = None
+                append_event(db, run, "run.state_changed", {
+                    "state": run.state, "verdict": run.verdict,
+                })
+                append_event(db, run, "approval.required", {
+                    "kind": "model_emergency_disable", "model_entry_id": model.id,
+                })
+                leases = db.scalars(select(SandboxLease).where(
+                    SandboxLease.run_id == run.id,
+                    SandboxLease.state.in_(["intended", "bootstrapping", "provisioned"]),
+                ).with_for_update()).all()
+                for lease in leases:
+                    lease.state = "revoked"
+                    lease.updated_at = utcnow()
+                    db.add(OutboxEvent(
+                        tenant_id=run.tenant_id, topic="sandbox.cleanup",
+                        payload={"run_id": run.id, "sandbox_lease_id": lease.id},
+                    ))
+                    append_event(db, run, "sandbox.revoked", {
+                        "sandbox_lease_id": lease.id, "reason": "unsafe",
+                    })
+                affected_runs += 1
+        _registry_event(db, model, operator, action, model.state, reason.strip())
+        db.commit()
+        return {
+            "model_entry_id": model.id, "previous_state": before,
+            "state": model.state, "affected_runs": affected_runs,
+        }
 
 
 def _check_usage(turn: ProviderTurn) -> None:

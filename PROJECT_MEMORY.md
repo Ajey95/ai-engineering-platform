@@ -1302,3 +1302,20 @@ marking an account qualified; controlled qualification tests passed. Adapter
 digest covers provider, stream and tool-boundary code. There are no available
 provider accounts yet, so all live behavior remains unqualified.
 Full Python suite after this change: 255 passed, 5 skipped; Ruff passed.
+
+2026-10-03 model lifecycle increment: reasoned operator CLI transitions now
+enable a currently qualified model, deprecate it for new admissions while
+allowing an already pinned run to continue, and emergency-disable it to block
+new model calls until requalification. Each transition writes a registry
+event with the reason. New Alembic head `c78b82d1fa40` adds the reason
+column; focused SQLite tests passed, but local PostgreSQL is still down in
+WSL, so the migration has not been applied or drift checked there. Emergency
+disable now pauses open runs, increments the run lease fence, clears worker
+ownership, emits `approval.required`, and revokes
+active guest leases with cleanup outbox events in the same DB transaction.
+Model reservations now lock and refresh model/run rows in the same order to
+avoid a stale enabled state. Focused SQLite tests verified pause, old-fence
+rejection, cleanup enqueue and stale-model reservation denial. In-flight
+provider charges still need reconciliation before any resume path.
+Full Python suite: 259 passed, 5 skipped; Ruff and Alembic head inspection
+passed. New head remains unapplied to PostgreSQL while WSL is unavailable.

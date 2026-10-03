@@ -96,7 +96,9 @@ qualify; a read-only probe cannot prove those rights.
   envelopes. Streamed tool calls require terminal completion. No live provider
   account has been qualified.
 - Operator commands register model entries as unqualified and probe a chosen
-  provider account before enabling an entry. No account has been probed here.
+  provider account before enabling an entry. `python -m scripts.manage_model`
+  records reasoned enable, deprecate and emergency disable transitions. No
+  account has been probed here.
 - React workspace with project onboarding, report submission, run history,
   review and usage views. It reads real API records; no fake run evidence is shown.
 

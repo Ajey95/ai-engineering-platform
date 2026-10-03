@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from platform_app.action_policy import ActionIntent, authorize_run_effect
 from platform_app.config import settings
-from platform_app.model_qualification import qualification_current
+from platform_app.model_qualification import qualification_for_pinned_run
 from platform_app.models import BudgetEntry, ModelEntry, Run, ToolAction
 from platform_app.run_ledger import assert_fence, complete_tool_action
 from platform_app.service import ServiceError, append_event, canonical_hash
@@ -65,17 +65,28 @@ def reserve_model_call(
 ) -> tuple[ToolAction, BudgetEntry, TokenPlan]:
     """Caller commits this transaction before invoking the provider."""
     set_safe_attributes(run_id=run.id, model_entry_id=model.id, model_step=step_id)
+    # Match the emergency-disable lock order. Re-read both rows under locks so
+    # a worker that loaded them earlier cannot reserve against stale policy.
+    locked_model = db.scalar(select(ModelEntry).where(
+        ModelEntry.id == model.id
+    ).with_for_update().execution_options(populate_existing=True))
+    locked_run = db.scalar(select(Run).where(
+        Run.id == run.id
+    ).with_for_update().execution_options(populate_existing=True))
+    if locked_model is None or locked_run is None:
+        raise ServiceError("MODEL_UNAVAILABLE", "Run model is unavailable", 409)
+    model, run = locked_model, locked_run
     assert_fence(run, worker_id, fence)
     if run.cancel_requested:
         raise ServiceError("RUN_CANCELLED", "Cancellation stops model calls", 409)
-    if model.id != run.model_entry_id or model.state != "enabled":
+    if model.id != run.model_entry_id or model.state not in {"enabled", "deprecated"}:
         raise ServiceError("MODEL_UNAVAILABLE", "Run model changed or is disabled", 409)
     controlled_fixture = bool(
         settings().environment == "development"
         and model.validated_at
         and (model.capabilities or {}).get("controlled_provider_fixture") is True
     )
-    if not qualification_current(model) and not controlled_fixture:
+    if not qualification_for_pinned_run(model) and not controlled_fixture:
         raise ServiceError("MODEL_UNAVAILABLE", "Live provider qualification is required", 409)
     snapshot = run.config_snapshot
     if (

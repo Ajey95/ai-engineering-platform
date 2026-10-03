@@ -629,6 +629,7 @@ class ModelRegistryEvent(Base):
     registry_revision: Mapped[str] = mapped_column(String(100))
     metadata_hash: Mapped[str] = mapped_column(String(64))
     outcome: Mapped[str] = mapped_column(String(40))
+    reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -9,13 +10,27 @@ from platform_app.db import Base
 from platform_app.model_qualification import (
     MetadataAttestation,
     QualificationError,
+    change_model_state,
     qualification_current,
+    qualification_for_pinned_run,
     qualify_model_entry,
     register_model_entry,
 )
-from platform_app.models import ModelEntry, ModelRegistryEvent
+from platform_app.models import (
+    ModelEntry,
+    ModelRegistryEvent,
+    OutboxEvent,
+    Project,
+    Run,
+    RunEvent,
+    SandboxLease,
+    Task,
+    Tenant,
+)
 from platform_app.providers import ProviderTurn
+from platform_app.run_ledger import assert_fence
 from platform_app.schemas import ModelRegister
+from platform_app.service import ServiceError
 from platform_app.tool_broker import CompletedToolCall
 
 
@@ -172,6 +187,101 @@ def test_streaming_probe_failure_cannot_enable_model(registry, attestation):
         model = db.get(ModelEntry, "entry-a")
         assert model.state == "registered"
         assert model.capabilities["live_qualified"] is False
+
+
+def test_model_lifecycle_preserves_pinned_runs_until_emergency_disable(registry, attestation):
+    qualify_model_entry(registry, "entry-a", ScriptedAdapter(), attestation, "operator-a")
+    enabled = change_model_state(
+        registry, "entry-a", "enable", "operator-a", "Approved for this tenant pilot",
+    )
+    assert enabled["state"] == "enabled"
+    with registry() as db:
+        assert qualification_current(db.get(ModelEntry, "entry-a"))
+    change_model_state(
+        registry, "entry-a", "deprecate", "operator-a",
+        "New runs must use the replacement snapshot",
+    )
+    with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        assert not qualification_current(model)
+        assert qualification_for_pinned_run(model)
+    change_model_state(
+        registry, "entry-a", "disable", "operator-a",
+        "Emergency provider security restriction",
+    )
+    with registry() as db:
+        model = db.get(ModelEntry, "entry-a")
+        assert not qualification_for_pinned_run(model)
+        assert model.capabilities["live_qualified"] is False
+        reasons = [event.reason for event in db.query(ModelRegistryEvent).all()]
+        assert reasons[-3:] == [
+            "Approved for this tenant pilot",
+            "New runs must use the replacement snapshot",
+            "Emergency provider security restriction",
+        ]
+    with pytest.raises(QualificationError) as error:
+        change_model_state(
+            registry, "entry-a", "enable", "operator-a",
+            "Try enabling without requalification",
+        )
+    assert error.value.code == "MODEL_QUALIFICATION_REQUIRED"
+
+
+def test_model_lifecycle_rejects_reasonless_transition(registry, attestation):
+    qualify_model_entry(registry, "entry-a", ScriptedAdapter(), attestation, "operator-a")
+    with pytest.raises(QualificationError, match="reason"):
+        change_model_state(registry, "entry-a", "enable", "operator-a", " ")
+    with registry() as db:
+        assert db.get(ModelEntry, "entry-a").state == "qualified"
+
+
+def test_emergency_disable_fences_runs_and_queues_guest_cleanup(registry, attestation):
+    qualify_model_entry(registry, "entry-a", ScriptedAdapter(), attestation,
+                        "operator-a", enable=True)
+    with registry() as db:
+        db.add(Tenant(id="tenant-a", name="A"))
+        db.add(Project(id="project-a", tenant_id="tenant-a", name="A"))
+        db.add(Task(
+            id="task-a", tenant_id="tenant-a", project_id="project-a",
+            report="Bug", expected_behavior="Works", actual_behavior="Fails",
+            created_by="alice",
+        ))
+        db.add(Run(
+            id="run-a", tenant_id="tenant-a", project_id="project-a",
+            task_id="task-a", created_by="alice", idempotency_key="key-a",
+            request_hash="a" * 64, base_commit="b" * 40,
+            model_entry_id="entry-a", state="INVESTIGATING", verdict="NOT_RUN",
+            lease_owner="worker-a", lease_fence=4,
+            lease_until=datetime.now(UTC) + timedelta(minutes=2), config_snapshot={},
+        ))
+        db.add(SandboxLease(
+            id="lease-a", tenant_id="tenant-a", project_id="project-a",
+            run_id="run-a", generation=1, phase="baseline", lease_fence=4,
+            client_token="c" * 64, state="provisioned", image_id="ami-12345678",
+            instance_type="m6i.large", subnet_id="subnet-12345678",
+            security_group_id="sg-12345678", root_device_name="/dev/xvda",
+            disk_gib=40, expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        ))
+        db.commit()
+    result = change_model_state(
+        registry, "entry-a", "disable", "operator-a",
+        "Emergency credential exposure containment",
+    )
+    assert result["affected_runs"] == 1
+    with registry() as db:
+        run = db.get(Run, "run-a")
+        assert run.state == "PAUSED_APPROVAL"
+        assert run.resume_target == "INVESTIGATING"
+        assert run.lease_fence == 5
+        assert run.lease_owner is None
+        with pytest.raises(ServiceError) as fenced:
+            assert_fence(run, "worker-a", 4)
+        assert fenced.value.code == "LEASE_LOST"
+        assert db.get(SandboxLease, "lease-a").state == "revoked"
+        assert db.query(OutboxEvent).filter_by(topic="sandbox.cleanup").count() == 1
+        assert [event.event_type for event in db.query(RunEvent).order_by(RunEvent.sequence)] == [
+            "run.state_changed", "approval.required", "sandbox.revoked",
+        ]
 
 
 def test_mismatched_metadata_is_rejected_before_spend(registry, attestation):

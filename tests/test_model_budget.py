@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -145,6 +145,18 @@ def test_model_reservation_precedes_settlement_and_uses_reported_usage(scope):
     with pytest.raises(ServiceError) as error:
         reserve_model_call(db, run, "worker-one", fence, model, "model-2", "Again")
     assert error.value.code == "BUDGET_EXHAUSTED"
+
+
+def test_reservation_refreshes_stale_model_after_emergency_disable(scope):
+    db, run, model, fence = scope
+    db.execute(update(ModelEntry).where(ModelEntry.id == model.id).values(
+        state="disabled"
+    ).execution_options(synchronize_session=False))
+    assert model.state == "enabled"
+    with pytest.raises(ServiceError) as error:
+        reserve_model_call(db, run, "worker-one", fence, model, "model-1", "Fix the form")
+    assert error.value.code == "MODEL_UNAVAILABLE"
+    assert db.scalar(select(BudgetEntry.id)) is None
 
 
 def test_definitive_rejection_releases_reservation_but_unknown_outcome_stays_pending(scope):

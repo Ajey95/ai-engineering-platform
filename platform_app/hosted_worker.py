@@ -27,7 +27,7 @@ from platform_app.general_patch import build_candidate_tree
 from platform_app.guest_comparison import compare_guest_observations
 from platform_app.hosted_baseline import seal_and_collect_baseline, stage_and_launch_baseline
 from platform_app.hosted_media import stage_hosted_recording
-from platform_app.model_qualification import qualification_current
+from platform_app.model_qualification import qualification_for_pinned_run
 from platform_app.models import ModelEntry, OutboxEvent, Run, RunEvent, SandboxLease
 from platform_app.providers import ProviderError
 from platform_app.repository_fetch import fetch_authorized_run_source
@@ -139,7 +139,7 @@ class HostedWorker:
                     "EXECUTION_UNAVAILABLE", "Run lacks hosted execution policy", 409
                 )
             model = db.get(ModelEntry, run.model_entry_id)
-            if model is None or not qualification_current(model):
+            if model is None or not qualification_for_pinned_run(model):
                 raise ServiceError("MODEL_UNAVAILABLE", "Model has no current qualification", 409)
             try:
                 manifest = EnvironmentManifest.model_validate(snapshot["environment_manifest"])
